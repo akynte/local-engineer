@@ -1,0 +1,29 @@
+# CPU-only host (design v3 §9.2). A small dense model with reduced packets:
+# decode is slow enough that a large packet costs minutes, so the cap is set
+# by patience rather than by the window.
+name: cpu-only-32gb-ram
+description: >-
+  Small dense model on CPU with 32 GB RAM and reduced packets. Unmeasured
+  starting points; run `le models bench --write` to replace them.
+hardware:
+  ram_mb: 32768
+  threads: 8
+context_tokens: 8192
+max_packet_tokens: 3000
+reserved_output_tokens: 2048
+max_tools_exposed: 8
+measured_peak_vram_mb: 0
+measured_peak_ram_mb: 0
+max_concurrent_tasks: 1
+runtime:
+  threads: 8
+  gpu_layers: 0
+  batch_size: 512
+  ubatch_size: 256
+  slots: 1
+sampling:
+  temperature: 0.2
+  top_p: 0.95
+  top_k: 40
+  min_p: 0.05
+thinking_policy: "off"

@@ -1,0 +1,69 @@
+# Default deployment (design v3 §4.1): one image, one container, one volume.
+#
+#   docker compose -f deploy/docker-compose.yml up -d
+#   docker compose -f deploy/docker-compose.yml exec local-engineer le doctor
+#
+# For the conventional multi-container layout, use docker-compose.split.yml.
+services:
+  local-engineer:
+    image: ${LE_IMAGE:-ghcr.io/akynte/local-engineer:latest}
+    container_name: local-engineer
+    restart: unless-stopped
+
+    # The supervisor runs the orderly shutdown of §4.4 on SIGTERM: pause tasks
+    # with a handoff record, terminate sandboxes, flush every SQLite WAL.
+    # Give it the documented 30 s grace period.
+    stop_grace_period: 40s
+    init: true
+
+    ports:
+      # Loopback only. Publishing as "7777:7777" would expose a supervisor
+      # that can run sandboxed commands and read every indexed repository to
+      # your whole network.
+      - "127.0.0.1:7777:7777"
+
+    volumes:
+      # Named volume: a real filesystem with working fsync, which SQLite
+      # requires (§5.4). Never point this at an overlay layer or a network share.
+      - le-data:/data
+      # Your repositories. Read-write because tasks edit them; the container
+      # can reach nothing else on your host (§6.1 layer 1).
+      - ${LE_WORK:-${HOME}/code}:/work
+
+    environment:
+      LE_DATA: /data
+      # Bind every interface inside the container; the ports mapping above is
+      # what restricts exposure to this host.
+      LE_API_ADDR: 0.0.0.0:7777
+      LE_PROFILE: ${LE_PROFILE:-reference-8gb-cuda-64gb-ram}
+
+    # DR-3 layer 1: an unprivileged user, no added capabilities, no privilege
+    # escalation. The Docker socket is deliberately absent: mounting it would
+    # hand the container root on the host.
+    user: "10001:10001"
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:7777/readyz"]
+      interval: 15s
+      timeout: 5s
+      start_period: 90s
+      retries: 4
+
+    # GPU access. Comment this out on a CPU-only host: the image detects the
+    # absence and falls back.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  le-data:
+    # A named volume is created root-owned. Initialise it once with:
+    #   docker run --rm -v le-data:/data alpine chown -R 10001:10001 /data
+    name: le-data

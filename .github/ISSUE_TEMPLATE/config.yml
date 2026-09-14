@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or idea
+    url: https://github.com/akynte/local-engineer/discussions
+    about: Ask a question or discuss an idea before opening an issue.
+  - name: Security vulnerability
+    url: https://github.com/akynte/local-engineer/security/advisories/new
+    about: Report privately. Please do not open a public issue.

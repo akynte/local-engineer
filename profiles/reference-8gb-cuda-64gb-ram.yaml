@@ -1,0 +1,45 @@
+# Hardware profile (design v3 §9.2). Every value here is configuration, not
+# code: §9.3 forbids hardcoding any of it.
+#
+# This is the reference profile: an 8 GB CUDA laptop GPU with a large host RAM
+# pool, running an MoE model with CPU expert offload. The numbers below are
+# STARTING POINTS, not measurements — run `le models bench --write` on your own
+# machine and switch le.yaml to the generated profile. `le doctor` warns while
+# an unmeasured profile is active.
+name: reference-8gb-cuda-64gb-ram
+description: >-
+  8 GB CUDA GPU with 64 GB host RAM, MoE model with CPU expert offload.
+  Unmeasured starting points; run `le models bench --write` to replace them.
+hardware:
+  gpu: 8 GB CUDA (e.g. RTX 4060 Laptop)
+  vram_mb: 8188
+  ram_mb: 65536
+  threads: 16
+context_tokens: 32768
+max_packet_tokens: 12000
+reserved_output_tokens: 8192
+max_tools_exposed: 12
+measured_peak_vram_mb: 0
+measured_peak_ram_mb: 0
+max_concurrent_tasks: 1
+runtime:
+  threads: 8
+  threads_batch: 16
+  gpu_layers: 999
+  batch_size: 2048
+  ubatch_size: 512
+  flash_attn: true
+  cache_type_k: q8_0
+  cache_type_v: q8_0
+  slots: 2
+  extra_args:
+    # MoE expert tensors on the CPU is what makes an 8 GB card viable for a
+    # 30B-class sparse model; the attention layers stay resident on the GPU.
+    - --n-cpu-moe
+    - "999"
+sampling:
+  temperature: 0.2
+  top_p: 0.95
+  top_k: 40
+  min_p: 0.05
+thinking_policy: auto

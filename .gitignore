@@ -1,0 +1,24 @@
+# Build output
+/bin/
+/dist/
+coverage.out
+*.test
+
+# Local data directories
+/le-data/
+*.db
+*.db-wal
+*.db-shm
+
+# The workspace pin of this repository's own dogfooding, if any
+/.le/
+
+# Editors
+.idea/
+.vscode/
+!.vscode/extensions.json
+*.swp
+.DS_Store
+
+# Fuzz crashers are kept; the working corpus is not.
+# (Regression seeds under testdata/fuzz/ ARE committed on purpose.)

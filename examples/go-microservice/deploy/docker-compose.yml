@@ -1,0 +1,25 @@
+# The deployment analyzer will link these services and their environment to the
+# application components that read them, so a change to a configuration key
+# reports the manifests that set it alongside the code that reads it.
+services:
+  api:
+    build: ..
+    ports: ["8080:8080"]
+    environment:
+      DATABASE_URL: postgres://payments:payments@db:5432/payments?sslmode=disable
+      LISTEN_ADDR: ":8080"
+      ENVIRONMENT: production
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: payments
+      POSTGRES_PASSWORD: payments
+      POSTGRES_DB: payments
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U payments"]
+      interval: 5s
+      retries: 10

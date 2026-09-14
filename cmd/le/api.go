@@ -1,0 +1,162 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"os/exec"
+	"time"
+
+	"github.com/spf13/cobra"
+
+	"github.com/akynte/local-engineer/internal/api"
+	"github.com/akynte/local-engineer/internal/config"
+	"github.com/akynte/local-engineer/internal/procman"
+	"github.com/akynte/local-engineer/internal/sandbox"
+	"github.com/akynte/local-engineer/internal/sandbox/bwrap"
+	"github.com/akynte/local-engineer/internal/sandbox/landlock"
+)
+
+func newAPICmd() *cobra.Command {
+	var addr string
+	cmd := &cobra.Command{
+		Use:   "api",
+		Short: "Run the supervisor: children, health endpoints and dashboard",
+		Long: "api is the container's entrypoint process. It migrates the data directory's\n" +
+			"schemas forward, validates the configuration, selects the strongest available\n" +
+			"sandbox, starts the supervised children, and serves /healthz and /readyz.\n\n" +
+			"On SIGTERM it stops children in reverse order, flushes every SQLite WAL, and\n" +
+			"exits within the configured grace period.",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx := cmd.Context()
+			log := slog.Default()
+
+			root, err := openRoot()
+			if err != nil {
+				return err
+			}
+			defer root.CloseAll()
+
+			cfg, err := loadConfig(root)
+			if err != nil {
+				return fmt.Errorf("configuration is invalid, refusing to start: %w", err)
+			}
+			if addr != "" {
+				cfg.API.Addr = addr
+			}
+			profile := loadProfile(root, cfg)
+			profileName := "(none)"
+			if profile != nil {
+				profileName = profile.Name
+			}
+
+			inContainer, containerWhy := sandbox.InContainer()
+			if warn := config.ExposureWarning(cfg.API.Addr, inContainer); warn != "" {
+				log.Warn("api exposure", "detail", warn, "container", containerWhy)
+			}
+
+			runner, sbReport := selectSandbox(cfg)
+			log.Info("sandbox selected", "runner", sbReport.Runner, "layers", sbReport.Active)
+			_ = runner
+
+			procs := procman.New(func(f string, a ...any) { log.Info(fmt.Sprintf(f, a...)) })
+			if err := registerChildren(procs, cfg); err != nil {
+				return err
+			}
+			go procs.Reap(ctx)
+			if err := procs.Start(ctx); err != nil {
+				return err
+			}
+
+			srv := api.New(cfg.API.Addr, api.Deps{
+				Procs: procs, Root: root, Sandbox: &sbReport, Profile: profileName,
+			}, log)
+
+			grace := time.Duration(cfg.API.ShutdownGraceSeconds) * time.Second
+			if grace <= 0 {
+				grace = 30 * time.Second
+			}
+			log.Info("supervisor starting", "data", root.Layout().Root(),
+				"profile", profileName, "inference", cfg.Inference.Mode, "grace", grace)
+
+			serveErr := srv.Serve(ctx, grace)
+
+			// §4.4 shutdown order: stop children, then flush WALs, then exit.
+			log.Info("shutting down", "grace", grace)
+			if err := procs.Stop(grace); err != nil {
+				log.Warn("children did not stop cleanly", "error", err)
+			}
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			_ = shutdownCtx
+			if err := root.CloseAll(); err != nil {
+				log.Warn("closing stores", "error", err)
+			}
+			return serveErr
+		},
+	}
+	cmd.Flags().StringVar(&addr, "addr", "", "listen address (default from le.yaml: 127.0.0.1:7777)")
+	return cmd
+}
+
+// selectSandbox picks the strongest runner permitted by configuration and
+// returns the report `le doctor` and /v1/sandbox both serve (DR-3).
+func selectSandbox(cfg config.Config) (sandbox.Runner, sandbox.Report) {
+	var candidates []sandbox.Runner
+	ll, llErr := landlock.New()
+	switch cfg.Sandbox.Mode {
+	case "none":
+	case "landlock":
+		if llErr == nil {
+			candidates = append(candidates, ll)
+		}
+	case "bwrap":
+		if llErr == nil {
+			candidates = append(candidates, bwrap.New(ll))
+		}
+	default:
+		if llErr == nil {
+			candidates = append(candidates, bwrap.New(ll), ll)
+		}
+	}
+	candidates = append(candidates, sandbox.ContainerRunner{})
+	runner, rep := sandbox.Select(candidates)
+	return runner, rep
+}
+
+// registerChildren wires the §4.3 process model. `le api` itself is this
+// process, so only the inference server is a child in the default
+// configuration; `opencode serve` is started per task, not here.
+func registerChildren(m *procman.Manager, cfg config.Config) error {
+	if cfg.Inference.Mode != config.ModeEmbedded {
+		return nil
+	}
+	base := fmt.Sprintf("http://127.0.0.1:%d", cfg.Inference.Port)
+	return m.Add(procman.Child{
+		Name:      "llama-server",
+		Essential: true,
+		Build: func(ctx context.Context) (*exec.Cmd, error) {
+			args := append([]string{}, cfg.Inference.Args...)
+			return exec.CommandContext(ctx, cfg.Inference.Binary, args...), nil
+		},
+		Health: func(ctx context.Context) error {
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/health", nil)
+			if err != nil {
+				return err
+			}
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				return err
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("llama-server /health returned %d", resp.StatusCode)
+			}
+			return nil
+		},
+		// Model load on a cold GGUF is slow; the timeout is per-child and
+		// configurable rather than a global guess (§9.3).
+		StartTimeout: time.Duration(cfg.Inference.StartTimeoutSeconds) * time.Second,
+	})
+}

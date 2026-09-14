@@ -1,0 +1,15 @@
+.git
+.github
+docs
+evals
+examples
+*.md
+!README.md
+.devcontainer
+dist
+bin
+tmp
+*.db
+*.db-wal
+*.db-shm
+.le

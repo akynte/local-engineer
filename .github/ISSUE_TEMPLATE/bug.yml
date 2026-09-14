@@ -1,0 +1,70 @@
+name: Bug report
+description: Something behaves differently from what the documentation says
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not report security issues here — see
+        [SECURITY.md](../blob/main/SECURITY.md) for private reporting.
+
+        Run `le doctor` first: it names most configuration problems directly,
+        with the fix.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+      placeholder: |
+        I ran `le index` in a Go monorepo and it …
+        I expected …
+        Instead …
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: "`le doctor --json` output"
+      description: >-
+        This reports the isolation layers in effect, the storage filesystem,
+        the index age and the active profile. It contains no repository content.
+      render: json
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`le version`, and the image digest if you used a published image."
+      placeholder: "local-engineer 0.3.1 (commit abc1234) / sha256:…"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How are you running it?
+      options:
+        - Single container (docker run)
+        - docker compose (default)
+        - docker compose (split)
+        - Podman
+        - Bare metal (scripts/install-bare-metal.sh)
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: The smallest set of steps that shows the problem.
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: "`docker logs local-engineer`, trimmed to the relevant part."
+      render: shell

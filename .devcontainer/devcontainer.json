@@ -1,0 +1,37 @@
+{
+  "name": "local-engineer",
+  "build": { "dockerfile": "Dockerfile" },
+
+  // Landlock is the layer the sandbox tests actually exercise, and it needs
+  // the three Landlock syscalls to be permitted. Docker's default seccomp
+  // profile allows them; this makes the requirement explicit so a restrictive
+  // host profile is noticed rather than silently skipping tests.
+  "runArgs": ["--init"],
+
+  "features": {
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": { "version": "latest" }
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.go",
+        "ms-azuretools.vscode-docker",
+        "redhat.vscode-yaml",
+        "timonwong.shellcheck"
+      ],
+      "settings": {
+        "go.lintTool": "golangci-lint",
+        "go.testFlags": ["-race"],
+        "go.toolsManagement.autoUpdate": false,
+        "editor.formatOnSave": true,
+        "[go]": { "editor.defaultFormatter": "golang.go" },
+        "files.insertFinalNewline": true,
+        "files.trimTrailingWhitespace": true
+      }
+    }
+  },
+
+  "postCreateCommand": "go mod download && make build && echo 'Run: make check'",
+  "remoteUser": "vscode"
+}

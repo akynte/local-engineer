@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+title: local-engineer
+message: >-
+  If you use this software or its methodology in academic work, please cite it
+  using these metadata.
+type: software
+authors:
+  - given-names: Ali
+    alias: akynte
+repository-code: https://github.com/akynte/local-engineer
+abstract: >-
+  A supervised local coding engineer: a deterministic harness around a local
+  language model, with per-project isolation enforced at the storage layer, a
+  typed code-relationship graph with evidence categories, an intent-first
+  execution journal with crash recovery, and layered unprivileged sandboxing.
+keywords:
+  - code-generation
+  - local-inference
+  - software-engineering-agents
+  - program-analysis
+  - sandboxing
+license: Apache-2.0

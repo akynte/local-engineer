@@ -1,0 +1,49 @@
+local-engineer
+Copyright 2026 The local-engineer Authors
+
+This product includes software developed by the local-engineer Authors,
+licensed under the Apache License, Version 2.0.
+
+------------------------------------------------------------------------
+Third-party components redistributed in the container images
+------------------------------------------------------------------------
+
+The published container images bundle the following third-party software.
+Each remains under its own licence; the combination is redistributable
+because every licence below is compatible with Apache-2.0.
+
+  OpenCode                     MIT          https://github.com/sst/opencode
+  llama.cpp / llama-server     MIT          https://github.com/ggml-org/llama.cpp
+  Go toolchain                 BSD-3-Clause https://go.dev
+  Node.js                      MIT          https://nodejs.org
+  bubblewrap                   LGPL-2.1+    https://github.com/containers/bubblewrap
+  ripgrep                      MIT / Unlicense https://github.com/BurntSushi/ripgrep
+  tini                         MIT          https://github.com/krallin/tini
+  Debian base image            various      https://www.debian.org
+
+The exact version of every component in an image is listed in
+/opt/le/image-manifest.txt inside that image, and in
+docs/reference/image-manifest.md generated at build time.
+
+------------------------------------------------------------------------
+Go module dependencies
+------------------------------------------------------------------------
+
+  modernc.org/sqlite                       BSD-3-Clause
+  github.com/landlock-lsm/go-landlock      MIT
+  github.com/spf13/cobra                   Apache-2.0
+  gopkg.in/yaml.v3                         MIT / Apache-2.0
+  golang.org/x/tools                       BSD-3-Clause
+  github.com/fsnotify/fsnotify             BSD-3-Clause
+
+The authoritative, complete list with versions and checksums is the SBOM
+attached to each release (SPDX and CycloneDX), and `go.mod` / `go.sum`
+in this repository.
+
+------------------------------------------------------------------------
+Model weights
+------------------------------------------------------------------------
+
+No model weights are distributed with this software. Models are downloaded
+by the operator and remain under their own licences, which are listed per
+hardware profile in docs/how-to/configure-models.md.

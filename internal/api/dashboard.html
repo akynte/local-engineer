@@ -1,0 +1,109 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>local-engineer</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root { color-scheme: light dark; --fg:#111; --bg:#fbfbfa; --muted:#666; --line:#ddd;
+          --ok:#0a7a3d; --warn:#9a6b00; --bad:#a21b1b; }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg:#e9e9e7; --bg:#1a1a19; --muted:#9a9a97; --line:#333;
+            --ok:#4ec37d; --warn:#d9a441; --bad:#e06c6c; }
+  }
+  body { margin:0; padding:2rem 1.5rem; background:var(--bg); color:var(--fg);
+         font:14px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { max-width:56rem; margin:0 auto; }
+  h1 { font-size:1.25rem; margin:0 0 .25rem; letter-spacing:-.01em; }
+  .sub { color:var(--muted); margin:0 0 2rem; }
+  section { border-top:1px solid var(--line); padding:1.25rem 0; }
+  h2 { font-size:.75rem; text-transform:uppercase; letter-spacing:.08em; color:var(--muted);
+       margin:0 0 .75rem; font-weight:600; }
+  table { width:100%; border-collapse:collapse; }
+  td, th { text-align:left; padding:.35rem .5rem .35rem 0; vertical-align:top; }
+  th { font-weight:500; color:var(--muted); font-size:.8rem; }
+  code, .mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.85em; }
+  .pill { display:inline-block; padding:.1rem .5rem; border-radius:999px; font-size:.75rem;
+          border:1px solid currentColor; }
+  .ok { color:var(--ok); } .warn { color:var(--warn); } .bad { color:var(--bad); }
+  .note { color:var(--muted); font-size:.85rem; margin-top:.5rem; }
+</style>
+<main>
+  <h1>local-engineer</h1>
+  <p class="sub mono" id="version">loading…</p>
+
+  <section>
+    <h2>Readiness</h2>
+    <p id="ready">…</p>
+    <ul id="reasons" class="note"></ul>
+  </section>
+
+  <section>
+    <h2>Supervised children</h2>
+    <table><thead><tr><th>Name</th><th>State</th><th>PID</th><th>Restarts</th><th>Last error</th></tr></thead>
+    <tbody id="children"></tbody></table>
+    <p class="note">One container, several processes (DR-1). Per-child state is reported here
+       because a single PID 1 hides it from the orchestrator.</p>
+  </section>
+
+  <section>
+    <h2>Isolation layers</h2>
+    <p id="sandbox">…</p>
+    <p class="note" id="sandbox-statement"></p>
+  </section>
+
+  <section>
+    <h2>Workspaces</h2>
+    <table><thead><tr><th>Id</th><th>Name</th><th>Root</th></tr></thead>
+    <tbody id="workspaces"></tbody></table>
+    <p class="note">Every workspace keeps its own index, ledger, telemetry, cache and
+       engine directories. Nothing is shared between them.</p>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+async function get(path) {
+  const r = await fetch(path);
+  return { ok: r.ok, body: await r.json().catch(() => ({})) };
+}
+
+async function refresh() {
+  const [status, ready, ws] = await Promise.all([
+    get("/v1/status"), get("/readyz"), get("/v1/workspaces"),
+  ]);
+
+  const v = status.body.version || {};
+  $("version").textContent = `${v.version ?? "?"} · ${v.platform ?? ""} · up ${status.body.uptime ?? "?"}` +
+    (status.body.profile ? ` · profile ${status.body.profile}` : "");
+
+  $("ready").innerHTML = ready.ok
+    ? '<span class="pill ok">ready</span>'
+    : '<span class="pill bad">not ready</span>';
+  $("reasons").innerHTML = (ready.body.reasons || []).map(r => `<li>${esc(r)}</li>`).join("");
+
+  const cls = s => s === "ready" ? "ok" : (s === "degraded" || s === "starting") ? "warn" : "bad";
+  $("children").innerHTML = (status.body.children || []).map(c => `
+    <tr><td class="mono">${esc(c.name)}${c.essential ? "" : " <span class=note>(optional)</span>"}</td>
+        <td><span class="pill ${cls(c.state)}">${esc(c.state)}</span></td>
+        <td class="mono">${c.pid || "—"}</td><td class="mono">${c.restarts}</td>
+        <td class="note">${esc(c.last_error || "")}</td></tr>`).join("")
+    || '<tr><td colspan="5" class="note">No supervised children.</td></tr>';
+
+  const sb = status.body.sandbox;
+  if (sb) {
+    const active = (sb.active_layers || []).map(l => `<span class="pill ok">${esc(l)}</span>`).join(" ");
+    const off = (sb.inactive_layers || [])
+      .map(l => `<span class="pill warn" title="${esc(l.reason)}">${esc(l.layer)} off</span>`).join(" ");
+    $("sandbox").innerHTML = `${active} ${off}` || "—";
+    $("sandbox-statement").textContent = sb.statement || "";
+  }
+
+  $("workspaces").innerHTML = (Array.isArray(ws.body) ? ws.body : []).map(w => `
+    <tr><td class="mono">${esc(w.id)}</td><td>${esc(w.name)}</td>
+        <td class="mono note">${esc(w.root)}</td></tr>`).join("")
+    || '<tr><td colspan="3" class="note">No workspaces yet. Run <code>le workspace init</code> in a repository.</td></tr>';
+}
+
+refresh();
+setInterval(refresh, 5000);
+</script>

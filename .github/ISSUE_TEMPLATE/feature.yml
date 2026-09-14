@@ -1,0 +1,53 @@
+name: Feature request
+description: Propose a capability this project does not have
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Architectural changes need a decision record in `docs/adr/` using the
+        seven-point format. If you are proposing one, this issue is the right
+        place to discuss it before writing the record.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: >-
+        What can you not do today? Describe the situation, not the solution —
+        a good problem statement often has a cheaper solution than the one
+        that prompted it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed approach
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Including "do nothing" and why it is not enough.
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: >-
+        Measurements, a paper, a reproduction, or experience from another
+        project. Proposals decided by measurement (retrieval changes, storage
+        backends, model routing) need evidence before they are accepted.
+
+  - type: checkboxes
+    id: tradeoffs
+    attributes:
+      label: Trade-offs
+      options:
+        - label: This adds a new runtime dependency
+        - label: This widens the trust boundary
+        - label: This changes on-disk format or schema
+        - label: This contradicts an existing decision record

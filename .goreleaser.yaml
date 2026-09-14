@@ -1,0 +1,122 @@
+# GoReleaser configuration (design v3 §1.2): reproducible builds, checksums,
+# Sigstore signatures, SBOMs, and a changelog generated from Conventional
+# Commits.
+version: 2
+
+project_name: local-engineer
+
+before:
+  hooks:
+    - go mod tidy
+    - go mod verify
+    # The isolation rule is a release gate, not only a PR gate.
+    - go run ./tools/analyzers/storescope/cmd/storescope ./...
+
+builds:
+  - id: le
+    main: ./cmd/le
+    binary: le
+    env:
+      # Pure Go: no cgo, so every target cross-compiles from one runner and the
+      # binaries are static.
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/akynte/local-engineer/internal/version.Version={{.Version}}
+      - -X github.com/akynte/local-engineer/internal/version.Commit={{.FullCommit}}
+      - -X github.com/akynte/local-engineer/internal/version.Date={{.CommitDate}}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ if eq .Arch "amd64" }}x86_64{{ else }}{{ .Arch }}{{ end }}
+    files:
+      - README.md
+      - LICENSE
+      - NOTICE
+      - CHANGELOG.md
+      - src: profiles/*.yaml
+        dst: profiles
+      - src: deploy/docker-compose*.yml
+        dst: deploy
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+sboms:
+  - id: archive
+    artifacts: archive
+    documents:
+      - "{{ .ArtifactName }}.spdx.sbom.json"
+
+signs:
+  # Keyless Sigstore signing over the checksum file: one signature covers every
+  # artifact, and the certificate binds it to this repository's release
+  # workflow.
+  - cmd: cosign
+    certificate: "${artifact}.pem"
+    args:
+      - sign-blob
+      - "--output-certificate=${certificate}"
+      - "--output-signature=${signature}"
+      - "${artifact}"
+      - --yes
+    artifacts: checksum
+    output: true
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  use: github
+  sort: asc
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\(.+\))??!?:.+$'
+      order: 0
+    - title: Fixes
+      regexp: '^.*?fix(\(.+\))??!?:.+$'
+      order: 1
+    - title: Performance
+      regexp: '^.*?perf(\(.+\))??!?:.+$'
+      order: 2
+    - title: Documentation
+      regexp: '^.*?docs(\(.+\))??!?:.+$'
+      order: 3
+    - title: Other
+      order: 99
+  filters:
+    exclude:
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+      - "^style:"
+      - Merge pull request
+      - Merge branch
+
+release:
+  draft: false
+  prerelease: auto
+  footer: |
+    ## Verifying this release
+
+    ```bash
+    cosign verify-blob \
+      --certificate checksums.txt.pem \
+      --signature checksums.txt.sig \
+      --certificate-identity-regexp 'https://github.com/akynte/local-engineer/.github/workflows/release.yml@.*' \
+      --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+      checksums.txt
+    ```
+
+    Full instructions: [docs/how-to/verify-a-release.md](https://github.com/akynte/local-engineer/blob/main/docs/how-to/verify-a-release.md)
+
+    Container images are published separately by the image workflow, with SBOM
+    and provenance attached. Pin by digest, not by tag.

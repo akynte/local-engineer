@@ -1,0 +1,18 @@
+# No embedded inference server (design v3 §9.2): the operator runs vLLM,
+# SGLang, Ollama, LM Studio or a llama-server elsewhere and points
+# providers.yaml at it. Set `inference.mode: external` in le.yaml.
+name: external-inference
+description: >-
+  Inference runs outside this container. Limits come from the external
+  model, so set context_tokens to match it.
+context_tokens: 32768
+max_packet_tokens: 12000
+reserved_output_tokens: 8192
+max_tools_exposed: 12
+max_concurrent_tasks: 2
+sampling:
+  temperature: 0.2
+  top_p: 0.95
+  top_k: 40
+  min_p: 0.05
+thinking_policy: auto

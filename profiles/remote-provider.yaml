@@ -1,0 +1,17 @@
+# A remote provider (design v3 §9.2). The offline lanes are disabled by this
+# choice: set `offline: false` in le.yaml, and be aware that repository content
+# leaves this machine. Everything else in the system is unchanged.
+name: remote-provider
+description: >-
+  A hosted model. Offline lanes are disabled and repository content leaves the
+  machine; the isolation guarantees of §6.2 cover the host and other
+  workspaces, not the provider.
+context_tokens: 200000
+max_packet_tokens: 60000
+reserved_output_tokens: 16000
+max_tools_exposed: 20
+max_concurrent_tasks: 4
+sampling:
+  temperature: 0.2
+  top_p: 0.95
+thinking_policy: auto

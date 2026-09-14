@@ -1,0 +1,18 @@
+# Default owner for everything.
+*                           @akynte
+
+# The isolation contract, the storage layer and the sandbox are the invariants
+# the rest of the system rests on. Changes here always get a maintainer review.
+/internal/store/            @akynte
+/internal/workspace/        @akynte
+/internal/sandbox/          @akynte
+/internal/ledger/           @akynte
+/tools/analyzers/           @akynte
+
+# Decision records are the project's memory; superseding one is a deliberate act.
+/docs/adr/                  @akynte
+
+# Anything that affects what ships in an image or how a release is signed.
+/deploy/                    @akynte
+/.github/workflows/         @akynte
+/.goreleaser.yaml           @akynte

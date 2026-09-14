@@ -1,0 +1,93 @@
+# The conventional multi-container layout (design v3 §4.3).
+#
+# DR-1 chose a single container and stated the trade-off plainly: several
+# processes under one PID 1 reduce orchestrator visibility. This file is the
+# alternative that trade-off promised, and it is maintained and tested so the
+# promise is real.
+#
+#   docker compose -f deploy/docker-compose.split.yml up -d
+#
+# The supervisor's child management sits behind an interface, so running
+# llama-server in its own container is a configuration change only: the
+# supervisor sets inference.mode to external and talks to it over HTTP.
+services:
+  inference:
+    image: ${LE_LLAMA_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda}
+    container_name: le-inference
+    restart: unless-stopped
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --model
+      - /models/${LE_MODEL:?set LE_MODEL to a GGUF filename under the models volume}
+      - --ctx-size
+      - "${LE_CTX:-32768}"
+      - --n-gpu-layers
+      - "999"
+      - --flash-attn
+      - "on"
+      - --slots
+    volumes:
+      - le-models:/models:ro
+    # Not published to the host: only the supervisor needs to reach it.
+    expose: ["8080"]
+    networks: [le]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 5s
+      start_period: 300s
+      retries: 30
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  supervisor:
+    image: ${LE_IMAGE:-ghcr.io/akynte/local-engineer:latest}
+    container_name: le-supervisor
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 40s
+    depends_on:
+      inference:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:7777:7777"
+    volumes:
+      - le-data:/data
+      - ${LE_WORK:-${HOME}/code}:/work
+    environment:
+      LE_DATA: /data
+      LE_API_ADDR: 0.0.0.0:7777
+      LE_PROFILE: external-inference
+      # The supervisor writes this into le.yaml on first start; afterwards the
+      # file wins, so edit /data/config/le.yaml to change it.
+      LE_INFERENCE_MODE: external
+      LE_INFERENCE_BASE_URL: http://inference:8080
+    user: "10001:10001"
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    networks: [le]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:7777/readyz"]
+      interval: 15s
+      timeout: 5s
+      start_period: 60s
+      retries: 4
+
+networks:
+  le:
+    driver: bridge
+
+volumes:
+  le-data:
+    name: le-data-split
+  le-models:
+    name: le-models
