@@ -1,0 +1,1569 @@
+{
+  "arms": [
+    {
+      "arm": "unsupervised",
+      "solved": {
+        "successes": 11,
+        "total": 15,
+        "value": 0.7333333333333333,
+        "ci_low": 0.4804911034231324,
+        "ci_high": 0.8910272389681718
+      },
+      "false_accept": {
+        "successes": 4,
+        "total": 15,
+        "value": 0.26666666666666666,
+        "ci_low": 0.1089727610318281,
+        "ci_high": 0.5195088965768675
+      },
+      "missed_success": {
+        "successes": 0,
+        "total": 15,
+        "value": 0,
+        "ci_low": 0,
+        "ci_high": 0.20388926630434784
+      },
+      "tampered": {
+        "successes": 0,
+        "total": 15,
+        "value": 0,
+        "ci_low": 0,
+        "ci_high": 0.20388926630434784
+      },
+      "errored": 0,
+      "median_duration": 71354474605,
+      "median_attempts": 1,
+      "total_tokens": 631874,
+      "by_category": {
+        "api_change": {
+          "successes": 1,
+          "total": 5,
+          "value": 0.2,
+          "ci_low": 0.03622316096978745,
+          "ci_high": 0.6244717358814611
+        },
+        "bug_fix": {
+          "successes": 5,
+          "total": 5,
+          "value": 1,
+          "ci_low": 0.565508505247919,
+          "ci_high": 1
+        },
+        "refactor": {
+          "successes": 5,
+          "total": 5,
+          "value": 1,
+          "ci_low": 0.565508505247919,
+          "ci_high": 1
+        }
+      }
+    },
+    {
+      "arm": "supervised",
+      "solved": {
+        "successes": 14,
+        "total": 15,
+        "value": 0.9333333333333333,
+        "ci_low": 0.7018292244757601,
+        "ci_high": 0.9881334113938051
+      },
+      "false_accept": {
+        "successes": 1,
+        "total": 15,
+        "value": 0.06666666666666667,
+        "ci_low": 0.011866588606194856,
+        "ci_high": 0.2981707755242399
+      },
+      "missed_success": {
+        "successes": 0,
+        "total": 15,
+        "value": 0,
+        "ci_low": 0,
+        "ci_high": 0.20388926630434784
+      },
+      "tampered": {
+        "successes": 0,
+        "total": 15,
+        "value": 0,
+        "ci_low": 0,
+        "ci_high": 0.20388926630434784
+      },
+      "errored": 0,
+      "median_duration": 38807200721,
+      "median_attempts": 1,
+      "total_tokens": 397034,
+      "by_category": {
+        "api_change": {
+          "successes": 4,
+          "total": 5,
+          "value": 0.8,
+          "ci_low": 0.37552826411853885,
+          "ci_high": 0.9637768390302124
+        },
+        "bug_fix": {
+          "successes": 5,
+          "total": 5,
+          "value": 1,
+          "ci_low": 0.565508505247919,
+          "ci_high": 1
+        },
+        "refactor": {
+          "successes": 5,
+          "total": 5,
+          "value": 1,
+          "ci_low": 0.565508505247919,
+          "ci_high": 1
+        }
+      }
+    },
+    {
+      "arm": "supervised-no-graph",
+      "solved": {
+        "successes": 14,
+        "total": 15,
+        "value": 0.9333333333333333,
+        "ci_low": 0.7018292244757601,
+        "ci_high": 0.9881334113938051
+      },
+      "false_accept": {
+        "successes": 1,
+        "total": 15,
+        "value": 0.06666666666666667,
+        "ci_low": 0.011866588606194856,
+        "ci_high": 0.2981707755242399
+      },
+      "missed_success": {
+        "successes": 0,
+        "total": 15,
+        "value": 0,
+        "ci_low": 0,
+        "ci_high": 0.20388926630434784
+      },
+      "tampered": {
+        "successes": 0,
+        "total": 15,
+        "value": 0,
+        "ci_low": 0,
+        "ci_high": 0.20388926630434784
+      },
+      "errored": 0,
+      "median_duration": 42017910581,
+      "median_attempts": 1,
+      "total_tokens": 275213,
+      "by_category": {
+        "api_change": {
+          "successes": 4,
+          "total": 5,
+          "value": 0.8,
+          "ci_low": 0.37552826411853885,
+          "ci_high": 0.9637768390302124
+        },
+        "bug_fix": {
+          "successes": 5,
+          "total": 5,
+          "value": 1,
+          "ci_low": 0.565508505247919,
+          "ci_high": 1
+        },
+        "refactor": {
+          "successes": 5,
+          "total": 5,
+          "value": 1,
+          "ci_low": 0.565508505247919,
+          "ci_high": 1
+        }
+      }
+    },
+    {
+      "arm": "supervised-no-verification",
+      "solved": {
+        "successes": 14,
+        "total": 15,
+        "value": 0.9333333333333333,
+        "ci_low": 0.7018292244757601,
+        "ci_high": 0.9881334113938051
+      },
+      "false_accept": {
+        "successes": 1,
+        "total": 15,
+        "value": 0.06666666666666667,
+        "ci_low": 0.011866588606194856,
+        "ci_high": 0.2981707755242399
+      },
+      "missed_success": {
+        "successes": 0,
+        "total": 15,
+        "value": 0,
+        "ci_low": 0,
+        "ci_high": 0.20388926630434784
+      },
+      "tampered": {
+        "successes": 0,
+        "total": 15,
+        "value": 0,
+        "ci_low": 0,
+        "ci_high": 0.20388926630434784
+      },
+      "errored": 0,
+      "median_duration": 46205893663,
+      "median_attempts": 1,
+      "total_tokens": 397807,
+      "by_category": {
+        "api_change": {
+          "successes": 4,
+          "total": 5,
+          "value": 0.8,
+          "ci_low": 0.37552826411853885,
+          "ci_high": 0.9637768390302124
+        },
+        "bug_fix": {
+          "successes": 5,
+          "total": 5,
+          "value": 1,
+          "ci_low": 0.565508505247919,
+          "ci_high": 1
+        },
+        "refactor": {
+          "successes": 5,
+          "total": 5,
+          "value": 1,
+          "ci_low": 0.565508505247919,
+          "ci_high": 1
+        }
+      }
+    }
+  ],
+  "comparisons": [
+    {
+      "question": "Does the harness beat the same model driven directly?",
+      "baseline": "unsupervised",
+      "variant": "supervised",
+      "what_it_isolates": "the whole pipeline: retrieval, the graph, and the verification loop together",
+      "baseline_rate": {
+        "successes": 11,
+        "total": 15,
+        "value": 0.7333333333333333,
+        "ci_low": 0.4804911034231324,
+        "ci_high": 0.8910272389681718
+      },
+      "variant_rate": {
+        "successes": 14,
+        "total": 15,
+        "value": 0.9333333333333333,
+        "ci_low": 0.7018292244757601,
+        "ci_high": 0.9881334113938051
+      },
+      "delta": 0.20000000000000007,
+      "significant": false,
+      "verdict": "no detectable difference (20-point gap, intervals overlap; this set is too small to tell)"
+    },
+    {
+      "question": "Does the code graph contribute anything beyond lexical search?",
+      "baseline": "supervised-no-graph",
+      "variant": "supervised",
+      "what_it_isolates": "graph expansion and impact analysis, with everything else held constant",
+      "baseline_rate": {
+        "successes": 14,
+        "total": 15,
+        "value": 0.9333333333333333,
+        "ci_low": 0.7018292244757601,
+        "ci_high": 0.9881334113938051
+      },
+      "variant_rate": {
+        "successes": 14,
+        "total": 15,
+        "value": 0.9333333333333333,
+        "ci_low": 0.7018292244757601,
+        "ci_high": 0.9881334113938051
+      },
+      "delta": 0,
+      "significant": false,
+      "verdict": "no detectable difference (0-point gap, intervals overlap; this set is too small to tell)"
+    },
+    {
+      "question": "Does the verification loop contribute?",
+      "baseline": "supervised-no-verification",
+      "variant": "supervised",
+      "what_it_isolates": "the compiler-and-test correction signal, with everything else held constant",
+      "baseline_rate": {
+        "successes": 14,
+        "total": 15,
+        "value": 0.9333333333333333,
+        "ci_low": 0.7018292244757601,
+        "ci_high": 0.9881334113938051
+      },
+      "variant_rate": {
+        "successes": 14,
+        "total": 15,
+        "value": 0.9333333333333333,
+        "ci_low": 0.7018292244757601,
+        "ci_high": 0.9881334113938051
+      },
+      "delta": 0,
+      "significant": false,
+      "verdict": "no detectable difference (0-point gap, intervals overlap; this set is too small to tell)"
+    }
+  ],
+  "task_count": 3,
+  "leak_mix": {
+    "none": 3
+  },
+  "caveats": [
+    "4 of 12 task/arm cells changed verdict between passes. The set was run 5 times; a cell that disagrees with itself is not evidence about an arm, and comparisons drawn across arms are weaker than the intervals alone suggest.",
+    "The task set has 3 tasks. Confidence intervals at this size are wide enough that only large differences are detectable; treat every rate as indicative.",
+    "unsupervised claimed success and was wrong on 4 run(s) (27% [11–52%] (4/15)). A solved rate should never be read without this number beside it.",
+    "supervised claimed success and was wrong on 1 run(s) (7% [1–30%] (1/15)). A solved rate should never be read without this number beside it.",
+    "supervised-no-graph claimed success and was wrong on 1 run(s) (7% [1–30%] (1/15)). A solved rate should never be read without this number beside it.",
+    "supervised-no-verification claimed success and was wrong on 1 run(s) (7% [1–30%] (1/15)). A solved rate should never be read without this number beside it."
+  ],
+  "ran_at": "2026-09-14T19:56:14.70146387Z",
+  "outcomes": [
+    {
+      "task_id": "config-rename-001",
+      "category": "refactor",
+      "arm": "unsupervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 1,
+      "attempts": 1,
+      "duration": 48585621233,
+      "tokens_used": 14438,
+      "diff_bytes": 1027,
+      "files_touched": 3,
+      "reasons": [
+        "the model reported completion; no verification was run"
+      ]
+    },
+    {
+      "task_id": "nil-deref-001",
+      "category": "bug_fix",
+      "arm": "unsupervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 1,
+      "attempts": 2,
+      "duration": 198448482727,
+      "tokens_used": 89739,
+      "diff_bytes": 1166,
+      "files_touched": 2,
+      "reasons": [
+        "the model reported completion; no verification was run"
+      ]
+    },
+    {
+      "task_id": "signature-change-001",
+      "category": "api_change",
+      "arm": "unsupervised",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": true,
+      "false_accept": true,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 1,
+      "attempts": 1,
+      "duration": 71354474605,
+      "tokens_used": 19074,
+      "diff_bytes": 2838,
+      "files_touched": 4,
+      "reasons": [
+        "the model reported completion; no verification was run"
+      ],
+      "acceptance_output": "?   \texample.com/billing/internal/api\t[no test files]\n--- FAIL: TestTotalTakesAndReturnsCurrency (0.00s)\n    hidden_acceptance_test.go:19: the second argument should be a currency code string, got []billing.Line\nFAIL\nFAIL\texample.com/billing/internal/billing\t0.001s\n?   \texample.com/billing/internal/report\t[no test files]\nFAIL\n"
+    },
+    {
+      "task_id": "config-rename-001",
+      "category": "refactor",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 1,
+      "attempts": 1,
+      "duration": 30090077604,
+      "tokens_used": 10981,
+      "diff_bytes": 1027,
+      "files_touched": 3,
+      "reasons": [
+        "build passed: compiles"
+      ]
+    },
+    {
+      "task_id": "nil-deref-001",
+      "category": "bug_fix",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 1,
+      "attempts": 1,
+      "duration": 31222781815,
+      "tokens_used": 12709,
+      "diff_bytes": 447,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 1 package(s) passed"
+      ]
+    },
+    {
+      "task_id": "signature-change-001",
+      "category": "api_change",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 1,
+      "attempts": 1,
+      "duration": 84930509113,
+      "tokens_used": 43452,
+      "diff_bytes": 2103,
+      "files_touched": 4,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 1 package(s) passed"
+      ]
+    },
+    {
+      "task_id": "config-rename-001",
+      "category": "refactor",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 1,
+      "attempts": 1,
+      "duration": 29071156089,
+      "tokens_used": 10026,
+      "diff_bytes": 1027,
+      "files_touched": 3,
+      "reasons": [
+        "build passed: compiles"
+      ]
+    },
+    {
+      "task_id": "nil-deref-001",
+      "category": "bug_fix",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 1,
+      "attempts": 1,
+      "duration": 41823388427,
+      "tokens_used": 18151,
+      "diff_bytes": 633,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 1 package(s) passed"
+      ]
+    },
+    {
+      "task_id": "signature-change-001",
+      "category": "api_change",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 1,
+      "attempts": 1,
+      "duration": 87396228954,
+      "tokens_used": 24277,
+      "diff_bytes": 2270,
+      "files_touched": 4,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 1 package(s) passed"
+      ]
+    },
+    {
+      "task_id": "config-rename-001",
+      "category": "refactor",
+      "arm": "supervised-no-verification",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 1,
+      "attempts": 1,
+      "duration": 29479131238,
+      "tokens_used": 13285,
+      "diff_bytes": 1027,
+      "files_touched": 3,
+      "reasons": [
+        "build passed: compiles"
+      ]
+    },
+    {
+      "task_id": "nil-deref-001",
+      "category": "bug_fix",
+      "arm": "supervised-no-verification",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 1,
+      "attempts": 1,
+      "duration": 46205893663,
+      "tokens_used": 22676,
+      "diff_bytes": 633,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles"
+      ]
+    },
+    {
+      "task_id": "signature-change-001",
+      "category": "api_change",
+      "arm": "supervised-no-verification",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 1,
+      "attempts": 1,
+      "duration": 78306574692,
+      "tokens_used": 38954,
+      "diff_bytes": 2260,
+      "files_touched": 4,
+      "reasons": [
+        "build passed: compiles"
+      ]
+    },
+    {
+      "task_id": "config-rename-001",
+      "category": "refactor",
+      "arm": "unsupervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 2,
+      "attempts": 1,
+      "duration": 44641171009,
+      "tokens_used": 14595,
+      "diff_bytes": 1027,
+      "files_touched": 3,
+      "reasons": [
+        "the model reported completion; no verification was run"
+      ]
+    },
+    {
+      "task_id": "nil-deref-001",
+      "category": "bug_fix",
+      "arm": "unsupervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 2,
+      "attempts": 1,
+      "duration": 57452315893,
+      "tokens_used": 20047,
+      "diff_bytes": 1166,
+      "files_touched": 2,
+      "reasons": [
+        "the model reported completion; no verification was run"
+      ]
+    },
+    {
+      "task_id": "signature-change-001",
+      "category": "api_change",
+      "arm": "unsupervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 2,
+      "attempts": 1,
+      "duration": 70047195633,
+      "tokens_used": 27119,
+      "diff_bytes": 2274,
+      "files_touched": 4,
+      "reasons": [
+        "the model reported completion; no verification was run"
+      ]
+    },
+    {
+      "task_id": "config-rename-001",
+      "category": "refactor",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 2,
+      "attempts": 1,
+      "duration": 27507402988,
+      "tokens_used": 13209,
+      "diff_bytes": 1027,
+      "files_touched": 3,
+      "reasons": [
+        "build passed: compiles"
+      ]
+    },
+    {
+      "task_id": "nil-deref-001",
+      "category": "bug_fix",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 2,
+      "attempts": 1,
+      "duration": 54719932960,
+      "tokens_used": 26504,
+      "diff_bytes": 1004,
+      "files_touched": 2,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 1 package(s) passed"
+      ]
+    },
+    {
+      "task_id": "signature-change-001",
+      "category": "api_change",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 2,
+      "attempts": 1,
+      "duration": 100404607879,
+      "tokens_used": 48397,
+      "diff_bytes": 2600,
+      "files_touched": 4,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 1 package(s) passed"
+      ]
+    },
+    {
+      "task_id": "config-rename-001",
+      "category": "refactor",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 2,
+      "attempts": 1,
+      "duration": 39888514394,
+      "tokens_used": 15136,
+      "diff_bytes": 1027,
+      "files_touched": 3,
+      "reasons": [
+        "build passed: compiles"
+      ]
+    },
+    {
+      "task_id": "nil-deref-001",
+      "category": "bug_fix",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 2,
+      "attempts": 1,
+      "duration": 36023401576,
+      "tokens_used": 14793,
+      "diff_bytes": 633,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 1 package(s) passed"
+      ]
+    },
+    {
+      "task_id": "signature-change-001",
+      "category": "api_change",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 2,
+      "attempts": 1,
+      "duration": 65141119081,
+      "tokens_used": 16463,
+      "diff_bytes": 2236,
+      "files_touched": 4,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 1 package(s) passed"
+      ]
+    },
+    {
+      "task_id": "config-rename-001",
+      "category": "refactor",
+      "arm": "supervised-no-verification",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 2,
+      "attempts": 1,
+      "duration": 32966765701,
+      "tokens_used": 13408,
+      "diff_bytes": 1027,
+      "files_touched": 3,
+      "reasons": [
+        "build passed: compiles"
+      ]
+    },
+    {
+      "task_id": "nil-deref-001",
+      "category": "bug_fix",
+      "arm": "supervised-no-verification",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 2,
+      "attempts": 1,
+      "duration": 35283323946,
+      "tokens_used": 16077,
+      "diff_bytes": 447,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles"
+      ]
+    },
+    {
+      "task_id": "signature-change-001",
+      "category": "api_change",
+      "arm": "supervised-no-verification",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 2,
+      "attempts": 1,
+      "duration": 82866391965,
+      "tokens_used": 38206,
+      "diff_bytes": 2087,
+      "files_touched": 4,
+      "reasons": [
+        "build passed: compiles"
+      ]
+    },
+    {
+      "task_id": "config-rename-001",
+      "category": "refactor",
+      "arm": "unsupervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 3,
+      "attempts": 1,
+      "duration": 37780543165,
+      "tokens_used": 11837,
+      "diff_bytes": 1027,
+      "files_touched": 3,
+      "reasons": [
+        "the model reported completion; no verification was run"
+      ]
+    },
+    {
+      "task_id": "nil-deref-001",
+      "category": "bug_fix",
+      "arm": "unsupervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 3,
+      "attempts": 2,
+      "duration": 149766459006,
+      "tokens_used": 69992,
+      "diff_bytes": 1089,
+      "files_touched": 2,
+      "reasons": [
+        "the model reported completion; no verification was run"
+      ]
+    },
+    {
+      "task_id": "signature-change-001",
+      "category": "api_change",
+      "arm": "unsupervised",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": true,
+      "false_accept": true,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 3,
+      "attempts": 1,
+      "duration": 82581032124,
+      "tokens_used": 27759,
+      "diff_bytes": 2595,
+      "files_touched": 4,
+      "reasons": [
+        "the model reported completion; no verification was run"
+      ],
+      "acceptance_output": "?   \texample.com/billing/internal/api\t[no test files]\n--- FAIL: TestTotalTakesAndReturnsCurrency (0.00s)\n    hidden_acceptance_test.go:19: the second argument should be a currency code string, got []billing.Line\nFAIL\nFAIL\texample.com/billing/internal/billing\t0.002s\n?   \texample.com/billing/internal/report\t[no test files]\nFAIL\n"
+    },
+    {
+      "task_id": "config-rename-001",
+      "category": "refactor",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 3,
+      "attempts": 1,
+      "duration": 31458244747,
+      "tokens_used": 11061,
+      "diff_bytes": 1027,
+      "files_touched": 3,
+      "reasons": [
+        "build passed: compiles"
+      ]
+    },
+    {
+      "task_id": "nil-deref-001",
+      "category": "bug_fix",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 3,
+      "attempts": 1,
+      "duration": 32080497303,
+      "tokens_used": 15990,
+      "diff_bytes": 447,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 1 package(s) passed"
+      ]
+    },
+    {
+      "task_id": "signature-change-001",
+      "category": "api_change",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 3,
+      "attempts": 1,
+      "duration": 115285821675,
+      "tokens_used": 47191,
+      "diff_bytes": 2538,
+      "files_touched": 4,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 1 package(s) passed"
+      ]
+    },
+    {
+      "task_id": "config-rename-001",
+      "category": "refactor",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 3,
+      "attempts": 1,
+      "duration": 26577137269,
+      "tokens_used": 9932,
+      "diff_bytes": 1027,
+      "files_touched": 3,
+      "reasons": [
+        "build passed: compiles"
+      ]
+    },
+    {
+      "task_id": "nil-deref-001",
+      "category": "bug_fix",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 3,
+      "attempts": 1,
+      "duration": 48193455160,
+      "tokens_used": 19908,
+      "diff_bytes": 1115,
+      "files_touched": 2,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 1 package(s) passed"
+      ]
+    },
+    {
+      "task_id": "signature-change-001",
+      "category": "api_change",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": true,
+      "false_accept": true,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 3,
+      "attempts": 1,
+      "duration": 66791643686,
+      "tokens_used": 17069,
+      "diff_bytes": 2351,
+      "files_touched": 4,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 1 package(s) passed"
+      ],
+      "acceptance_output": "?   \texample.com/billing/internal/api\t[no test files]\n--- FAIL: TestTotalTakesAndReturnsCurrency (0.00s)\n    hidden_acceptance_test.go:19: the second argument should be a currency code string, got []billing.Line\nFAIL\nFAIL\texample.com/billing/internal/billing\t0.002s\n?   \texample.com/billing/internal/report\t[no test files]\nFAIL\n"
+    },
+    {
+      "task_id": "config-rename-001",
+      "category": "refactor",
+      "arm": "supervised-no-verification",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 3,
+      "attempts": 1,
+      "duration": 27487891723,
+      "tokens_used": 13210,
+      "diff_bytes": 1027,
+      "files_touched": 3,
+      "reasons": [
+        "build passed: compiles"
+      ]
+    },
+    {
+      "task_id": "nil-deref-001",
+      "category": "bug_fix",
+      "arm": "supervised-no-verification",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 3,
+      "attempts": 1,
+      "duration": 37807073207,
+      "tokens_used": 18884,
+      "diff_bytes": 633,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles"
+      ]
+    },
+    {
+      "task_id": "signature-change-001",
+      "category": "api_change",
+      "arm": "supervised-no-verification",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 3,
+      "attempts": 1,
+      "duration": 79712668173,
+      "tokens_used": 28301,
+      "diff_bytes": 2532,
+      "files_touched": 4,
+      "reasons": [
+        "build passed: compiles"
+      ]
+    },
+    {
+      "task_id": "config-rename-001",
+      "category": "refactor",
+      "arm": "unsupervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 4,
+      "attempts": 1,
+      "duration": 39677024427,
+      "tokens_used": 11579,
+      "diff_bytes": 1027,
+      "files_touched": 3,
+      "reasons": [
+        "the model reported completion; no verification was run"
+      ]
+    },
+    {
+      "task_id": "nil-deref-001",
+      "category": "bug_fix",
+      "arm": "unsupervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 4,
+      "attempts": 2,
+      "duration": 211228015425,
+      "tokens_used": 87416,
+      "diff_bytes": 1345,
+      "files_touched": 2,
+      "reasons": [
+        "the model reported completion; no verification was run"
+      ]
+    },
+    {
+      "task_id": "signature-change-001",
+      "category": "api_change",
+      "arm": "unsupervised",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": true,
+      "false_accept": true,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 4,
+      "attempts": 2,
+      "duration": 154833936030,
+      "tokens_used": 74585,
+      "diff_bytes": 3027,
+      "files_touched": 5,
+      "reasons": [
+        "the model reported completion; no verification was run"
+      ],
+      "acceptance_output": "?   \texample.com/billing/internal/api\t[no test files]\n--- FAIL: TestTotalTakesAndReturnsCurrency (0.00s)\n    hidden_acceptance_test.go:19: the second argument should be a currency code string, got []billing.Line\nFAIL\nFAIL\texample.com/billing/internal/billing\t0.001s\n?   \texample.com/billing/internal/report\t[no test files]\nFAIL\n"
+    },
+    {
+      "task_id": "config-rename-001",
+      "category": "refactor",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 4,
+      "attempts": 1,
+      "duration": 37051672364,
+      "tokens_used": 11261,
+      "diff_bytes": 1027,
+      "files_touched": 3,
+      "reasons": [
+        "build passed: compiles"
+      ]
+    },
+    {
+      "task_id": "nil-deref-001",
+      "category": "bug_fix",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 4,
+      "attempts": 1,
+      "duration": 30295055408,
+      "tokens_used": 12666,
+      "diff_bytes": 447,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 1 package(s) passed"
+      ]
+    },
+    {
+      "task_id": "signature-change-001",
+      "category": "api_change",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 4,
+      "attempts": 1,
+      "duration": 124880339142,
+      "tokens_used": 38470,
+      "diff_bytes": 2737,
+      "files_touched": 4,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 1 package(s) passed"
+      ]
+    },
+    {
+      "task_id": "config-rename-001",
+      "category": "refactor",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 4,
+      "attempts": 1,
+      "duration": 29954529509,
+      "tokens_used": 10081,
+      "diff_bytes": 1027,
+      "files_touched": 3,
+      "reasons": [
+        "build passed: compiles"
+      ]
+    },
+    {
+      "task_id": "nil-deref-001",
+      "category": "bug_fix",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 4,
+      "attempts": 1,
+      "duration": 42017910581,
+      "tokens_used": 20926,
+      "diff_bytes": 633,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 1 package(s) passed"
+      ]
+    },
+    {
+      "task_id": "signature-change-001",
+      "category": "api_change",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 4,
+      "attempts": 1,
+      "duration": 86150203927,
+      "tokens_used": 31180,
+      "diff_bytes": 1975,
+      "files_touched": 4,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 1 package(s) passed"
+      ]
+    },
+    {
+      "task_id": "config-rename-001",
+      "category": "refactor",
+      "arm": "supervised-no-verification",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 4,
+      "attempts": 1,
+      "duration": 65411827894,
+      "tokens_used": 35990,
+      "diff_bytes": 1027,
+      "files_touched": 3,
+      "reasons": [
+        "build passed: compiles"
+      ]
+    },
+    {
+      "task_id": "nil-deref-001",
+      "category": "bug_fix",
+      "arm": "supervised-no-verification",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 4,
+      "attempts": 1,
+      "duration": 30576488540,
+      "tokens_used": 12665,
+      "diff_bytes": 447,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles"
+      ]
+    },
+    {
+      "task_id": "signature-change-001",
+      "category": "api_change",
+      "arm": "supervised-no-verification",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": true,
+      "false_accept": true,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 4,
+      "attempts": 1,
+      "duration": 54764934455,
+      "tokens_used": 25522,
+      "diff_bytes": 2169,
+      "files_touched": 4,
+      "reasons": [
+        "build passed: compiles"
+      ],
+      "acceptance_output": "?   \texample.com/billing/internal/api\t[no test files]\n--- FAIL: TestTotalTakesAndReturnsCurrency (0.00s)\n    hidden_acceptance_test.go:22: Total should return the amount and the currency; it returns 1 value(s)\nFAIL\nFAIL\texample.com/billing/internal/billing\t0.001s\n?   \texample.com/billing/internal/report\t[no test files]\nFAIL\n"
+    },
+    {
+      "task_id": "config-rename-001",
+      "category": "refactor",
+      "arm": "unsupervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 5,
+      "attempts": 1,
+      "duration": 53619267002,
+      "tokens_used": 17795,
+      "diff_bytes": 1027,
+      "files_touched": 3,
+      "reasons": [
+        "the model reported completion; no verification was run"
+      ]
+    },
+    {
+      "task_id": "nil-deref-001",
+      "category": "bug_fix",
+      "arm": "unsupervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 5,
+      "attempts": 2,
+      "duration": 156193187601,
+      "tokens_used": 73162,
+      "diff_bytes": 1345,
+      "files_touched": 2,
+      "reasons": [
+        "the model reported completion; no verification was run"
+      ]
+    },
+    {
+      "task_id": "signature-change-001",
+      "category": "api_change",
+      "arm": "unsupervised",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": true,
+      "false_accept": true,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 5,
+      "attempts": 2,
+      "duration": 163610004666,
+      "tokens_used": 72737,
+      "diff_bytes": 2829,
+      "files_touched": 4,
+      "reasons": [
+        "the model reported completion; no verification was run"
+      ],
+      "acceptance_output": "?   \texample.com/billing/internal/api\t[no test files]\n--- FAIL: TestTotalTakesAndReturnsCurrency (0.00s)\n    hidden_acceptance_test.go:22: Total should return the amount and the currency; it returns 1 value(s)\nFAIL\nFAIL\texample.com/billing/internal/billing\t0.001s\n?   \texample.com/billing/internal/report\t[no test files]\nFAIL\n"
+    },
+    {
+      "task_id": "config-rename-001",
+      "category": "refactor",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 5,
+      "attempts": 1,
+      "duration": 38807200721,
+      "tokens_used": 17210,
+      "diff_bytes": 1027,
+      "files_touched": 3,
+      "reasons": [
+        "build passed: compiles"
+      ]
+    },
+    {
+      "task_id": "nil-deref-001",
+      "category": "bug_fix",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 5,
+      "attempts": 1,
+      "duration": 54866713068,
+      "tokens_used": 27403,
+      "diff_bytes": 1367,
+      "files_touched": 2,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 1 package(s) passed"
+      ]
+    },
+    {
+      "task_id": "signature-change-001",
+      "category": "api_change",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": true,
+      "false_accept": true,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 5,
+      "attempts": 1,
+      "duration": 132496773368,
+      "tokens_used": 60530,
+      "diff_bytes": 2799,
+      "files_touched": 4,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 1 package(s) passed"
+      ],
+      "acceptance_output": "?   \texample.com/billing/internal/api\t[no test files]\n--- FAIL: TestTotalTakesAndReturnsCurrency (0.00s)\n    hidden_acceptance_test.go:22: Total should return the amount and the currency; it returns 1 value(s)\nFAIL\nFAIL\texample.com/billing/internal/billing\t0.002s\n?   \texample.com/billing/internal/report\t[no test files]\nFAIL\n"
+    },
+    {
+      "task_id": "config-rename-001",
+      "category": "refactor",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 5,
+      "attempts": 1,
+      "duration": 29360494093,
+      "tokens_used": 10034,
+      "diff_bytes": 1027,
+      "files_touched": 3,
+      "reasons": [
+        "build passed: compiles"
+      ]
+    },
+    {
+      "task_id": "nil-deref-001",
+      "category": "bug_fix",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 5,
+      "attempts": 1,
+      "duration": 54684524105,
+      "tokens_used": 25596,
+      "diff_bytes": 1115,
+      "files_touched": 2,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 1 package(s) passed"
+      ]
+    },
+    {
+      "task_id": "signature-change-001",
+      "category": "api_change",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 5,
+      "attempts": 1,
+      "duration": 81421748758,
+      "tokens_used": 31641,
+      "diff_bytes": 2260,
+      "files_touched": 4,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 1 package(s) passed"
+      ]
+    },
+    {
+      "task_id": "config-rename-001",
+      "category": "refactor",
+      "arm": "supervised-no-verification",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 5,
+      "attempts": 1,
+      "duration": 93925368356,
+      "tokens_used": 62202,
+      "diff_bytes": 1027,
+      "files_touched": 3,
+      "reasons": [
+        "build passed: compiles"
+      ]
+    },
+    {
+      "task_id": "nil-deref-001",
+      "category": "bug_fix",
+      "arm": "supervised-no-verification",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 5,
+      "attempts": 1,
+      "duration": 29339156779,
+      "tokens_used": 12489,
+      "diff_bytes": 447,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles"
+      ]
+    },
+    {
+      "task_id": "signature-change-001",
+      "category": "api_change",
+      "arm": "supervised-no-verification",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 5,
+      "attempts": 1,
+      "duration": 101818895438,
+      "tokens_used": 45938,
+      "diff_bytes": 2537,
+      "files_touched": 4,
+      "reasons": [
+        "build passed: compiles"
+      ]
+    }
+  ]
+}

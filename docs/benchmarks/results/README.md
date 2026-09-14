@@ -8,23 +8,36 @@ the model manifest disclosed.
 | File | What it measures |
 |---|---|
 | [`2026-09-14-storage.md`](2026-09-14-storage.md) | Storage and graph latency on the reference laptop |
+| [`2026-09-14-tasks.md`](2026-09-14-tasks.md) | Task success across four arms, 60 runs, local 35B MoE |
 
-## What is not here
+## What the task results do and do not show
 
-**No task-success results.** The evaluation harness is built and tested
-(`internal/eval/`, `evals/tasks/`), and the task set is validated on every CI
-run — but no run against a real model has been done, so there is nothing to
-publish.
+The task-success file is a real run: 3 tasks × 4 arms × 5 passes against a local
+model, with the hidden acceptance tests never in the worktree while a task ran.
 
-This is stated rather than left to inference because the absence is easy to
-misread. A repository containing an evaluation harness looks like a repository
-with evaluation results. It does not have them.
+It settles nothing about the design. **Every arm's confidence interval overlaps
+every other's**, so no comparison in it is statistically detectable, and 4 of the
+12 task/arm cells changed verdict between passes — a cell that disagrees with
+itself has not been measured. Two of the three tasks were solved by every arm on
+every pass, including the baseline with no retrieval, no graph and no
+verification, so they carry no information about the pipeline.
 
-Until a file here says otherwise:
+What it does establish is narrower and worth having:
 
-- the README claims nothing about task success rates,
+- the harness runs end to end against a local model, and the completion contract
+  accepts and rejects on evidence it actually gathered;
+- false acceptance is real and measurable — the unsupervised baseline claimed
+  success on work that failed the hidden test in 4 of 15 runs;
+- the task set is too small and too easy to answer the questions the arms were
+  built to ask, which is a fact about the set, not about the system.
+
+Until a larger set says otherwise:
+
+- the README claims no task-success rate,
 - no comparison against a frontier agent has been made,
-- the graph's contribution has **not** been measured, only made measurable.
+- the graph's contribution is **measurable but not yet measured to a
+  conclusion**: on this set it changed the solved rate by zero points and
+  roughly doubled the tokens spent on the only task that discriminated.
 
 ## What a published result must carry
 

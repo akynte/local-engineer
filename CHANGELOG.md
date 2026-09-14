@@ -10,6 +10,42 @@ Released sections are generated from Conventional Commits at release time.
 
 ### Added
 
+- **First evaluation run against a real model**, published in
+  `docs/benchmarks/results/2026-09-14-tasks.md`: 3 tasks × 4 arms × 5 passes,
+  60 runs against a local 35B-A3B MoE on disclosed hardware, with the model's
+  SHA-256, the llama.cpp build and the server arguments recorded. The run's own
+  conclusion is that the task set cannot discriminate between the arms — every
+  interval overlaps, and two of three tasks are at ceiling for every arm.
+- **`le eval run --repeat N`** and a per-outcome repetition number, because two
+  consecutive identical runs disagreed on 4 of 12 cells. The report now leads
+  with a count of cells that changed verdict, and a single-pass report states
+  that its cells are one sample each — so a missing warning is never read as
+  stability.
+
+### Fixed
+
+- **`le models bench` reported prefill and decode rates an order of magnitude
+  low**, dividing both phases by the same wall clock and counting prompt-cache
+  hits as prefill work. On the reference laptop this read 43 tok/s against a
+  measured ~416. The rates now come from the provider's own per-phase timings,
+  the benchmark prefix carries a per-run nonce so a warm server is not measured
+  instead of the model, and the profile records which of the two produced the
+  numbers.
+- **Budget exhaustion was reported as the model choosing to stop.** A reasoning
+  model that spends its whole output budget thinking returns no content and no
+  tool call; the engine recorded it as a decision. `ChatResponse` now carries
+  the reasoning text and truncation is its own outcome.
+- **Tools were advertised to engines that could not run them**, so an arm built
+  by leaving retrieval or verification unwired was still offered those tools and
+  had every call rejected — charging the baseline for the components it was
+  supposed to be measured without.
+- **The supervised evaluation arms retrieved from an unindexed workspace.** Each
+  run now opens its own workspace, indexes the task copy with the analyzers
+  `le index` uses, and refuses up front rather than reporting a zero.
+- **`diff_bytes` and `tokens_used` were published but never assigned**, so every
+  result carried a zero diff beside a non-zero file count, and every supervised
+  row reported no token cost at all.
+
 - **Workspace identity and isolation contract.** A workspace id derived from
   the canonical root, the git remote and a user-supplied name, pinned in
   `.le/workspace.yaml`, with `le workspace adopt` to re-bind after a move.

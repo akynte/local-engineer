@@ -22,8 +22,13 @@ through a confined tool loop with verification as the correction signal, and
 decides acceptance from evidence alone — then opens a human gate carrying the
 diff and the findings before anything is applied.
 
-**Not implemented**: language analyzers beyond Go, and the evaluation harness.
-No task-success numbers are published, so the README claims none.
+**Not implemented**: language analyzers beyond Go.
+
+The evaluation harness has now been run against a local model — 3 tasks × 4 arms
+× 5 passes, 60 runs, published in `docs/benchmarks/results/`. It settles nothing:
+every arm's interval overlaps every other's and a third of the cells changed
+verdict between passes. The task set is too small and too easy to answer the
+questions the arms were built to ask.
 
 ---
 
@@ -137,16 +142,32 @@ Two things are recorded as deviations rather than done quietly:
 - [x] Task-set validation in CI: acceptance must fail on the untouched fixture,
       and a reference solution must pass
 - [ ] **A run against a real model on disclosed hardware**
-- [ ] Published results
+- [x] Published results — `docs/benchmarks/results/2026-09-14-tasks.md`
 
-**Nothing has been measured yet.** The harness exists and is tested; producing
-numbers needs a local model on disclosed hardware, and that run has not been
-done. Until `docs/benchmarks/results/` contains task-success numbers, the
-README claims none — and the graph's contribution is *measurable*, not
-*measured*.
+**Measured, and the measurement says the task set is not up to the job.** 60 runs
+against a local 35B MoE on disclosed hardware. No comparison is statistically
+detectable; 4 of 12 task/arm cells changed verdict between passes; two of the
+three tasks are solved by every arm on every pass, including the bare baseline.
 
-The distinction matters because a repository containing an evaluation harness
-looks like one with evaluation results.
+Running it for the first time found six defects the test suite could not see,
+three of which corrupted the measurements themselves (conflated prefill/decode
+timing, prompt-cache hits counted as prefill, token totals never summed) and two
+of which would have produced publishable-looking but meaningless numbers: the
+supervised arms retrieved from an unindexed workspace, and every tool was offered
+to arms that could not run it. Fixed with regression tests in `dfaf21b`.
+
+What is genuinely open after the run:
+
+- [ ] A task set large enough to discriminate — 30+ tasks, with fixtures big
+      enough that reading the whole repository is not a strategy
+- [ ] Repetitions as standard, since single-run cells proved unstable
+- [ ] The graph's contribution, still *measurable* rather than *measured*: on
+      this set it added zero points and roughly doubled the tokens spent on the
+      only task that discriminated
+
+The distinction still matters because a repository containing an evaluation
+harness looks like one with evaluation results — and now, one containing
+evaluation results looks like one whose results mean something.
 
 ## Phase 6 — Breadth ⬜ **next**
 

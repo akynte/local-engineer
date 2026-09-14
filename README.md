@@ -9,8 +9,11 @@ and evidence-backed verification.
 > inside a Landlock sandbox, a completion contract decided from evidence, and
 > a human gate carrying the diff before anything is applied.
 >
-> What is **not** done: language analyzers beyond Go, and the evaluation
-> harness. No task-success numbers are published, so this README claims none.
+> What is **not** done: language analyzers beyond Go, and a task set large
+> enough to evaluate against. The harness has been run (60 runs, local 35B MoE,
+> results published) and the run's own conclusion is that the task set cannot
+> answer the questions it was built to ask, so this README claims no success
+> rate.
 > See [ROADMAP.md](ROADMAP.md).
 
 ## What it is
@@ -110,11 +113,17 @@ reports what is *actually* in effect, not what the design hopes for:
   forward-only; `le backup` before every upgrade.
 - **The shipped hardware profiles are starting points, not measurements.** Run
   `le models bench --write` on your own machine; `le doctor` warns until you do.
-- **No task-success numbers exist.** The evaluation harness is built and
-  tested and the task set is validated on every CI run, but no run against a
-  real model has been done — so nothing here claims a success rate, and the
-  code graph's contribution is *measurable*, not *measured*. Storage and graph
-  latency numbers **are** published. See
+- **The published task-success numbers settle nothing.** A real run exists —
+  3 tasks × 4 arms × 5 passes, 60 runs against a local model on disclosed
+  hardware — but every arm's confidence interval overlaps every other's, 4 of
+  the 12 task/arm cells changed verdict between passes, and two of the three
+  tasks are solved by every arm on every pass including the bare baseline. So
+  nothing here claims a success rate, and the code graph's contribution remains
+  *measurable* rather than *measured*: on this set it added zero points and
+  roughly doubled the tokens spent on the only task that discriminated. What
+  the run does show is that false acceptance is real and quantifiable — the
+  unsupervised baseline claimed success on work that failed the hidden test in
+  4 of 15 runs. Storage and graph latency numbers **are** published. See
   [the results directory](docs/benchmarks/results/) for what is and is not
   there.
 - **TypeScript has no analyzer yet.** Go, SQL schemas, Dockerfiles, Makefiles,
