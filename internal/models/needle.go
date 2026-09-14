@@ -39,6 +39,13 @@ func DefaultPlacements() []NeedlePlacement {
 
 // NeedleProbe is one measurement at one size and depth.
 type NeedleProbe struct {
+	// Requested is the size asked for. Kept only so a sweep can be reproduced;
+	// nothing is decided from it.
+	Requested int `json:"requested_tokens"`
+	// PromptTokens is what the provider actually counted. Every verdict uses
+	// this, because a cap derived from an estimate is an estimate wearing a
+	// measurement's clothes — the first run of this test asked for 32,000 and
+	// sent 36,526, a 14% error in the axis the answer is read off.
 	PromptTokens int             `json:"prompt_tokens"`
 	Placement    NeedlePlacement `json:"placement"`
 	Found        bool            `json:"found"`
@@ -51,6 +58,20 @@ type NeedleProbe struct {
 	// Model is what the provider reported, carried so the result names what
 	// was actually measured.
 	Model string `json:"model,omitempty"`
+	// OverContext marks a probe the provider refused because the request was
+	// larger than the window. It is not a recall failure and must never be
+	// read as one: the model was never asked.
+	OverContext bool `json:"over_context,omitempty"`
+}
+
+// tokens is the size this probe should be read off. A provider that reports no
+// usage leaves only the requested figure, which is an estimate; the result
+// records which of the two it is rather than presenting them alike.
+func (p NeedleProbe) tokens() int {
+	if p.PromptTokens > 0 {
+		return p.PromptTokens
+	}
+	return p.Requested
 }
 
 // NeedleResult is the whole sweep.
@@ -61,9 +82,22 @@ type NeedleResult struct {
 	// Zero means even the smallest size tested failed, which is a finding about
 	// the model rather than a missing measurement.
 	RecommendedCap int `json:"recommended_cap"`
-	// LargestTested is the biggest packet actually attempted, so a cap equal to
+	// LargestTested is the biggest packet actually measured, so a cap equal to
 	// it reads as "no ceiling found below this" rather than as a measured limit.
 	LargestTested int `json:"largest_tested"`
+	// CharsPerToken is the ratio measured for this model, kept so a reader can
+	// see the sweep sized its own haystacks rather than guessing.
+	CharsPerToken float64 `json:"chars_per_token,omitempty"`
+	// TokensMeasured records that the sizes above came from the provider's own
+	// count rather than from the estimate used to build the haystacks. A cap
+	// reported without it is a cap in estimated tokens, and the difference has
+	// already been 14% once.
+	TokensMeasured bool `json:"tokens_measured"`
+	// StoppedAtContextLimit records that the sweep ran out of window before it
+	// ran out of recall. The cap is then bounded by the context size, and
+	// saying so is the difference between "the model stops retrieving here" and
+	// "we could not ask it anything larger".
+	StoppedAtContextLimit bool `json:"stopped_at_context_limit,omitempty"`
 }
 
 // NeedleOptions configures the sweep.
@@ -75,6 +109,49 @@ type NeedleOptions struct {
 	// Placements to probe at each size.
 	Placements []NeedlePlacement
 	Progress   func(string)
+}
+
+// DefaultCharsPerToken is the starting estimate, used only until the real ratio
+// is measured. Code tokenises denser than prose, and denser than the 4.0 an
+// English rule of thumb suggests.
+const DefaultCharsPerToken = 3.5
+
+// calibrate measures this tokenizer rather than assuming it.
+//
+// The first version of this test assumed four characters per token, asked for
+// 32,000 and sent 36,526 — a 14% error in the very axis the answer is read off.
+// A cap derived from an estimate is an estimate wearing a measurement's
+// clothes, so the ratio is measured against the same filler the sweep uses.
+func calibrate(ctx context.Context, p llm.Provider) (float64, bool, error) {
+	body := buildHaystack(2000, 0.5, "calibration", DefaultCharsPerToken)
+	temp := 0.0
+	resp, err := p.Chat(ctx, llm.ChatRequest{
+		Messages:  []llm.Message{{Role: "user", Content: body}},
+		MaxTokens: 1, Temperature: &temp, Thinking: "off",
+	})
+	if err != nil {
+		return DefaultCharsPerToken, false, err
+	}
+	if resp.PromptTokens <= 0 {
+		// No count to calibrate against. Say so by returning the default: a
+		// ratio nobody measured must not be presented as one that was.
+		return DefaultCharsPerToken, false, nil
+	}
+	return float64(len(body)) / float64(resp.PromptTokens), true, nil
+}
+
+// isOverContext reports whether a provider refused because the request was
+// larger than the window. That is not a recall failure — the model was never
+// asked — and counting it as one would report a false ceiling.
+func isOverContext(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "exceeds the available context") ||
+		strings.Contains(msg, "exceed_context_size") ||
+		strings.Contains(msg, "context length") ||
+		strings.Contains(msg, "too many tokens")
 }
 
 // Needle measures where retrieval starts failing.
@@ -91,7 +168,21 @@ func Needle(ctx context.Context, p llm.Provider, opts NeedleOptions) (NeedleResu
 		progress = func(string) {}
 	}
 
+	ratio, calibrated, err := calibrate(ctx, p)
+	switch {
+	case err != nil:
+		progress(fmt.Sprintf("could not calibrate the tokenizer (%v); using the default estimate", err))
+		ratio = DefaultCharsPerToken
+	case !calibrated:
+		progress("this provider reports no token counts; sizes below are requested, not measured")
+	default:
+		progress(fmt.Sprintf("measured %.2f characters per token for this model", ratio))
+	}
+
 	var res NeedleResult
+	if calibrated {
+		res.CharsPerToken = ratio
+	}
 	for _, size := range opts.Sizes {
 		if ctx.Err() != nil {
 			return res, ctx.Err()
@@ -99,27 +190,49 @@ func Needle(ctx context.Context, p llm.Provider, opts NeedleOptions) (NeedleResu
 		allFound := true
 		anyRan := false
 
+		overContext := false
+		measured := 0
 		for _, place := range opts.Placements {
-			probe := runNeedleProbe(ctx, p, size, place)
+			probe := runNeedleProbe(ctx, p, size, place, ratio)
 			res.Probes = append(res.Probes, probe)
+			if probe.OverContext {
+				overContext = true
+			}
+			if probe.PromptTokens > 0 {
+				res.TokensMeasured = true
+			}
 			if probe.Err == "" {
 				anyRan = true
+				if n := probe.tokens(); n > measured {
+					measured = n
+				}
 				if !probe.Found {
 					allFound = false
 				}
 			}
-			progress(fmt.Sprintf("%6d tokens, depth %3.0f%%: %s",
-				size, float64(place)*100, verdictOf(probe)))
+			progress(fmt.Sprintf("%6d asked / %6d actual, depth %3.0f%%: %s",
+				size, probe.PromptTokens, float64(place)*100, verdictOf(probe)))
 			if probe.Model != "" {
 				res.Model = probe.Model
 			}
 		}
 		if !anyRan {
+			if overContext {
+				// The window ran out before recall did. That is a fact about
+				// the context size, not about retrieval, and the report must
+				// not present it as a measured ceiling.
+				res.StoppedAtContextLimit = true
+				progress("the provider refused: the request is larger than its context window")
+				break
+			}
 			continue
 		}
-		res.LargestTested = size
+		// Every verdict is in the provider's own count where there is one. The
+		// requested figure is what was asked for, and the two have already
+		// differed by more than a rounding error.
+		res.LargestTested = measured
 		if allFound {
-			res.RecommendedCap = size
+			res.RecommendedCap = measured
 			continue
 		}
 		// A size that loses the needle will not start finding it again when
@@ -141,8 +254,9 @@ func verdictOf(p NeedleProbe) string {
 	}
 }
 
-func runNeedleProbe(ctx context.Context, p llm.Provider, size int, place NeedlePlacement) NeedleProbe {
-	probe := NeedleProbe{PromptTokens: size, Placement: place}
+func runNeedleProbe(ctx context.Context, p llm.Provider, size int, place NeedlePlacement,
+	charsPerToken float64) NeedleProbe {
+	probe := NeedleProbe{Requested: size, Placement: place}
 
 	// A random value, so the answer cannot be produced from anything but the
 	// text. A memorable one — "the magic number is 42" — could be guessed, and
@@ -154,7 +268,7 @@ func runNeedleProbe(ctx context.Context, p llm.Provider, size int, place NeedleP
 	}
 	secret := hex.EncodeToString(raw[:])
 
-	haystack := buildHaystack(size, place, secret)
+	haystack := buildHaystack(size, place, secret, charsPerToken)
 	temp := 0.0
 	resp, err := p.Chat(ctx, llm.ChatRequest{
 		Messages: []llm.Message{
@@ -166,9 +280,11 @@ func runNeedleProbe(ctx context.Context, p llm.Provider, size int, place NeedleP
 	})
 	if err != nil {
 		probe.Err = err.Error()
+		probe.OverContext = isOverContext(err)
 		return probe
 	}
 	probe.Model = resp.Model
+	probe.PromptTokens = resp.PromptTokens
 	probe.Answer = strings.TrimSpace(resp.Content)
 	probe.Found = strings.Contains(strings.ToLower(probe.Answer), strings.ToLower(secret))
 	return probe
@@ -183,15 +299,17 @@ stated somewhere in it. Quote it exactly and say nothing else.`
 // The filler is deliberately code-shaped rather than prose: this measures what a
 // packet of retrieved source does, and a model's recall over English is not
 // evidence about its recall over Go.
-func buildHaystack(sizeTokens int, place NeedlePlacement, secret string) string {
+func buildHaystack(sizeTokens int, place NeedlePlacement, secret string, charsPerToken float64) string {
 	const unit = "func handler%d(ctx context.Context, req *Request) (*Response, error) {\n" +
 		"\treturn service%d.Process(ctx, req.Payload)\n}\n\n"
 	needle := fmt.Sprintf("// Operations note: the access code is %s. Do not share it.\n\n", secret)
 
-	// Roughly four characters per token for code.
-	target := sizeTokens * 4
-	if target < len(needle)*4 {
-		target = len(needle) * 4
+	if charsPerToken <= 0 {
+		charsPerToken = DefaultCharsPerToken
+	}
+	target := int(float64(sizeTokens) * charsPerToken)
+	if target < len(needle)*2 {
+		target = len(needle) * 2
 	}
 	var before, after strings.Builder
 	beforeTarget := int(float64(target) * float64(place))
@@ -210,19 +328,43 @@ func (r NeedleResult) Format() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "needle test — %s\n\n", orUnknown(r.Model))
 
+	if r.CharsPerToken > 0 {
+		fmt.Fprintf(&b, "%.2f characters per token, measured against this model's own tokenizer\n\n",
+			r.CharsPerToken)
+	}
+	if !r.TokensMeasured {
+		b.WriteString("This provider reported no token counts, so every size below is the size\n" +
+			"asked for, not the size sent. Read the cap as an estimate.\n\n")
+	}
+
 	bySize := map[int][]NeedleProbe{}
 	var sizes []int
 	for _, p := range r.Probes {
-		if _, seen := bySize[p.PromptTokens]; !seen {
-			sizes = append(sizes, p.PromptTokens)
+		// Group by what was asked for, but label with what was sent.
+		if _, seen := bySize[p.Requested]; !seen {
+			sizes = append(sizes, p.Requested)
 		}
-		bySize[p.PromptTokens] = append(bySize[p.PromptTokens], p)
+		bySize[p.Requested] = append(bySize[p.Requested], p)
 	}
 	sort.Ints(sizes)
 
-	fmt.Fprintf(&b, "%-10s %s\n", "tokens", "recall by depth (0% … 100%)")
+	if r.TokensMeasured {
+		fmt.Fprintf(&b, "%-10s %-10s %s\n", "asked", "measured", "recall by depth (0% … 100%)")
+	} else {
+		fmt.Fprintf(&b, "%-10s %-10s %s\n", "asked", "sent", "recall by depth (0% … 100%)")
+	}
 	for _, size := range sizes {
-		fmt.Fprintf(&b, "%-10d ", size)
+		measured := 0
+		for _, p := range bySize[size] {
+			if p.Err == "" && p.tokens() > measured {
+				measured = p.tokens()
+			}
+		}
+		label := "—"
+		if measured > 0 {
+			label = fmt.Sprintf("%d", measured)
+		}
+		fmt.Fprintf(&b, "%-10d %-10s ", size, label)
 		for _, p := range bySize[size] {
 			switch {
 			case p.Err != "":
@@ -241,9 +383,18 @@ func (r NeedleResult) Format() string {
 	case r.RecommendedCap == 0:
 		b.WriteString("Recall failed at every size tested. The packet cap cannot be set from\n" +
 			"this measurement; the model is not retrieving from a packet at all.\n")
+	case r.StoppedAtContextLimit:
+		fmt.Fprintf(&b, "Every depth was recalled up to %d %s, and the sweep then\n"+
+			"ran out of context window rather than out of recall.\n\n"+
+			"That is a fact about the window, not a retrieval ceiling: this model was\n"+
+			"never asked anything larger. The packet cap here is bounded by\n"+
+			"context_tokens minus reserved output, not by what the model can retrieve\n"+
+			"from. Raising the served context is what would move it.\n",
+			r.LargestTested, r.tokenUnit())
 	case r.RecommendedCap == r.LargestTested:
-		fmt.Fprintf(&b, "No ceiling found up to %d tokens. That is not a measured limit:\n"+
-			"try larger sizes before treating it as one.\n", r.LargestTested)
+		fmt.Fprintf(&b, "No ceiling found up to %d %s. That is not a measured\n"+
+			"limit: try larger sizes before treating it as one.\n",
+			r.LargestTested, r.tokenUnit())
 	default:
 		fmt.Fprintf(&b, "Recommended max_packet_tokens: %d\n\n", r.RecommendedCap)
 		b.WriteString("This is the largest size where every depth was recalled, not where the\n" +
@@ -251,6 +402,15 @@ func (r NeedleResult) Format() string {
 			"lands, so a size that works at the edges and fails in the middle fails.\n")
 	}
 	return b.String()
+}
+
+// tokenUnit names the axis so a sentence cannot claim a measurement that was
+// never taken.
+func (r NeedleResult) tokenUnit() string {
+	if r.TokensMeasured {
+		return "measured tokens"
+	}
+	return "requested tokens"
 }
 
 func orUnknown(s string) string {
