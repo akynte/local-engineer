@@ -326,3 +326,29 @@ func TestContextRefusalIsNotARecallCeiling(t *testing.T) {
 		t.Errorf("a cap was recommended from a window limit rather than a measurement:\n%s", out)
 	}
 }
+
+// Placement must move the needle and change nothing else. When the filler
+// either side of the needle was generated separately, depth 0% put the whole
+// haystack in the six-digit half and the packet came out denser: the first
+// calibrated run asked for 8000 tokens and sent 8465. The size axis and the
+// depth axis have to be independent, or neither reading means what it says.
+func TestPlacementDoesNotChangeTheHaystack(t *testing.T) {
+	const secret = "deadbeef"
+	strip := func(body string) string {
+		i := strings.Index(body, "// Operations note:")
+		if i < 0 {
+			t.Fatalf("the needle is not in the haystack")
+		}
+		j := strings.Index(body[i:], "\n\n")
+		return body[:i] + body[i+j+2:]
+	}
+	want := strip(buildHaystack(4000, 0.0, secret, 3.5))
+	for _, place := range DefaultPlacements() {
+		got := strip(buildHaystack(4000, place, secret, 3.5))
+		if got != want {
+			t.Errorf("depth %.0f%%: the filler differs from depth 0%% "+
+				"(%d chars vs %d); placement is changing the packet, not just "+
+				"where the needle sits in it", float64(place)*100, len(got), len(want))
+		}
+	}
+}

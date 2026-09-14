@@ -311,16 +311,31 @@ func buildHaystack(sizeTokens int, place NeedlePlacement, secret string, charsPe
 	if target < len(needle)*2 {
 		target = len(needle) * 2
 	}
-	var before, after strings.Builder
-	beforeTarget := int(float64(target) * float64(place))
 
-	for i := 0; before.Len() < beforeTarget; i++ {
-		fmt.Fprintf(&before, unit, i, i%50)
+	// One filler stream, cut at the needle, rather than two streams either side
+	// of it. Generating different identifiers before and after made the
+	// packet's token density depend on where the needle sat: the first
+	// calibrated run asked for 8000 tokens and sent 8465 at depth 0%, because
+	// that depth put the entire haystack in the six-digit half. Placement has
+	// to move the needle and change nothing else, or the size axis and the
+	// depth axis are not independent and neither reading means what it says.
+	var filler strings.Builder
+	for i := 0; filler.Len() < target; i++ {
+		fmt.Fprintf(&filler, unit, i, i%50)
 	}
-	for i := 0; before.Len()+after.Len() < target; i++ {
-		fmt.Fprintf(&after, unit, 100000+i, i%50)
+	body := filler.String()
+
+	at := int(float64(len(body)) * float64(place))
+	if at > 0 && at < len(body) {
+		// Cut on a declaration boundary, so the split never lands inside an
+		// identifier and changes the tokenisation of the text around it.
+		if j := strings.Index(body[at:], "\n\n"); j >= 0 {
+			at += j + 2
+		} else {
+			at = len(body)
+		}
 	}
-	return before.String() + needle + after.String()
+	return body[:at] + needle + body[at:]
 }
 
 // Format renders the sweep for a terminal.

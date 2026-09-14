@@ -299,18 +299,46 @@ func newModelsNeedleCmd() *cobra.Command {
 			if res.RecommendedCap == 0 {
 				return fmt.Errorf("nothing measured to write: recall failed at every size")
 			}
+			// The point of this command is that the cap is measured. A number
+			// read off the size asked for is not, and writing it under a line
+			// that says "measured" is the exact substitution this test exists
+			// to prevent.
+			if !res.TokensMeasured {
+				return fmt.Errorf("this provider reported no token counts, so %d is the size "+
+					"asked for and not the size sent; refusing to write an estimate into "+
+					"max_packet_tokens", res.RecommendedCap)
+			}
 			profile := loadProfile(root, cfg)
 			if profile == nil {
 				return fmt.Errorf("no active profile to update; run `le models bench --write` first")
 			}
 			previous := profile.MaxPacketTokens
-			profile.MaxPacketTokens = res.RecommendedCap
+			cap := res.RecommendedCap
+
+			// A packet has to leave room for the answer. The sweep measures
+			// recall with a small completion, so the largest packet it recalls
+			// from can be larger than the largest packet this profile can
+			// actually send — clamp rather than write a value the profile
+			// would reject after a twenty-minute measurement.
+			if room := profile.ContextTokens - profile.ReservedOutput; room > 0 && cap > room {
+				fmt.Fprintf(cmd.OutOrStdout(),
+					"\nrecall held to %d tokens, but this profile serves %d context and\n"+
+						"reserves %d for output, leaving %d. Writing %d.\n",
+					cap, profile.ContextTokens, profile.ReservedOutput, room, room)
+				cap = room
+			}
+			profile.MaxPacketTokens = cap
 			if err := config.SaveProfile(profileDir(root), *profile); err != nil {
 				return err
 			}
+			note := "measured, not derived"
+			if res.StoppedAtContextLimit {
+				note = "measured, and a floor rather than a ceiling: the sweep ran out of " +
+					"context window before it ran out of recall"
+			}
 			fmt.Fprintf(cmd.OutOrStdout(),
-				"\nmax_packet_tokens in %s: %d -> %d (measured, not derived)\n",
-				profile.Name, previous, res.RecommendedCap)
+				"\nmax_packet_tokens in %s: %d -> %d (%s)\n",
+				profile.Name, previous, cap, note)
 			return nil
 		},
 	}
