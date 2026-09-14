@@ -33,7 +33,7 @@ func newTaskListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer root.CloseAll()
+			defer closeRoot(cmd, root)
 
 			rows, err := st.Ledger().SQL().QueryContext(ctx,
 				`SELECT id, title, state, verification, COALESCE(worktree_id,'') FROM tasks ORDER BY created_at DESC`)
@@ -77,7 +77,7 @@ func newTaskJournalCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer root.CloseAll()
+			defer closeRoot(cmd, root)
 
 			ops, err := ledger.New(st).Operations(ctx, args[0])
 			if err != nil {
@@ -118,7 +118,7 @@ func newTaskRecoverCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer root.CloseAll()
+			defer closeRoot(cmd, root)
 
 			states, err := ledger.New(st).Recover(ctx, func(taskID string) string {
 				// Until per-task worktrees exist, a task's candidate is the

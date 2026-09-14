@@ -16,6 +16,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"sort"
 	"sync/atomic"
@@ -119,7 +120,7 @@ func ManifestOf(pairs map[string]string) string {
 
 // writeComponents feeds a length-prefixed encoding of each component into h,
 // so that no two different component tuples can produce the same byte stream.
-func writeComponents(h io.Writer, parts ...string) {
+func writeComponents(h hash.Hash, parts ...string) {
 	var lenBuf [binary.MaxVarintLen64]byte
 	for _, p := range parts {
 		n := binary.PutUvarint(lenBuf[:], uint64(len(p)))

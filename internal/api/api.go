@@ -81,7 +81,8 @@ func (s *Server) Addr() string { return s.srv.Addr }
 // Serve listens and serves until the context is cancelled, then shuts down
 // gracefully within grace.
 func (s *Server) Serve(ctx context.Context, grace time.Duration) error {
-	ln, err := net.Listen("tcp", s.srv.Addr)
+	var lc net.ListenConfig
+	ln, err := lc.Listen(ctx, "tcp", s.srv.Addr)
 	if err != nil {
 		return fmt.Errorf("api: listen on %s: %w", s.srv.Addr, err)
 	}
@@ -100,9 +101,12 @@ func (s *Server) Serve(ctx context.Context, grace time.Duration) error {
 	case err := <-errCh:
 		return err
 	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), grace)
+		// Deliberately NOT derived from ctx: ctx is already cancelled, and
+		// Shutdown needs a live context to drain in-flight requests within the
+		// grace period. Deriving from ctx would abort every connection at once.
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), grace)
 		defer cancel()
-		return s.srv.Shutdown(shutdownCtx)
+		return s.srv.Shutdown(shutdownCtx) //nolint:contextcheck // see above
 	}
 }
 

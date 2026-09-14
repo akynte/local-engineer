@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/spf13/cobra"
+
 	"github.com/akynte/local-engineer/internal/config"
 	"github.com/akynte/local-engineer/internal/store"
 	"github.com/akynte/local-engineer/internal/workspace"
@@ -73,4 +75,14 @@ func emitJSON(v any) error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(v)
+}
+
+// closeRoot closes the data directory and reports a failure on stderr rather
+// than discarding it. CloseAll flushes every SQLite write-ahead log, so a
+// failure here means data may not have reached disk — silently swallowing that
+// in a deferred call is exactly how a corrupt database goes unnoticed.
+func closeRoot(cmd *cobra.Command, root *store.Root) {
+	if err := root.CloseAll(); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "le: warning: closing the data directory: %v\n", err)
+	}
 }

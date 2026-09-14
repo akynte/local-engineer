@@ -90,13 +90,19 @@ RUN chmod +x /usr/local/bin/le-entrypoint
 # The API binds every interface INSIDE the container because Docker's port
 # publishing cannot reach a loopback bind there. Exposure is restricted on the
 # host side: publish as `-p 127.0.0.1:7777:7777` (§4.1), never `-p 7777:7777`.
+#
+# XDG variables are deliberately NOT pointed at /data here. §2.2 sets them per
+# task process, at that workspace's own opencode/ directory, so the engine can
+# never see another workspace's sessions. A global value would both break that
+# and — because build-time tools honour XDG — bake state into the image's /data
+# layer, which Docker then copies into every fresh volume.
 ENV LE_DATA=/data \
     LE_API_ADDR=0.0.0.0:7777 \
     LE_IN_CONTAINER=1 \
-    XDG_DATA_HOME=/data/xdg/data \
-    XDG_CONFIG_HOME=/data/xdg/config \
-    XDG_CACHE_HOME=/data/xdg/cache \
     HOME=/home/le \
+    XDG_DATA_HOME=/home/le/.local/share \
+    XDG_CONFIG_HOME=/home/le/.config \
+    XDG_CACHE_HOME=/home/le/.cache \
     PATH=/usr/local/bin:/usr/bin:/bin
 
 # Record what this image actually holds (§4.2: a generated image manifest).
@@ -110,6 +116,13 @@ RUN { \
       echo "bubblewrap: $(bwrap --version)"; \
       echo "tini: $(tini --version)"; \
     } > /opt/le/image-manifest.txt
+
+# /data must ship EMPTY. Docker copies an image's content at a volume path into
+# a fresh volume, so anything left here — including files a build step wrote as
+# root — becomes undeletable state in every new install.
+RUN rm -rf /data/* /data/.[!.]* 2>/dev/null; \
+    chown le:le /data; \
+    [ -z "$(ls -A /data)" ] || { echo "/data is not empty in the image:" >&2; ls -la /data >&2; exit 1; }
 
 USER le
 WORKDIR /work
@@ -137,6 +150,12 @@ ARG TARGETARCH
 # Renovate keeps these pinned versions current; each is also listed in the
 # generated image manifest.
 ARG GO_VERSION=1.26.3
+# Pinned checksums from the Go release index. Deliberately pinned rather than
+# fetched alongside the tarball: downloading a checksum from the same server as
+# the artifact only checks that server against itself. Update both when
+# GO_VERSION moves — the build fails loudly if they do not match.
+ARG GO_SHA256_amd64=2b2cfc7148493da5e73981bffbf3353af381d5f93e789c82c79aff64962eb556
+ARG GO_SHA256_arm64=9d89a3ea57d141c2b22d70083f2c8459ba3890f2d9e818e7e933b75614936565
 ARG NODE_MAJOR=22
 
 USER root
@@ -147,14 +166,17 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       build-essential pkg-config make xz-utils gnupg \
     && rm -rf /var/lib/apt/lists/*
 
-# Go toolchain, verified by checksum.
+# Go toolchain, verified against a pinned checksum.
 RUN set -eux; \
-    url="https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz"; \
-    curl -fsSL "$url" -o /tmp/go.tgz; \
-    curl -fsSL "${url}.sha256" -o /tmp/go.sha256 || echo "" > /tmp/go.sha256; \
-    if [ -s /tmp/go.sha256 ]; then echo "$(cat /tmp/go.sha256)  /tmp/go.tgz" | sha256sum -c -; fi; \
+    case "${TARGETARCH}" in \
+      amd64) expected="${GO_SHA256_amd64}" ;; \
+      arm64) expected="${GO_SHA256_arm64}" ;; \
+      *) echo "no pinned Go checksum for architecture ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz" -o /tmp/go.tgz; \
+    echo "${expected}  /tmp/go.tgz" | sha256sum -c -; \
     tar -C /usr/local -xzf /tmp/go.tgz; \
-    rm -f /tmp/go.tgz /tmp/go.sha256
+    rm -f /tmp/go.tgz
 
 ENV PATH=/usr/local/go/bin:/opt/le/gotools/bin:$PATH \
     GOPATH=/opt/le/gopath \
@@ -190,6 +212,11 @@ RUN { \
     } > /opt/le/image-manifest.cpu.txt && mv /opt/le/image-manifest.cpu.txt /opt/le/image-manifest.txt
 
 RUN chown -R le:le /opt/le
+
+# Re-assert the invariant after the root-owned toolchain install.
+RUN rm -rf /data/* /data/.[!.]* 2>/dev/null; \
+    chown le:le /data; \
+    [ -z "$(ls -A /data)" ] || { echo "/data is not empty in the image:" >&2; ls -la /data >&2; exit 1; }
 
 USER le
 WORKDIR /work
@@ -227,6 +254,10 @@ RUN set -eux; \
 RUN sed -i 's/^variant: cpu/variant: cuda/' /opt/le/image-manifest.txt \
  && echo "llama.cpp: ${LLAMA_RELEASE}" >> /opt/le/image-manifest.txt \
  && chown -R le:le /opt/le
+
+RUN rm -rf /data/* /data/.[!.]* 2>/dev/null; \
+    chown le:le /data; \
+    [ -z "$(ls -A /data)" ] || { echo "/data is not empty in the image:" >&2; ls -la /data >&2; exit 1; }
 
 USER le
 WORKDIR /work

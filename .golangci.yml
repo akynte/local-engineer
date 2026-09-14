@@ -1,66 +1,81 @@
-# golangci-lint configuration. The set is deliberately modest: linters that
-# produce a steady stream of low-value findings train people to ignore the
-# output, which costs more than the bugs they catch.
+version: "2"
 run:
-  timeout: 5m
   tests: true
-
 linters:
   enable:
-    - errcheck        # an unchecked error here is a silently lost side effect
-    - govet
-    - ineffassign
-    - staticcheck
-    - unused
-    - gosimple
-    - bodyclose       # an unclosed provider response leaks a connection per call
-    - rowserrcheck    # a missed rows.Err() silently truncates a query result
-    - sqlclosecheck
+    - bodyclose
     - contextcheck
-    - errorlint       # errors.Is/As rather than == and type assertions
     - copyloopvar
+    - errorlint
+    - gosec
     - nilerr
-    - noctx           # every outbound HTTP call must be cancellable
+    - noctx
+    - rowserrcheck
+    - sqlclosecheck
     - unconvert
     - usestdlibvars
-    - gosec
   disable:
-    # Style linters that would fight the design's long, explanatory comments.
-    - lll
+    - cyclop
+    - depguard
+    - exhaustruct
     - funlen
     - gocognit
-    - cyclop
-    - wsl
+    - lll
     - nlreturn
     - varnamelen
-    - exhaustruct
-    - depguard
-
-linters-settings:
-  errcheck:
-    check-type-assertions: true
-    exclude-functions:
-      # Deferred closes on read paths and best-effort cleanup.
-      - (io.Closer).Close
-      - (*database/sql.Rows).Close
-  gosec:
-    excludes:
-      # G104 duplicates errcheck.
-      - G104
-      # File permissions are set deliberately and reviewed in internal/store.
-      - G306
-  govet:
-    enable-all: true
-    disable:
-      - fieldalignment   # readability of these structs beats a few bytes
-      - shadow
-
+    - wsl
+  settings:
+    errcheck:
+      check-type-assertions: true
+      exclude-functions:
+        - (io.Closer).Close
+        - (*database/sql.Rows).Close
+        # hash.Hash documents that Write never returns an error, and every
+        # call site here is writing into a digest. Checking them would add
+        # unreachable branches to the identity and manifest derivations, which
+        # are the code most in need of being readable.
+        - (hash.Hash).Write
+        - io.WriteString
+    gosec:
+      excludes:
+        - G104
+        - G306
+    govet:
+      disable:
+        - fieldalignment
+        - shadow
+      enable-all: true
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - bodyclose
+          - errcheck
+          - gosec
+          - noctx
+          # Test helpers build fixtures; threading a context through them adds
+          # noise without adding cancellability that anything would use.
+          - contextcheck
+        path: _test\.go
+      - linters:
+          - gosec
+        path: tools/analyzers/
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
-  exclude-rules:
-    - path: _test\.go
-      linters: [gosec, errcheck, noctx, bodyclose]
-    # The analyzer intentionally names the functions it forbids.
-    - path: tools/analyzers/
-      linters: [gosec]
+formatters:
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

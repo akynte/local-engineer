@@ -98,13 +98,13 @@ func (d *DB) migrate(ctx context.Context, ws workspace.ID) error {
 			if _, err := tx.ExecContext(ctx, step.sql); err != nil {
 				return fmt.Errorf("store: apply %s: %w", step.name, err)
 			}
-			if err := metaSet(tx, metaSchemaVersion, strconv.Itoa(step.version)); err != nil {
+			if err := metaSet(ctx, tx, metaSchemaVersion, strconv.Itoa(step.version)); err != nil {
 				return err
 			}
-			if err := metaSet(tx, metaWorkspaceID, ws.String()); err != nil {
+			if err := metaSet(ctx, tx, metaWorkspaceID, ws.String()); err != nil {
 				return err
 			}
-			return metaSet(tx, metaCreatedBy, version.Version)
+			return metaSet(ctx, tx, metaCreatedBy, version.Version)
 		})
 		if err != nil {
 			return err

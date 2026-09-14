@@ -20,7 +20,10 @@ if [ ! -w "$LE_DATA" ]; then
   exit 1
 fi
 
-mkdir -p "$LE_DATA"/{config,models,workspaces,backups,xdg/data,xdg/config,xdg/cache}
+# Only the directories the supervisor owns. XDG directories are NOT created
+# here: §2.2 sets them per task process, pointing at that workspace's own
+# opencode/ directory, so the engine can never see another workspace's sessions.
+mkdir -p "$LE_DATA"/config "$LE_DATA"/models "$LE_DATA"/workspaces "$LE_DATA"/backups
 
 # SQLite needs a real filesystem with working fsync (§5.4). Warn loudly here;
 # `le doctor` fails the check properly, but by then the user has already

@@ -134,10 +134,22 @@ func (b *BlobDir) Size() (int64, int, error) {
 // The caller must Close the store first; the restored files are validated by
 // re-opening the workspace.
 func (s *Store) RestoreFrom(dir string, force bool) ([]string, error) {
+	// Resolve the source once, and require it to be a real directory. The
+	// destination is always this workspace's own directory joined with a name
+	// from the fixed list below, so a crafted source path can influence what is
+	// read but never where it is written.
+	srcDir, err := filepath.Abs(filepath.Clean(dir))
+	if err != nil {
+		return nil, fmt.Errorf("store: resolve backup directory: %w", err)
+	}
+	if st, err := os.Stat(srcDir); err != nil || !st.IsDir() {
+		return nil, fmt.Errorf("store: %s is not a readable backup directory", srcDir)
+	}
+
 	var restored []string
 	for _, name := range []string{"index.db", "ledger.db", "telemetry.db"} {
-		src := filepath.Join(dir, name)
-		body, err := os.ReadFile(src)
+		src := filepath.Join(srcDir, name)
+		body, err := os.ReadFile(src) //nolint:gosec // srcDir is validated above; name is from the fixed list
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				continue // a backup may legitimately hold a subset
@@ -153,13 +165,15 @@ func (s *Store) RestoreFrom(dir string, force bool) ([]string, error) {
 				return restored, err
 			}
 		}
-		if err := os.WriteFile(dst, body, 0o640); err != nil {
+		// dst is this workspace's own directory joined with a name from the
+		// fixed list above; nothing from the caller reaches the write path.
+		if err := os.WriteFile(dst, body, 0o640); err != nil { //nolint:gosec // see above
 			return restored, err
 		}
 		restored = append(restored, name)
 	}
 	if len(restored) == 0 {
-		return nil, fmt.Errorf("store: %s holds none of index.db, ledger.db, telemetry.db", dir)
+		return nil, fmt.Errorf("store: %s holds none of index.db, ledger.db, telemetry.db", srcDir)
 	}
 	return restored, nil
 }

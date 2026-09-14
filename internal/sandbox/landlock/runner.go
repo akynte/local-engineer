@@ -89,7 +89,7 @@ func ABI() (int, error) {
 }
 
 // Available reports whether Landlock can be applied on this host.
-func (r *Runner) Available() (bool, string) {
+func (r *Runner) Available(context.Context) (bool, string) {
 	v, err := ABI()
 	if err != nil {
 		return false, err.Error()
@@ -134,7 +134,10 @@ func (r *Runner) Command(ctx context.Context, spec sandbox.Spec, argv ...string)
 	}
 
 	args := append([]string{HelperCommand, "--"}, argv...)
-	cmd := exec.CommandContext(ctx, r.Self, args...)
+	// r.Self is this binary's own path, and argv is the task command the
+	// sandbox exists to confine. The mitigation is the Landlock ruleset the
+	// helper applies before exec, not argument filtering.
+	cmd := exec.CommandContext(ctx, r.Self, args...) //nolint:gosec // see above
 	cmd.Dir = spec.Dir
 	cmd.Env = append(append([]string{}, spec.Env...), EnvSpec+"="+string(body))
 	return cmd, nil

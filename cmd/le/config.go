@@ -30,7 +30,7 @@ func newConfigInitCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer root.CloseAll()
+			defer closeRoot(cmd, root)
 			dir := root.Layout().ConfigDir()
 
 			if _, err := os.Stat(config.Path(dir)); err == nil && !force {
@@ -63,7 +63,7 @@ func newConfigShowCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer root.CloseAll()
+			defer closeRoot(cmd, root)
 			cfg, err := loadConfig(root)
 			if err != nil {
 				return err
@@ -99,7 +99,7 @@ func newConfigProfilesCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer root.CloseAll()
+			defer closeRoot(cmd, root)
 			cfg, _ := loadConfig(root)
 
 			dir := profileDir(root)

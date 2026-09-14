@@ -49,7 +49,7 @@ func newWorkspaceInitCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer root.CloseAll()
+			defer closeRoot(cmd, root)
 			st, err := root.OpenWorkspace(cmd.Context(), ws.ID())
 			if err != nil {
 				return err
@@ -123,7 +123,7 @@ func newWorkspaceListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer root.CloseAll()
+			defer closeRoot(cmd, root)
 			records, err := root.ListWorkspaces()
 			if err != nil {
 				return err

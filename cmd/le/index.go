@@ -25,7 +25,7 @@ func newIndexCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer root.CloseAll()
+			defer closeRoot(cmd, root)
 
 			cfg, _ := loadConfig(root)
 			ix := index.New(st, index.Options{
@@ -84,7 +84,7 @@ func newGraphStatsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer root.CloseAll()
+			defer closeRoot(cmd, root)
 
 			stats, err := graphFor(st).Stats(ctx)
 			if err != nil {
@@ -134,7 +134,7 @@ func newGraphImpactCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer root.CloseAll()
+			defer closeRoot(cmd, root)
 
 			kind, err := parseChange(changeKind)
 			if err != nil {
@@ -193,7 +193,7 @@ func newGraphSearchCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer root.CloseAll()
+			defer closeRoot(cmd, root)
 
 			cfg, _ := loadConfig(root)
 			budget := 0

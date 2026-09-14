@@ -2,6 +2,7 @@ package graph
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"sort"
 	"strings"
@@ -185,49 +186,60 @@ func (g *sqliteGraph) expand(ctx context.Context, frontier []int64, q Query, dep
 			FROM edges e WHERE ` + joinOn + ` IN (` + strings.Join(ph, ",") + `)` +
 			filters.String() + ` LIMIT ?`
 
-		rows, err := g.db.SQL().QueryContext(ctx, query, args...)
-		if err != nil {
-			return nil, false, fmt.Errorf("graph: expand depth %d: %w", depth, err)
-		}
-		fetched := 0
-		for rows.Next() {
-			var from, to int64
-			var kind string
-			var rank int
-			if err := rows.Scan(&from, &to, &kind, &rank); err != nil {
-				rows.Close()
-				return nil, false, err
-			}
-			fetched++
-
-			// A path is only as strong as its weakest hop.
-			parent := best[from]
-			if parent.rank > rank {
-				rank = parent.rank
-			}
-			prev, seen := best[to]
-			if seen && (prev.depth < depth || (prev.depth == depth && prev.rank <= rank)) {
-				continue
-			}
-			if !seen && len(best) >= limit {
-				rows.Close()
-				return next, true, nil
-			}
-			best[to] = pathState{depth: depth, rank: rank, via: EdgeKind(kind)}
-			if !seen {
-				next = append(next, to)
-			}
-		}
-		err = rows.Err()
-		rows.Close()
+		found, fetched, capped, err := g.fetchHop(ctx, query, args, depth, limit, best)
 		if err != nil {
 			return nil, false, err
+		}
+		next = append(next, found...)
+		if capped {
+			return next, true, nil
 		}
 		if fetched >= rowCap {
 			return next, true, nil
 		}
 	}
 	return next, false, nil
+}
+
+// fetchHop runs one batched edge query and records what it reached. It is a
+// separate function so that rows.Close can be deferred: expand calls it inside
+// a loop, and a deferred Close there would hold every result set open until
+// the whole traversal finished.
+func (g *sqliteGraph) fetchHop(ctx context.Context, query string, args []any, depth, limit int,
+	best map[int64]pathState) (found []int64, fetched int, capped bool, err error) {
+	rows, err := g.db.SQL().QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, 0, false, fmt.Errorf("graph: expand depth %d: %w", depth, err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var from, to int64
+		var kind string
+		var rank int
+		if err := rows.Scan(&from, &to, &kind, &rank); err != nil {
+			return nil, fetched, false, err
+		}
+		fetched++
+
+		// A path is only as strong as its weakest hop.
+		parent := best[from]
+		if parent.rank > rank {
+			rank = parent.rank
+		}
+		prev, seen := best[to]
+		if seen && (prev.depth < depth || (prev.depth == depth && prev.rank <= rank)) {
+			continue
+		}
+		if !seen && len(best) >= limit {
+			return found, fetched, true, nil
+		}
+		best[to] = pathState{depth: depth, rank: rank, via: EdgeKind(kind)}
+		if !seen {
+			found = append(found, to)
+		}
+	}
+	return found, fetched, false, rows.Err()
 }
 
 // loadNodes fetches node rows in batches, verifying each against the handle's
@@ -239,37 +251,43 @@ func (g *sqliteGraph) loadNodes(ctx context.Context, ids []int64) ([]Node, error
 		if end > len(ids) {
 			end = len(ids)
 		}
-		chunk := ids[start:end]
-		ph := make([]string, len(chunk))
-		args := make([]any, len(chunk))
-		for i, id := range chunk {
-			ph[i] = "?"
-			args[i] = id
-		}
-		rows, err := g.db.SQL().QueryContext(ctx,
-			`SELECT `+nodeColumns+nodeFrom+` WHERE n.node_id IN (`+strings.Join(ph, ",")+`)`, args...)
+		batch, err := g.loadNodeBatch(ctx, ids[start:end])
 		if err != nil {
 			return nil, err
 		}
-		for rows.Next() {
-			n, err := scanNode(rows)
-			if err != nil {
-				rows.Close()
-				return nil, err
-			}
-			if n, err = g.verify(n, nil); err != nil {
-				rows.Close()
-				return nil, err
-			}
-			out = append(out, n)
-		}
-		err = rows.Err()
-		rows.Close()
-		if err != nil {
-			return nil, err
-		}
+		out = append(out, batch...)
 	}
 	return out, nil
+}
+
+// loadNodeBatch fetches one batch, verifying each row against the handle's
+// workspace. Separate from loadNodes so rows.Close is deferred per batch.
+func (g *sqliteGraph) loadNodeBatch(ctx context.Context, ids []int64) ([]Node, error) {
+	ph := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		ph[i] = "?"
+		args[i] = id
+	}
+	rows, err := g.db.SQL().QueryContext(ctx,
+		`SELECT `+nodeColumns+nodeFrom+` WHERE n.node_id IN (`+strings.Join(ph, ",")+`)`, args...) //nolint:gosec // placeholders only; see comment
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]Node, 0, len(ids))
+	for rows.Next() {
+		n, err := scanNode(rows)
+		if err != nil {
+			return nil, err
+		}
+		if n, err = g.verify(n, nil); err != nil {
+			return nil, err
+		}
+		out = append(out, n)
+	}
+	return out, rows.Err()
 }
 
 // ImpactOf implements §3.3: a reverse traversal from the changed nodes,
@@ -318,28 +336,33 @@ func (g *sqliteGraph) Stats(ctx context.Context) (Stats, error) {
 	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM index_keys WHERE dirty = 1`).Scan(&s.DirtyKey); err != nil {
 		return s, err
 	}
+	// The column names come from this fixed list, never from a caller.
 	for _, spec := range []struct {
 		col string
 		dst map[string]int64
 	}{{"kind", s.ByEdge}, {"evidence", s.ByEvid}} {
-		rows, err := db.QueryContext(ctx, `SELECT `+spec.col+`, count(*) FROM edges GROUP BY 1 ORDER BY 1`)
-		if err != nil {
-			return s, err
-		}
-		for rows.Next() {
-			var k string
-			var n int64
-			if err := rows.Scan(&k, &n); err != nil {
-				rows.Close()
-				return s, err
-			}
-			spec.dst[k] = n
-		}
-		err = rows.Err()
-		rows.Close()
-		if err != nil {
+		if err := tally(ctx, db, spec.col, spec.dst); err != nil {
 			return s, err
 		}
 	}
 	return s, nil
+}
+
+// tally groups the edge table by one of its own enum columns.
+func tally(ctx context.Context, db *sql.DB, column string, dst map[string]int64) error {
+	rows, err := db.QueryContext(ctx,
+		`SELECT `+column+`, count(*) FROM edges GROUP BY 1 ORDER BY 1`) //nolint:gosec // column comes from a fixed internal list
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var k string
+		var n int64
+		if err := rows.Scan(&k, &n); err != nil {
+			return err
+		}
+		dst[k] = n
+	}
+	return rows.Err()
 }

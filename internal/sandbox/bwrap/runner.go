@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/akynte/local-engineer/internal/sandbox"
 )
@@ -97,7 +98,7 @@ func UserNamespacesAvailable() (bool, string) {
 }
 
 // Available reports whether the bubblewrap layer can be used.
-func (r *Runner) Available() (bool, string) {
+func (r *Runner) Available(ctx context.Context) (bool, string) {
 	path, err := exec.LookPath(r.binary())
 	if err != nil {
 		return false, fmt.Sprintf("%s is not on PATH: %v", r.binary(), err)
@@ -106,15 +107,21 @@ func (r *Runner) Available() (bool, string) {
 		return false, reason
 	}
 	// A probe is the only honest test: the seccomp profile may permit the
-	// binary and still deny clone(CLONE_NEWUSER).
-	cmd := exec.Command(path, "--unshare-user", "--unshare-pid", "--dev-bind", "/", "/", "true")
+	// binary and still deny clone(CLONE_NEWUSER). Bounded, because a probe
+	// that hangs would hang `le doctor`.
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	//nolint:gosec // path comes from exec.LookPath on this runner's configured
+	// binary name, and the arguments are constants.
+	cmd := exec.CommandContext(ctx, path, "--unshare-user", "--unshare-pid", "--dev-bind", "/", "/", "true")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return false, fmt.Sprintf("bwrap probe failed (%v): %s. "+
 			"Inside a container this usually means the runtime's seccomp profile blocks namespace creation; "+
 			"see DR-3 and docs/how-to/troubleshooting.md", err, strings.TrimSpace(string(out)))
 	}
 	if r.Inner != nil {
-		if ok, reason := r.Inner.Available(); !ok {
+		if ok, reason := r.Inner.Available(ctx); !ok {
 			return false, "inner runner unavailable: " + reason
 		}
 	}
@@ -166,6 +173,8 @@ func (r *Runner) Command(ctx context.Context, spec sandbox.Spec, argv ...string)
 		}
 		inner = append([]string{cmd.Path}, cmd.Args[1:]...)
 		args = append(args, inner...)
+		//nolint:gosec // the command is what the sandbox exists to confine; the
+		// mitigation is the mount and PID namespaces bwrap creates around it.
 		full := exec.CommandContext(ctx, r.binary(), args...)
 		full.Dir = spec.Dir
 		full.Env = cmd.Env
@@ -173,6 +182,7 @@ func (r *Runner) Command(ctx context.Context, spec sandbox.Spec, argv ...string)
 	}
 
 	args = append(args, inner...)
+	//nolint:gosec // as above: confining this command is the point of the type.
 	cmd := exec.CommandContext(ctx, r.binary(), args...)
 	cmd.Dir = spec.Dir
 	cmd.Env = spec.Env

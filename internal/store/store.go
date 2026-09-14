@@ -100,13 +100,12 @@ func (r *Root) OpenWorkspace(ctx context.Context, id workspace.ID) (*Store, erro
 	for _, spec := range specs {
 		db, err := openDB(ctx, id, spec.name, spec.path, spec.dur)
 		if err != nil {
-			s.closeAll()
-			return nil, err
+			// Report the cleanup failure alongside the cause: a database that
+			// would not close may have left a write-ahead log behind.
+			return nil, errors.Join(err, s.closeAll())
 		}
 		if err := db.migrate(ctx, id); err != nil {
-			db.Close()
-			s.closeAll()
-			return nil, err
+			return nil, errors.Join(err, db.Close(), s.closeAll())
 		}
 		*spec.dst = db
 	}

@@ -120,7 +120,7 @@ func (p *OpenAICompatible) chat(ctx context.Context, req ChatRequest, schema jso
 		body["response_format"] = map[string]any{
 			"type": "json_schema",
 			"json_schema": map[string]any{
-				"name": "response", "strict": true, "schema": json.RawMessage(schema),
+				"name": "response", "strict": true, "schema": schema,
 			},
 		}
 	}
@@ -230,8 +230,10 @@ func (p *OpenAICompatible) Health(ctx context.Context) error {
 		if err != nil {
 			continue
 		}
-		io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-		resp.Body.Close()
+		// Drain a bounded prefix so the connection can be reused; the body of
+		// a health probe carries nothing we need.
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		_ = resp.Body.Close()
 		if resp.StatusCode == http.StatusOK {
 			return nil
 		}

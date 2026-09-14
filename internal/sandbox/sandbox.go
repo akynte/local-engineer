@@ -73,7 +73,11 @@ type Runner interface {
 	// Available reports whether this runner can work on this host, and why not
 	// when it cannot. The reason is user-visible: "unavailable" without a
 	// reason is useless in a support conversation.
-	Available() (bool, string)
+	//
+	// It takes a context because probing can mean spawning a process, and a
+	// probe that hangs would hang `le doctor` — the command people run when
+	// something is already wrong.
+	Available(ctx context.Context) (bool, string)
 }
 
 // Guarantee is one row of the §6.2 table.
@@ -126,11 +130,11 @@ type LayerNote struct {
 // Select picks the strongest available runner and reports what it chose and
 // what it rejected. Order: bubblewrap (strongest) then Landlock then the
 // container boundary alone.
-func Select(candidates []Runner) (Runner, Report) {
+func Select(ctx context.Context, candidates []Runner) (Runner, Report) {
 	rep := Report{Guarantees: Guarantees(), Statement: ReadmeStatement}
 	var chosen Runner
 	for _, c := range candidates {
-		ok, reason := c.Available()
+		ok, reason := c.Available(ctx)
 		if ok && chosen == nil {
 			chosen = c
 			continue

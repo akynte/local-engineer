@@ -17,6 +17,15 @@ The fastest path is the Dev Container (`.devcontainer/`), which pins the same
 toolchain CI uses. Otherwise you need Go 1.26+, Docker, and Node LTS for the
 sidecars.
 
+The two linters are pinned, and the pins matter: `staticcheck` before v0.8 does
+not build under Go 1.26, and `golangci-lint` v1 cannot read this repository's
+v2 configuration.
+
+```bash
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
+go install honnef.co/go/tools/cmd/staticcheck@v0.8.1
+```
+
 ```bash
 git clone https://github.com/akynte/local-engineer
 cd local-engineer

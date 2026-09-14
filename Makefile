@@ -57,10 +57,10 @@ storescope: ## Enforce the §2.3 isolation rule
 .PHONY: lint
 lint: ## golangci-lint (skipped with a warning if not installed)
 	@if command -v golangci-lint >/dev/null 2>&1; then \
-	  golangci-lint run --timeout=5m; \
+	  golangci-lint run --timeout=6m; \
 	else \
 	  echo "golangci-lint not installed; CI will still run it."; \
-	  echo "  go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.62.2"; \
+	  echo "  go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2"; \
 	fi
 
 .PHONY: staticcheck
@@ -69,7 +69,7 @@ staticcheck: ## staticcheck (skipped with a warning if not installed)
 	  staticcheck ./...; \
 	else \
 	  echo "staticcheck not installed; CI will still run it."; \
-	  echo "  go install honnef.co/go/tools/cmd/staticcheck@2024.1.1"; \
+	  echo "  go install honnef.co/go/tools/cmd/staticcheck@v0.8.1"; \
 	fi
 
 .PHONY: test

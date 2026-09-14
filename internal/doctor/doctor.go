@@ -83,13 +83,13 @@ func Run(ctx context.Context, opts Options) Report {
 	add := func(c Check) { rep.Checks = append(rep.Checks, c) }
 
 	add(checkContainer())
-	sbReport, sandboxChecks := checkSandbox(opts.Config)
+	sbReport, sandboxChecks := checkSandbox(ctx, opts.Config)
 	rep.Sandbox = sbReport
 	for _, c := range sandboxChecks {
 		add(c)
 	}
 	add(checkFilesystem(opts.Root))
-	for _, c := range checkProfile(opts.Profile) {
+	for _, c := range checkProfile(ctx, opts.Profile) {
 		add(c)
 	}
 	for _, c := range checkWorkspace(ctx, opts) {
@@ -114,7 +114,7 @@ func checkContainer() Check {
 	}
 }
 
-func checkSandbox(cfg *config.Config) (*sandbox.Report, []Check) {
+func checkSandbox(ctx context.Context, cfg *config.Config) (*sandbox.Report, []Check) {
 	var checks []Check
 	mode := "auto"
 	if cfg != nil && cfg.Sandbox.Mode != "" {
@@ -142,7 +142,7 @@ func checkSandbox(cfg *config.Config) (*sandbox.Report, []Check) {
 		}
 		candidates = append(candidates, sandbox.ContainerRunner{})
 	}
-	_, rep := sandbox.Select(candidates)
+	_, rep := sandbox.Select(ctx, candidates)
 
 	// Landlock ABI, reported as a number because §6.1's network rules need 4+.
 	if abi, err := landlock.ABI(); err != nil {
@@ -165,7 +165,7 @@ func checkSandbox(cfg *config.Config) (*sandbox.Report, []Check) {
 
 	// Bubblewrap, the optional layer.
 	bw := bwrap.New(nil)
-	if ok, reason := bw.Available(); ok {
+	if ok, reason := bw.Available(ctx); ok {
 		checks = append(checks, Check{Name: "bubblewrap (DR-3 layer 3)", Level: OK,
 			Detail: "available: mount and PID namespaces active"})
 	} else {
@@ -215,7 +215,7 @@ func checkFilesystem(root *store.Root) Check {
 
 // checkProfile covers §9.2: warn when the active profile's measured memory
 // does not fit the host.
-func checkProfile(p *config.Profile) []Check {
+func checkProfile(ctx context.Context, p *config.Profile) []Check {
 	if p == nil {
 		return []Check{{Name: "hardware profile", Level: Warn,
 			Detail: "no profile loaded; conservative fallback values are in force",
@@ -224,7 +224,7 @@ func checkProfile(p *config.Profile) []Check {
 	checks := []Check{{Name: "hardware profile", Level: OK,
 		Detail: fmt.Sprintf("%s: context %d, packet cap %d", p.Name, p.ContextTokens, p.MaxPacketTokens)}}
 
-	vram, ram := hostMemory()
+	vram, ram := hostMemory(ctx)
 	if ok, why := p.FitsHost(vram, ram); !ok {
 		checks = append(checks, Check{Name: "profile fits host", Level: Warn, Detail: why,
 			Fix: "Choose a smaller profile, or re-run `le models bench` on this machine (§9.2)."})
@@ -345,7 +345,7 @@ func checkLeases(ctx context.Context, st *store.Store) Check {
 
 // hostMemory reports (VRAM MB, RAM MB). Zero means unknown, and callers treat
 // unknown as "cannot check" rather than "fits".
-func hostMemory() (vramMB, ramMB int) {
+func hostMemory(ctx context.Context) (vramMB, ramMB int) {
 	if body, err := os.ReadFile("/proc/meminfo"); err == nil {
 		for _, line := range strings.Split(string(body), "\n") {
 			if strings.HasPrefix(line, "MemTotal:") {
@@ -359,7 +359,7 @@ func hostMemory() (vramMB, ramMB int) {
 			}
 		}
 	}
-	vramMB = queryVRAM()
+	vramMB = queryVRAM(ctx)
 	return vramMB, ramMB
 }
 

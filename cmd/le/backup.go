@@ -27,7 +27,7 @@ func newBackupCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer root.CloseAll()
+			defer closeRoot(cmd, root)
 
 			stamp := time.Now().UTC().Format("20060102T150405Z")
 			dest := to
@@ -93,7 +93,7 @@ func newRestoreCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer root.CloseAll()
+			defer closeRoot(cmd, root)
 
 			if err := st.Close(); err != nil {
 				return err

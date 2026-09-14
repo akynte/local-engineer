@@ -158,7 +158,7 @@ func (p *Anthropic) messages(ctx context.Context, req ChatRequest, schema json.R
 	}
 	if schema != nil {
 		body["output_config"] = map[string]any{
-			"format": map[string]any{"type": "json_schema", "schema": json.RawMessage(schema)},
+			"format": map[string]any{"type": "json_schema", "schema": schema},
 		}
 	}
 	if p.caps.ThinkingControl {

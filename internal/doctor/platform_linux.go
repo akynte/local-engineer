@@ -1,10 +1,12 @@
 package doctor
 
 import (
+	"context"
 	"os/exec"
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 )
 
 // filesystemTypes maps the magic numbers statfs reports to names. Only the
@@ -30,7 +32,7 @@ func filesystemType(path string) (string, error) {
 	if err := syscall.Statfs(path, &st); err != nil {
 		return "", err
 	}
-	magic := int64(st.Type)
+	magic := st.Type
 	if name, ok := filesystemTypes[magic]; ok {
 		return name, nil
 	}
@@ -39,8 +41,14 @@ func filesystemType(path string) (string, error) {
 
 // queryVRAM asks the NVIDIA tooling for total VRAM. A machine without it is
 // not an error: CPU-only hosts are a supported profile (§9.2).
-func queryVRAM() int {
-	out, err := exec.Command("nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits").Output()
+func queryVRAM(ctx context.Context) int {
+	// A wedged driver must not hang `le doctor`, which is the command people
+	// run precisely when something is already wrong.
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, "nvidia-smi",
+		"--query-gpu=memory.total", "--format=csv,noheader,nounits").Output()
 	if err != nil {
 		return 0
 	}

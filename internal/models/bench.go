@@ -78,7 +78,7 @@ func Bench(ctx context.Context, p llm.Provider, opts BenchOptions) (Result, erro
 		CPUThreads: runtime.NumCPU(),
 	}
 	res.Host, _ = os.Hostname()
-	res.GPU, res.TotalVRAMMB = gpuInfo()
+	res.GPU, res.TotalVRAMMB = gpuInfo(ctx)
 	res.TotalRAMMB = totalRAMMB()
 
 	if err := p.Health(ctx); err != nil {
@@ -135,7 +135,7 @@ func Bench(ctx context.Context, p llm.Provider, opts BenchOptions) (Result, erro
 		}
 		ttfts = append(ttfts, float64(resp.DurationMS))
 
-		if v := sampleVRAM(); v > res.PeakVRAMMB {
+		if v := sampleVRAM(ctx); v > res.PeakVRAMMB {
 			res.PeakVRAMMB = v
 		}
 		if r := processRAMMB(); r > res.PeakRAMMB {
@@ -267,9 +267,8 @@ func percentile(xs []float64, p float64) float64 {
 	return sorted[idx]
 }
 
-func gpuInfo() (string, int) {
-	out, err := exec.Command("nvidia-smi", "--query-gpu=name,memory.total",
-		"--format=csv,noheader,nounits").Output()
+func gpuInfo(ctx context.Context) (string, int) {
+	out, err := nvidiaSMI(ctx, "--query-gpu=name,memory.total")
 	if err != nil {
 		return "", 0
 	}
@@ -282,14 +281,21 @@ func gpuInfo() (string, int) {
 	return strings.TrimSpace(parts[0]), mb
 }
 
-func sampleVRAM() int {
-	out, err := exec.Command("nvidia-smi", "--query-gpu=memory.used",
-		"--format=csv,noheader,nounits").Output()
+func sampleVRAM(ctx context.Context) int {
+	out, err := nvidiaSMI(ctx, "--query-gpu=memory.used")
 	if err != nil {
 		return 0
 	}
 	mb, _ := strconv.Atoi(strings.TrimSpace(strings.SplitN(string(out), "\n", 2)[0]))
 	return mb
+}
+
+// nvidiaSMI runs a bounded query. A machine without the tooling is not an
+// error: CPU-only hosts are a supported profile (§9.2).
+func nvidiaSMI(ctx context.Context, query string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	return exec.CommandContext(ctx, "nvidia-smi", query, "--format=csv,noheader,nounits").Output()
 }
 
 func totalRAMMB() int {

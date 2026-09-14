@@ -29,7 +29,7 @@ func newDoctorCmd() *cobra.Command {
 			root, err := openRoot()
 			if err == nil {
 				opts.Root = root
-				defer root.CloseAll()
+				defer closeRoot(cmd, root)
 				cfg, cerr := loadConfig(root)
 				if cerr == nil {
 					opts.Config = &cfg

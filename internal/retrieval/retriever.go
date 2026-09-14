@@ -210,10 +210,13 @@ func (r *Retriever) anchors(ctx context.Context, query string, limit int) ([]Sli
 // ftsQuery turns free text into an FTS5 MATCH expression. Every term is
 // quoted, so user input can never be read as FTS5 syntax.
 func ftsQuery(q string) string {
-	fields := strings.FieldsFunc(q, func(r rune) bool {
-		return !(r == '_' || r == '.' || r == '/' || r == '-' ||
-			(r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9'))
-	})
+	// Split on anything that is not an identifier character. Punctuation is a
+	// separator rather than syntax, so no input can reach FTS5 as an operator.
+	isTermRune := func(r rune) bool {
+		return r == '_' || r == '.' || r == '/' || r == '-' ||
+			(r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
+	}
+	fields := strings.FieldsFunc(q, func(r rune) bool { return !isTermRune(r) })
 	terms := make([]string, 0, len(fields))
 	for _, f := range fields {
 		if len(f) < 2 {

@@ -15,6 +15,7 @@ import (
 	"database/sql"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -275,7 +276,8 @@ func hashFile(path string) (string, bool, error) {
 	h := sha256.New()
 	var head [8192]byte
 	n, err := io.ReadFull(f, head[:])
-	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+	// A file shorter than the probe window is normal, not a failure.
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
 		return "", false, err
 	}
 	binary := false

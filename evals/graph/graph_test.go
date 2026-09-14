@@ -149,23 +149,29 @@ SELECT n.node_id, n.fqn, b.depth FROM best b
 JOIN nodes n ON n.node_id = b.node_id
 WHERE b.rn = 1 ORDER BY b.depth LIMIT 5000`
 
-				b.ResetTimer()
-				b.ReportAllocs()
-				for i := 0; i < b.N; i++ {
+				drain := func(i int) error {
 					rows, err := st.Index().SQL().QueryContext(ctx, q, ids[i%len(ids)], depth)
 					if err != nil {
-						b.Fatal(err)
+						return err
 					}
+					defer rows.Close()
 					for rows.Next() {
 						var id int64
 						var fqn string
 						var d int
 						if err := rows.Scan(&id, &fqn, &d); err != nil {
-							rows.Close()
-							b.Fatal(err)
+							return err
 						}
 					}
-					rows.Close()
+					return rows.Err()
+				}
+
+				b.ResetTimer()
+				b.ReportAllocs()
+				for i := 0; i < b.N; i++ {
+					if err := drain(i); err != nil {
+						b.Fatal(err)
+					}
 				}
 			})
 		}

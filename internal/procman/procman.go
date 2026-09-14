@@ -324,7 +324,7 @@ func (m *Manager) waitReady(ctx context.Context, s *supervised, exited <-chan er
 		case err := <-exited:
 			return fmt.Errorf("procman: child %s exited before becoming ready: %w", s.spec.Name, err)
 		case <-deadline:
-			return fmt.Errorf("procman: child %s did not become ready within %s (last probe: %v)",
+			return fmt.Errorf("procman: child %s did not become ready within %s (last probe: %w)",
 				s.spec.Name, s.spec.StartTimeout, last)
 		case <-probe.C:
 			hctx, cancel := context.WithTimeout(ctx, 2*time.Second)

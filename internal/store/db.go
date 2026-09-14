@@ -196,8 +196,8 @@ func (d *DB) metaGet(ctx context.Context, key string) (string, bool, error) {
 	return v, true, nil
 }
 
-func metaSet(tx *sql.Tx, key, value string) error {
-	_, err := tx.Exec(`INSERT INTO meta(key, value) VALUES(?, ?)
-	                   ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value)
+func metaSet(ctx context.Context, tx *sql.Tx, key, value string) error {
+	_, err := tx.ExecContext(ctx, `INSERT INTO meta(key, value) VALUES(?, ?)
+	                               ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value)
 	return err
 }

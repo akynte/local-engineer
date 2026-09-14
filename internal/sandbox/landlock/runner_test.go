@@ -136,7 +136,7 @@ func TestSelectReportsInactiveLayersWithReasons(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chosen, rep := sandbox.Select([]sandbox.Runner{r, sandbox.ContainerRunner{}})
+	chosen, rep := sandbox.Select(context.Background(), []sandbox.Runner{r, sandbox.ContainerRunner{}})
 	if chosen == nil {
 		t.Fatal("Select must always fall back to the container-only runner")
 	}

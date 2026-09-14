@@ -21,13 +21,16 @@ func (ContainerRunner) Layers() []Layer { return []Layer{LayerContainer} }
 
 // Available is always true: the boundary exists whether or not the process is
 // actually inside a container. InContainer reports the latter.
-func (ContainerRunner) Available() (bool, string) { return true, "" }
+func (ContainerRunner) Available(context.Context) (bool, string) { return true, "" }
 
 func (ContainerRunner) Command(ctx context.Context, spec Spec, argv ...string) (*exec.Cmd, error) {
 	if err := spec.Validate(); err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	// Running the caller's command is this type's entire purpose. The
+	// mitigation is not argument sanitisation — it is the container boundary
+	// this runner names, which bounds whatever the command does (§6.1 layer 1).
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...) //nolint:gosec // see above
 	cmd.Dir = spec.Dir
 	cmd.Env = spec.Env
 	return cmd, nil

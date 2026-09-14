@@ -7,17 +7,20 @@
 package workspace
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/base32"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/akynte/local-engineer/internal/version"
 )
@@ -57,7 +60,7 @@ var b32 = base32.StdEncoding.WithPadding(base32.NoPadding)
 // different projects would then share a workspace id. A fuzz test found
 // exactly that collision when NUL was the separator, so the encoding is
 // length-prefixed instead, which is injective for any content.
-func writeComponents(h io.Writer, parts ...string) {
+func writeComponents(h hash.Hash, parts ...string) {
 	var lenBuf [binary.MaxVarintLen64]byte
 	for _, p := range parts {
 		n := binary.PutUvarint(lenBuf[:], uint64(len(p)))
@@ -114,12 +117,29 @@ func CanonicalRoot(path string) (string, error) {
 	return resolved, nil
 }
 
+// gitTimeout bounds every git invocation. A repository with a stuck credential
+// helper or an unreachable remote must not hang workspace creation.
+const gitTimeout = 10 * time.Second
+
 // GitRemote returns the fetch URL of `origin` for a repository root, or the
 // empty string when the directory is not a git repository or has no origin.
 // A missing remote is not an error: §2.1 says the remote participates "if any".
 func GitRemote(root string) string {
-	cmd := exec.Command("git", "-C", root, "remote", "get-url", "origin")
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	return gitOutput(root, "remote", "get-url", "origin")
+}
+
+// gitOutput runs a git command in root and returns its trimmed stdout, or "".
+// Every invocation is bounded and has the terminal prompt disabled, so a
+// credential helper cannot block on input that will never arrive.
+func gitOutput(root string, args ...string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
+	defer cancel()
+
+	// The subcommand arguments are constants from this file's callers; only
+	// the repository root varies, and it is passed as a -C value rather than
+	// interpolated into a shell.
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", root}, args...)...) //nolint:gosec // see above
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=", "GCM_INTERACTIVE=never")
 	out, err := cmd.Output()
 	if err != nil {
 		return ""
@@ -130,15 +150,11 @@ func GitRemote(root string) string {
 // GitDefaultBranch reports the branch `origin/HEAD` points at, falling back to
 // the currently checked-out branch and then to "main".
 func GitDefaultBranch(root string) string {
-	if out, err := exec.Command("git", "-C", root, "symbolic-ref", "--short", "refs/remotes/origin/HEAD").Output(); err == nil {
-		if s := strings.TrimSpace(string(out)); s != "" {
-			return strings.TrimPrefix(s, "origin/")
-		}
+	if s := gitOutput(root, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"); s != "" {
+		return strings.TrimPrefix(s, "origin/")
 	}
-	if out, err := exec.Command("git", "-C", root, "branch", "--show-current").Output(); err == nil {
-		if s := strings.TrimSpace(string(out)); s != "" {
-			return s
-		}
+	if s := gitOutput(root, "branch", "--show-current"); s != "" {
+		return s
 	}
 	return "main"
 }

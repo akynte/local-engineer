@@ -210,18 +210,29 @@ func BenchmarkFTSQuery(b *testing.B) {
 		b.Fatal(err)
 	}
 
-	b.ResetTimer()
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	query := func(i int) error {
 		rows, err := st.Index().SQL().QueryContext(ctx,
 			`SELECT rowid FROM chunks_fts WHERE chunks_fts MATCH ? ORDER BY bm25(chunks_fts) LIMIT 20`,
 			fmt.Sprintf(`"GetUser%d"`, i%chunks))
 		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id int64
+			if err := rows.Scan(&id); err != nil {
+				return err
+			}
+		}
+		return rows.Err()
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if err := query(i); err != nil {
 			b.Fatal(err)
 		}
-		for rows.Next() {
-		}
-		rows.Close()
 	}
 }
 

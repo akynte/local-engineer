@@ -36,7 +36,7 @@ func newAPICmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer root.CloseAll()
+			defer closeRoot(cmd, root)
 
 			cfg, err := loadConfig(root)
 			if err != nil {
@@ -56,7 +56,7 @@ func newAPICmd() *cobra.Command {
 				log.Warn("api exposure", "detail", warn, "container", containerWhy)
 			}
 
-			runner, sbReport := selectSandbox(cfg)
+			runner, sbReport := selectSandbox(ctx, cfg)
 			log.Info("sandbox selected", "runner", sbReport.Runner, "layers", sbReport.Active)
 			_ = runner
 
@@ -102,7 +102,7 @@ func newAPICmd() *cobra.Command {
 
 // selectSandbox picks the strongest runner permitted by configuration and
 // returns the report `le doctor` and /v1/sandbox both serve (DR-3).
-func selectSandbox(cfg config.Config) (sandbox.Runner, sandbox.Report) {
+func selectSandbox(ctx context.Context, cfg config.Config) (sandbox.Runner, sandbox.Report) {
 	var candidates []sandbox.Runner
 	ll, llErr := landlock.New()
 	switch cfg.Sandbox.Mode {
@@ -121,7 +121,7 @@ func selectSandbox(cfg config.Config) (sandbox.Runner, sandbox.Report) {
 		}
 	}
 	candidates = append(candidates, sandbox.ContainerRunner{})
-	runner, rep := sandbox.Select(candidates)
+	runner, rep := sandbox.Select(ctx, candidates)
 	return runner, rep
 }
 
@@ -138,7 +138,11 @@ func registerChildren(m *procman.Manager, cfg config.Config) error {
 		Essential: true,
 		Build: func(ctx context.Context) (*exec.Cmd, error) {
 			args := append([]string{}, cfg.Inference.Args...)
-			return exec.CommandContext(ctx, cfg.Inference.Binary, args...), nil
+			// The binary and arguments come from le.yaml, which is operator
+			// configuration under /data/config — the same trust level as the
+			// supervisor itself. An operator who can edit it can already run
+			// anything in this container.
+			return exec.CommandContext(ctx, cfg.Inference.Binary, args...), nil //nolint:gosec // see above
 		},
 		Health: func(ctx context.Context) error {
 			req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/health", nil)

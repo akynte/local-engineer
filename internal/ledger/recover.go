@@ -121,20 +121,21 @@ func (l *Ledger) Recover(ctx context.Context, worktreePath func(taskID string) s
 		return nil, fmt.Errorf("ledger: list live tasks: %w", err)
 	}
 	type row struct{ id, title, req string }
-	var live []row
-	for rows.Next() {
-		var r row
-		if err := rows.Scan(&r.id, &r.title, &r.req); err != nil {
-			rows.Close()
-			return nil, err
+	live, err := func() ([]row, error) {
+		defer rows.Close()
+		var out []row
+		for rows.Next() {
+			var r row
+			if err := rows.Scan(&r.id, &r.title, &r.req); err != nil {
+				return nil, err
+			}
+			out = append(out, r)
 		}
-		live = append(live, r)
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
+		return out, rows.Err()
+	}()
+	if err != nil {
 		return nil, err
 	}
-	rows.Close()
 
 	var out []WorkingState
 	for _, r := range live {

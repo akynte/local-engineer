@@ -10,6 +10,7 @@ package store_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -345,15 +346,10 @@ func TestGuardRejectsForeignSlices(t *testing.T) {
 		t.Fatalf("expected 2 rejections, got %d: %v", len(rejected), rejected)
 	}
 	var fse *retrieval.ForeignSliceError
-	if !asForeign(rejected[0], &fse) {
+	if !errors.As(rejected[0], &fse) {
 		t.Fatalf("expected a ForeignSliceError first, got %T", rejected[0])
 	}
-}
-
-func asForeign(err error, dst **retrieval.ForeignSliceError) bool {
-	fse, ok := err.(*retrieval.ForeignSliceError)
-	if ok {
-		*dst = fse
+	if fse.Found != foreign || fse.Active != active {
+		t.Errorf("the rejection must name both workspaces, got %+v", fse)
 	}
-	return ok
 }
