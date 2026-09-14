@@ -1,0 +1,35 @@
+# CPU-only with a large memory pool (design v3 §9.2).
+#
+# This is the profile for a sparse MoE model with no GPU at all: the weights are
+# large but only a few billion parameters are active per token, so decode is
+# tolerable on CPU where a dense model of the same size would not be. Prefill is
+# the cost — every expert is touched across a batch — so the packet cap is well
+# below the window on purpose.
+name: cpu-only-64gb-ram
+description: >-
+  No GPU, 64 GB RAM, a sparse MoE model held in host memory. Prefill is the
+  bottleneck, so packets are capped well below the window. Unmeasured starting
+  points; run `le models bench --write` to replace them.
+hardware:
+  ram_mb: 65536
+  threads: 16
+context_tokens: 16384
+max_packet_tokens: 6000
+reserved_output_tokens: 4096
+max_tools_exposed: 10
+measured_peak_vram_mb: 0
+measured_peak_ram_mb: 0
+max_concurrent_tasks: 1
+runtime:
+  threads: 12
+  threads_batch: 16
+  gpu_layers: 0
+  batch_size: 1024
+  ubatch_size: 256
+  slots: 1
+sampling:
+  temperature: 0.2
+  top_p: 0.95
+  top_k: 40
+  min_p: 0.05
+thinking_policy: "off"

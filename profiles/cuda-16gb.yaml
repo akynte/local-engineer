@@ -1,0 +1,38 @@
+# A 16 GB CUDA card (design v3 §9.2): RTX 4060 Ti 16GB, 4080, A4000-class.
+#
+# The step up from 8 GB is that a 14B-class dense model at Q4 fits entirely in
+# VRAM with room for a 32k KV cache, so nothing needs to go to the CPU and
+# prefill stays on the GPU — which is the difference that matters for how long
+# a large packet takes.
+name: cuda-16gb
+description: >-
+  16 GB CUDA GPU, a 14B-class dense model fully resident with a 32k window.
+  Unmeasured starting points; run `le models bench --write` to replace them.
+hardware:
+  gpu: 16 GB CUDA (e.g. RTX 4060 Ti 16GB, RTX 4080)
+  vram_mb: 16384
+  ram_mb: 32768
+  threads: 16
+context_tokens: 32768
+max_packet_tokens: 16384
+reserved_output_tokens: 8192
+max_tools_exposed: 12
+measured_peak_vram_mb: 0
+measured_peak_ram_mb: 0
+max_concurrent_tasks: 1
+runtime:
+  threads: 8
+  threads_batch: 16
+  gpu_layers: 999
+  batch_size: 2048
+  ubatch_size: 512
+  flash_attn: true
+  cache_type_k: q8_0
+  cache_type_v: q8_0
+  slots: 2
+sampling:
+  temperature: 0.2
+  top_p: 0.95
+  top_k: 40
+  min_p: 0.05
+thinking_policy: auto

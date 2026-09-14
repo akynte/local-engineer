@@ -14,7 +14,11 @@ your own.
 <!-- test:run -->
 ```console
 $ le config profiles
+  apple-silicon-unified            shipped  …
   cpu-only-32gb-ram                shipped  …
+  cpu-only-64gb-ram                shipped  …
+  cuda-16gb                        shipped  …
+  cuda-24gb                        shipped  …
   external-inference               shipped  …
 * reference-8gb-cuda-64gb-ram      shipped  …
   remote-provider                  shipped  …
@@ -31,9 +35,25 @@ shipped starting point or one you measured.
 |---|---|
 | `reference-8gb-cuda-64gb-ram` | 8 GB CUDA GPU, large host RAM, MoE model with CPU expert offload |
 | `resident-8gb-cuda` | A 9B-class dense model held entirely in 8 GB of VRAM |
+| `cuda-16gb` | 16 GB CUDA: a 14B-class dense model resident with a 32k window |
+| `cuda-24gb` | 24 GB CUDA: a 32B-class dense model resident with a 64k window |
+| `apple-silicon-unified` | Apple Silicon, Metal offload, unified memory |
 | `cpu-only-32gb-ram` | No GPU: a small dense model and much smaller packets |
+| `cpu-only-64gb-ram` | No GPU, plenty of RAM: a sparse MoE model, prefill-bound |
 | `external-inference` | Inference runs elsewhere |
 | `remote-provider` | A hosted model, offline lanes disabled |
+
+Two things are worth knowing before picking by VRAM alone.
+
+**Unified memory is not VRAM.** On Apple Silicon there is no separate pool to
+run out of; the limit is the machine's memory and the share the OS will wire,
+which is why `apple-silicon-unified` sets a RAM budget and no VRAM one.
+
+**Sparse and dense models fail differently.** A MoE model activates a few
+billion parameters per token, so it decodes on hardware that could never run a
+dense model of the same size — but prefill touches every expert across a batch,
+so it stays slow. That is why the CPU MoE profile caps packets well below its
+context window: the window is what fits, the cap is what finishes.
 
 ## Measure your own machine
 

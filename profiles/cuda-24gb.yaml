@@ -1,0 +1,39 @@
+# A 24 GB CUDA card (design v3 §9.2): RTX 3090, 4090, A5000-class.
+#
+# At this size a 32B-class dense model at Q4 is resident with a 64k window, and
+# a second task can be admitted: two copies of the measured peak still leave
+# headroom. max_concurrent_tasks stays at 1 until `le models bench` measures
+# that peak — §9.3 forbids guessing memory budgets, and admitting a second task
+# on an estimate is how a machine ends up swapping mid-run.
+name: cuda-24gb
+description: >-
+  24 GB CUDA GPU, a 32B-class dense model resident with a 64k window.
+  Unmeasured starting points; run `le models bench --write` to replace them.
+hardware:
+  gpu: 24 GB CUDA (e.g. RTX 3090, RTX 4090)
+  vram_mb: 24576
+  ram_mb: 65536
+  threads: 16
+context_tokens: 65536
+max_packet_tokens: 24576
+reserved_output_tokens: 8192
+max_tools_exposed: 14
+measured_peak_vram_mb: 0
+measured_peak_ram_mb: 0
+max_concurrent_tasks: 1
+runtime:
+  threads: 8
+  threads_batch: 16
+  gpu_layers: 999
+  batch_size: 2048
+  ubatch_size: 512
+  flash_attn: true
+  cache_type_k: q8_0
+  cache_type_v: q8_0
+  slots: 2
+sampling:
+  temperature: 0.2
+  top_p: 0.95
+  top_k: 40
+  min_p: 0.05
+thinking_policy: auto

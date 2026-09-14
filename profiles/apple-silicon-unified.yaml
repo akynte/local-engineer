@@ -1,0 +1,40 @@
+# Apple Silicon (design v3 §9.2). The important difference from a discrete GPU
+# is unified memory: there is no separate VRAM pool to run out of, so the limit
+# is the whole machine's memory and the wired-memory cap the OS enforces on it
+# (about 75% by default).
+#
+# gpu_layers is 999 because Metal offload is all-or-nothing in practice: a model
+# that fits should be fully resident, and one that does not should be a smaller
+# quantisation rather than a partial offload.
+name: apple-silicon-unified
+description: >-
+  Apple Silicon with unified memory, Metal offload, a dense model fully
+  resident. Unmeasured starting points; run `le models bench --write` to
+  replace them.
+hardware:
+  gpu: Apple Silicon (Metal, unified memory)
+  ram_mb: 36864
+  threads: 10
+context_tokens: 32768
+max_packet_tokens: 12000
+reserved_output_tokens: 6144
+max_tools_exposed: 12
+measured_peak_vram_mb: 0
+measured_peak_ram_mb: 0
+max_concurrent_tasks: 1
+runtime:
+  # Performance cores only: on Apple Silicon, scheduling generation onto the
+  # efficiency cores makes it slower rather than faster.
+  threads: 8
+  threads_batch: 10
+  gpu_layers: 999
+  batch_size: 1024
+  ubatch_size: 512
+  flash_attn: true
+  slots: 1
+sampling:
+  temperature: 0.2
+  top_p: 0.95
+  top_k: 40
+  min_p: 0.05
+thinking_policy: auto

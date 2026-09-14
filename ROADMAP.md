@@ -194,7 +194,9 @@ evaluation results looks like one whose results mean something.
       declares about it, because DR-4 makes those declarations something
       callers rely on and nothing verified them
 - [ ] Provider implementations beyond the current four
-- [ ] Profiles for other hardware classes
+- [x] Profiles for other hardware classes: 16 GB and 24 GB CUDA, Apple Silicon
+      unified memory, and a CPU-only MoE profile — all unmeasured starting
+      points that say so, as §9.2 requires
 - [x] Split compose variant exercised in CI — brought up against a stub
       inference service and checked for the claim it makes, not just parsed
 - [ ] Optional semantic retrieval, if Phase 5 shows it earns its cost
