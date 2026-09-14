@@ -194,9 +194,115 @@ before the command returns.
 |---|---|
 | `bench` | Measure this machine and propose a hardware profile |
 | `health` | Probe every declared provider |
+| `conformance` | Check a provider against what `providers.yaml` declares about it |
+| `needle` | Measure the packet size this model can actually retrieve from |
 
 `bench` flags: `--write` (save the profile), `--iterations`, `--prompt-tokens`,
 `--output-tokens`, `--context`, `--profile-name`, `--json`.
+
+`conformance` flags: `--provider`, `--json`. DR-4 makes a provider's
+`Capabilities()` something callers rely on rather than a hint, so the
+declarations in `providers.yaml` are worth verifying rather than trusting. A
+capability a provider accepts but does not declare is reported as `unproven`,
+not as a failure: the contract is that a declaration must hold, not that
+everything working must be declared.
+
+`needle` flags: `--sizes` (packet sizes to try, in tokens), `--write` (save the
+measured cap into the active profile), `--json`.
+
+`needle` is what §8.3 means by "the needle test sets the hard packet cap per
+model profile". A window a model *accepts* and a window it *retrieves from* are
+different sizes, and `max_packet_tokens` derived as half the context window is a
+statement about arithmetic rather than about the model. The command hides a
+random access code at several depths in a packet of Go-shaped filler and asks
+for it back.
+
+Two things about how it reports:
+
+- **The cap is the largest size where every depth is recalled**, not where the
+  average is good. A packet builder cannot choose where in a packet the needed
+  slice lands, so a size that works at the edges and fails in the middle is a
+  size that fails.
+- **Every size is the provider's own token count**, not the size asked for. The
+  sweep calibrates against the provider first — two probe-shaped requests solved
+  for characters-per-token and fixed prompt overhead — because a cap derived
+  from an estimate is an estimate wearing a measurement's clothes. Against a
+  provider that reports no usage the numbers are the sizes requested, the report
+  says so in its header, and `--write` refuses.
+
+A provider refusing a request larger than its window is not a recall failure:
+the model was never asked. That is reported as running out of context rather
+than out of recall, and the cap it yields is a floor rather than a ceiling.
+
+## `le eval`
+
+| Command | |
+|---|---|
+| `run` | Run the task set and report the results |
+| `tasks` | List and validate the task set |
+| `report` | Render a saved result file |
+| `arms` | Describe the configurations being compared and what each isolates |
+
+`run` flags: `--arms`, `--tasks` (the task set directory), `--task` (run only
+these ids), `--repeat`, `--out`, `--json`.
+
+Two properties are what make the numbers mean anything. A task's acceptance
+tests are never in the worktree while the task runs, so a model cannot satisfy a
+test it can read. And the system's own verdict is recorded separately from the
+ground truth, so "claimed success and was wrong" is its own number rather than
+something averaged away — read a solved rate without the false-acceptance rate
+beside it and you are reading half the result.
+
+`--repeat` exists because one run of a cell is a sample rather than a
+measurement. The first real run of this harness changed verdict on 4 of 12
+task/arm cells between passes; see
+[the published results](../benchmarks/results/2026-09-14-tasks.md) and
+[the methodology](../benchmarks/METHODOLOGY.md).
+
+## `le memory`
+
+| Command | |
+|---|---|
+| `add` | Record a note |
+| `list` | Show the notes kept with this repository |
+| `remove` | Delete a note |
+
+`add` flags: `--kind` (required), `--source`, `--evidence`, `--tag`.
+`list` flags: `--kind`, `--json`. `remove` flags: `--kind` (required).
+
+Notes come in three kinds because they are not interchangeable:
+
+| Kind | |
+|---|---|
+| `intent` | Why something is being done: a requirement, a constraint |
+| `observation` | Something seen once — evidence, not a rule |
+| `advice` | A rule meant to steer future work |
+
+Every note records where it came from, and `--source` cannot be dropped. A rule
+with no source cannot be judged, and a system that writes rules about its own
+work will write flattering ones. Notes live under `.le/memory/` so they travel
+with the repository; there is no global store.
+
+## `le lessons`
+
+| Command | |
+|---|---|
+| `export` | Write this repository's notes to a file |
+| `import` | Copy notes from a file into this repository, after showing them |
+
+`export` flags: `--kind` (defaults to `advice`), `--to`. `import` flags:
+`--kind`, `--yes`.
+
+There is no global memory and no automatic channel between projects. These two
+commands are the channel: `export` writes a file you can read, and `import`
+shows you what it would copy before copying it. Imported notes are marked as
+imported and keep their original source, so a rule learned elsewhere never reads
+as one this repository established — the difference between a lesson and a
+rumour.
+
+`export` defaults to `advice` alone: `intent` is usually specific to the
+repository that recorded it, and `observation` is evidence about one codebase
+rather than a rule about any.
 
 ## `le config`
 
