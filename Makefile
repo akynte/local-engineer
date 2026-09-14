@@ -90,6 +90,14 @@ schemas: ## Migrations apply, profiles validate, compose files parse
 	$(MAKE) --no-print-directory benchmarks-check
 	@echo "schemas: valid"
 
+.PHONY: sidecar-test
+sidecar-test: ## Run the Node sidecar's own tests
+	@if command -v npm >/dev/null 2>&1; then \
+	  cd sidecars/typescript && npm ci --no-audit --no-fund >/dev/null 2>&1 || npm install --no-audit --no-fund >/dev/null && npm test; \
+	else \
+	  echo "sidecar-test: npm not installed, skipping"; \
+	fi
+
 .PHONY: benchmarks
 benchmarks: ## Regenerate BENCHMARKS.md from the committed results
 	scripts/make-benchmarks.sh > BENCHMARKS.md

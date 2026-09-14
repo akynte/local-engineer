@@ -1,0 +1,15 @@
+{
+  "name": "@local-engineer/typescript-sidecar",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Type-checked TypeScript analysis for local-engineer (design v3 §3.2).",
+  "license": "Apache-2.0",
+  "type": "commonjs",
+  "main": "analyze.js",
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "typescript": "5.9.2"
+  }
+}

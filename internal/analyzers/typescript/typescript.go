@@ -27,10 +27,12 @@ package typescript
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/akynte/local-engineer/internal/graph"
 	"github.com/akynte/local-engineer/internal/index"
@@ -40,6 +42,17 @@ import (
 type Analyzer struct {
 	MaxFileBytes int64
 	Warnf        func(format string, args ...any)
+
+	// UseSidecar turns on the compiler-backed analysis when the sidecar is
+	// installed. The lexical reading is what a repository gets otherwise; the
+	// two produce different evidence categories for the same relationships,
+	// and the graph records which.
+	UseSidecar bool
+	// InstallRoot is where to look for sidecars/. Empty searches beside the
+	// binary and the working directory.
+	InstallRoot string
+	// SidecarTimeout bounds the compiler run.
+	SidecarTimeout time.Duration
 }
 
 // New returns an analyzer with the shipped defaults.
@@ -82,7 +95,31 @@ func symbolFQN(rel, name string) string { return moduleFQN(rel) + "#" + name }
 func packageFQN(spec string) string { return "npm:" + spec }
 
 // Analyze reads every accepted file and emits what the source states.
-func (a *Analyzer) Analyze(_ context.Context, repoRoot string, files []index.File) (index.Result, error) {
+func (a *Analyzer) Analyze(ctx context.Context, repoRoot string, files []index.File) (index.Result, error) {
+	if a.UseSidecar {
+		script, err := SidecarPath(a.InstallRoot)
+		switch {
+		case err == nil:
+			res, diags, runErr := RunSidecar(ctx, script, repoRoot, a.SidecarTimeout)
+			for _, d := range diags {
+				a.warn("typescript: sidecar: %s", d)
+			}
+			if runErr == nil {
+				return res, nil
+			}
+			// A sidecar that failed is reported, not swallowed: an empty graph
+			// and a graph nobody could build are different things, and only one
+			// is a fact about the repository. The lexical reading still runs,
+			// so the operator gets something rather than nothing.
+			a.warn("typescript: %v; falling back to the lexical reading, whose edges "+
+				"are weaker and say so", runErr)
+		case errors.Is(err, ErrNoSidecar):
+			a.warn("typescript: the sidecar is not installed; using the lexical reading")
+		default:
+			a.warn("typescript: locating the sidecar: %v", err)
+		}
+	}
+
 	var res index.Result
 
 	sorted := append([]index.File(nil), files...)

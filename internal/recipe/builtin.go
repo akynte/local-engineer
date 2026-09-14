@@ -2,6 +2,7 @@ package recipe
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 )
@@ -78,6 +79,17 @@ func GoRecipes(level Level) []Recipe {
 			Name: "go test -race", Kind: KindRace, AppliesTo: isGo,
 			Argv: []string{"go", "test", "-race", "./..."}, Timeout: 25 * time.Minute,
 			Summarize: GoRace,
+		},
+		{
+			// §10.1: project-invariant analyzers catch "domain rules the model
+			// does not know" — patterns that compile, pass vet, and are still
+			// wrong for this repository.
+			Name: "semgrep", Kind: KindAnalyzer, AppliesTo: HasSemgrepRules,
+			Argv: []string{
+				"semgrep", "--config", SemgrepRuleDir, "--json", "--quiet",
+				"--error", "--disable-version-check", "--metrics", "off", ".",
+			},
+			Timeout: 5 * time.Minute, Summarize: Semgrep,
 		},
 	}
 
@@ -163,4 +175,36 @@ func Required(level Level) []Kind {
 		return []Kind{KindBuild, KindVet, KindTest, KindRace, KindFormat}
 	}
 	return nil
+}
+
+// SemgrepRuleDir is where a repository keeps its own invariant rules.
+const SemgrepRuleDir = "semgrep"
+
+// HasSemgrepRules reports whether the recipe is worth running: the repository
+// carries rules and semgrep is installed.
+//
+// Both halves matter. A repository with no rules has nothing to check, and
+// running semgrep anyway would report a pass that means nothing. And semgrep is
+// an addition rather than a dependency of the build — a machine without it
+// should skip the recipe, not fail verification over a missing tool.
+func HasSemgrepRules(worktree string) bool {
+	entries, err := os.ReadDir(filepath.Join(worktree, SemgrepRuleDir))
+	if err != nil {
+		return false
+	}
+	var hasRules bool
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		switch filepath.Ext(e.Name()) {
+		case ".yaml", ".yml":
+			hasRules = true
+		}
+	}
+	if !hasRules {
+		return false
+	}
+	_, err = exec.LookPath("semgrep")
+	return err == nil
 }

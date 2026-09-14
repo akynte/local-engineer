@@ -1,0 +1,62 @@
+# Project invariants for local-engineer (design v3 §10.1).
+#
+# Each rule catches something that compiles, passes vet, and is still wrong
+# here. A rule that fires on correct code teaches everyone to ignore the tool,
+# so the bar for adding one is that a reviewer would otherwise have to catch it
+# by memory.
+rules:
+  - id: evidence-must-be-stated
+    languages: [go]
+    severity: ERROR
+    message: >-
+      This edge does not state its evidence category. §3.2 records a category
+      for every relationship and "unknown" is a valid, honest answer — but an
+      omitted one defaults to the zero value, which claims nothing and reads as
+      certainty to anyone querying the graph. Set Evidence explicitly.
+    patterns:
+      - pattern: |
+          index.PendingEdge{..., Kind: $K, ...}
+      - pattern-not: |
+          index.PendingEdge{..., Evidence: $E, ...}
+
+  - id: no-time-now-in-recipes
+    languages: [go]
+    severity: WARNING
+    message: >-
+      Recipe results are compared against a candidate hash, and a wall-clock
+      read inside one makes a run unreproducible. Take the time from the caller
+      so a replayed verification produces the same evidence.
+    paths:
+      include:
+        - internal/recipe/
+    patterns:
+      - pattern: time.Now()
+
+  - id: no-panic-in-library-code
+    languages: [go]
+    severity: ERROR
+    message: >-
+      A panic here takes down the supervisor, which is managing other people's
+      long-running tasks and holds worktree leases. Return an error; the caller
+      decides whether it is fatal.
+    paths:
+      include:
+        - internal/
+      exclude:
+        - "*_test.go"
+    patterns:
+      - pattern: panic(...)
+
+  - id: outcome-before-side-effect
+    languages: [go]
+    severity: WARNING
+    message: >-
+      Complete() records that an operation's side effect took hold. Calling it
+      before the side effect inverts §7.1's intent-first rule and makes a crash
+      in between invisible to recovery — the journal says done, the worktree
+      disagrees, and nothing inspects.
+    patterns:
+      - pattern: |
+          $H.Complete(...)
+          ...
+          os.WriteFile(...)

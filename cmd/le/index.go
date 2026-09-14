@@ -104,6 +104,9 @@ func analyzers(cmd *cobra.Command) []index.Analyzer {
 
 	ts := typescript.New()
 	ts.Warnf = warn
+	// The sidecar gives compiler-backed edges when it is installed; without it
+	// the lexical reading runs and its edges say they are weaker.
+	ts.UseSidecar = true
 
 	pa := protoavro.New()
 	pa.Warnf = warn

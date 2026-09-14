@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/akynte/local-engineer/internal/acp"
 	"github.com/akynte/local-engineer/internal/api"
 	"github.com/akynte/local-engineer/internal/config"
 	"github.com/akynte/local-engineer/internal/index"
@@ -83,6 +84,18 @@ func newAPICmd() *cobra.Command {
 			if cfg.Index.WatchEnabled {
 				if stop, err := startIndexWatcher(ctx, root, cfg, log); err != nil {
 					log.Warn("index watcher not started", "reason", err)
+				} else if stop != nil {
+					defer stop()
+				}
+			}
+
+			// §4.3's ACP bridge. Off unless an address and an agent are
+			// configured: DR-5's native engine does not speak ACP, so there is
+			// nothing to carry by default, and an unused listening socket is a
+			// surface nobody asked for.
+			if cfg.API.ACPAddr != "" {
+				if stop, err := startACPBridge(ctx, cfg, log); err != nil {
+					return fmt.Errorf("the ACP bridge is configured but cannot start: %w", err)
 				} else if stop != nil {
 					defer stop()
 				}
@@ -225,4 +238,31 @@ func startIndexWatcher(ctx context.Context, root *store.Root, cfg config.Config,
 	}()
 	log.Info("index watcher started", "workspace", ws.ID(), "root", ws.Root)
 	return cancel, nil
+}
+
+// startACPBridge listens for editor connections and hands each one its own
+// agent process. It returns a stop function.
+func startACPBridge(ctx context.Context, cfg config.Config, log *slog.Logger) (func(), error) {
+	ln, err := acp.Listen(cfg.API.ACPAddr)
+	if err != nil {
+		return nil, err
+	}
+	if warn := config.ExposureWarning(cfg.API.ACPAddr, false); warn != "" {
+		// The bridge hands a connection a process. Binding it beyond loopback
+		// is worth saying out loud, and for the same reason as the API.
+		log.Warn("acp bridge exposure", "detail", warn)
+	}
+
+	b := &acp.Bridge{
+		Command: cfg.API.ACPCommand,
+		Logf:    func(f string, a ...any) { log.Info(fmt.Sprintf(f, a...)) },
+	}
+	bridgeCtx, cancel := context.WithCancel(ctx)
+	go func() {
+		if err := b.Serve(bridgeCtx, ln); err != nil && !errors.Is(err, context.Canceled) {
+			log.Warn("acp bridge stopped", "error", err)
+		}
+	}()
+	log.Info("acp bridge listening", "addr", ln.Addr().String(), "agent", cfg.API.ACPCommand[0])
+	return func() { cancel(); _ = ln.Close() }, nil
 }

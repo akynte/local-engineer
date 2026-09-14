@@ -2,9 +2,14 @@ package typescript
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/akynte/local-engineer/internal/graph"
 	"github.com/akynte/local-engineer/internal/index"
@@ -247,4 +252,99 @@ func TestDeclarationsAreContainedAndScoped(t *testing.T) {
 			}
 		}
 	}
+}
+
+// The sidecar is optional. Its absence is an ordinary condition — a repository
+// without Node gets the lexical reading — so it must be a named error, not a
+// fault the operator has to interpret.
+func TestMissingSidecarIsANamedCondition(t *testing.T) {
+	_, err := SidecarPath(t.TempDir())
+	if !errors.Is(err, ErrNoSidecar) {
+		t.Fatalf("got %v, want ErrNoSidecar", err)
+	}
+}
+
+// With UseSidecar on and no sidecar present, the analyzer must still produce
+// the lexical reading rather than nothing, and must say why.
+func TestAnalyzerFallsBackAudibly(t *testing.T) {
+	root, list := writeTree(t, map[string]string{
+		"src/app.ts":  "import { User } from './user';\nexport function main() { return User; }\n",
+		"src/user.ts": "export interface User { id: string }\n",
+	})
+	a := New()
+	a.UseSidecar = true
+	a.InstallRoot = t.TempDir() // deliberately empty
+	var warned []string
+	a.Warnf = func(f string, args ...any) { warned = append(warned, fmt.Sprintf(f, args...)) }
+
+	var accepted []index.File
+	for _, f := range list {
+		if a.Handles(f) {
+			accepted = append(accepted, f)
+		}
+	}
+	res, err := a.Analyze(context.Background(), root, accepted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasEdge(res, "ts:src/app.ts", "ts:src/user.ts", graph.EdgeImports, graph.Resolved) {
+		t.Error("the lexical reading did not run when the sidecar was absent")
+	}
+	var said bool
+	for _, w := range warned {
+		if strings.Contains(w, "sidecar") {
+			said = true
+		}
+	}
+	if !said {
+		t.Errorf("the analyzer fell back silently; warnings were: %v", warned)
+	}
+}
+
+// When the sidecar is present, its edges are used — and they carry `resolved`
+// where the lexical reading would only manage `declared`.
+func TestSidecarIsUsedWhenPresent(t *testing.T) {
+	script, err := SidecarPath(repoRootForTest(t))
+	if errors.Is(err, ErrNoSidecar) {
+		t.Skip("the sidecar is not installed in this checkout")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("node is not on PATH")
+	}
+
+	root, _ := writeTree(t, map[string]string{
+		"tsconfig.json": `{"include":["src"]}`,
+		"src/store.ts": "export interface Store { load(id: string): string }\n" +
+			"export class SqlStore implements Store { load(id: string) { return id; } }\n",
+	})
+	res, diags, err := RunSidecar(context.Background(), script, root, 2*time.Minute)
+	if err != nil {
+		t.Fatalf("sidecar: %v (diagnostics: %v)", err, diags)
+	}
+	// The checker knows which symbol is implemented; the lexical reading skips
+	// an ambiguous name entirely.
+	if !hasEdge(res, "ts:src/store.ts#SqlStore", "ts:src/store.ts#Store",
+		graph.EdgeImplements, graph.Resolved) {
+		t.Fatalf("no resolved implements edge from the sidecar:\n%+v", res.Edges)
+	}
+}
+
+// repoRootForTest walks up to the module root so the test finds sidecars/.
+func repoRootForTest(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 6; i++ {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		dir = filepath.Dir(dir)
+	}
+	t.Skip("could not find the module root")
+	return ""
 }

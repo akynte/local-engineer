@@ -75,6 +75,16 @@ type APIConfig struct {
 	Addr string `yaml:"addr"`
 	// ShutdownGrace is the documented 30 s of §4.4.
 	ShutdownGraceSeconds int `yaml:"shutdown_grace_seconds"`
+
+	// ACPAddr turns on the ACP-over-TCP bridge of §4.3 and binds it. Empty
+	// leaves it off, which is the default for two reasons: it is another
+	// listening socket, and DR-5's native engine does not speak ACP, so there
+	// is nothing to carry until an agent command is configured.
+	ACPAddr string `yaml:"acp_addr,omitempty"`
+	// ACPCommand is the agent the bridge runs per connection, argv style. The
+	// bridge carries bytes and never parses the protocol, so any ACP agent
+	// works here.
+	ACPCommand []string `yaml:"acp_command,omitempty"`
 }
 
 // InferenceConfig selects the mode and the embedded server's command line.
@@ -277,6 +287,11 @@ func Save(configDir string, cfg Config) error {
 // Validate rejects configurations that would start a container in a state the
 // operator did not intend.
 func (c Config) Validate() error {
+	if c.API.ACPAddr != "" && len(c.API.ACPCommand) == 0 {
+		return fmt.Errorf("config: api.acp_addr is set but api.acp_command is empty; " +
+			"the bridge would accept connections and have no agent to hand them to")
+	}
+
 	switch c.Inference.Mode {
 	case ModeEmbedded, ModeExternal, ModeNone, "":
 	default:

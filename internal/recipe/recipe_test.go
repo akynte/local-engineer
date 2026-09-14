@@ -138,8 +138,25 @@ func TestVerificationLevels(t *testing.T) {
 	if got := len(recipe.GoRecipes(recipe.Standard)); got != 3 {
 		t.Errorf("standard should select 3 recipes, got %d", got)
 	}
-	if got := len(recipe.GoRecipes(recipe.High)); got != 5 {
-		t.Errorf("high should select every recipe, got %d", got)
+	// High selects every kind, so it must be a superset of standard rather
+	// than a fixed count: a hardcoded number here fails whenever a recipe is
+	// added, which says nothing about whether the levels are right.
+	high := recipe.GoRecipes(recipe.High)
+	if len(high) <= len(recipe.GoRecipes(recipe.Standard)) {
+		t.Errorf("high selected %d recipes, standard %d; high must be a superset",
+			len(high), len(recipe.GoRecipes(recipe.Standard)))
+	}
+	kinds := map[recipe.Kind]bool{}
+	for _, r := range high {
+		kinds[r.Kind] = true
+	}
+	for _, want := range []recipe.Kind{
+		recipe.KindBuild, recipe.KindVet, recipe.KindTest,
+		recipe.KindRace, recipe.KindFormat, recipe.KindAnalyzer,
+	} {
+		if !kinds[want] {
+			t.Errorf("high does not select the %s kind", want)
+		}
 	}
 	// Build must come first so a compile failure short-circuits the rest.
 	if recipe.GoRecipes(recipe.High)[0].Kind != recipe.KindBuild {
@@ -266,4 +283,70 @@ type fakeStore struct{ last []byte }
 func (f *fakeStore) Put(body []byte) (string, error) {
 	f.last = append([]byte(nil), body...)
 	return "hash-of-output", nil
+}
+
+// A semgrep error is a fault in the checking, not a verdict on the code.
+// Reporting it as "no findings" is the difference between "your code is fine"
+// and "we did not manage to check it".
+func TestSemgrepErrorsAreNotAPass(t *testing.T) {
+	out := `{"results":[],"errors":[{"message":"invalid rule: missing pattern","level":"error"}]}`
+	status, summary := recipe.Semgrep(2, out, "")
+	if status == recipe.Pass {
+		t.Fatal("a semgrep run that could not complete was reported as a pass")
+	}
+	if !strings.Contains(summary.Headline, "could not complete") {
+		t.Errorf("headline does not say the check failed to run: %q", summary.Headline)
+	}
+}
+
+func TestSemgrepFindingsCarryRuleAndMessage(t *testing.T) {
+	out := `{"results":[{"check_id":"evidence-must-be-stated","path":"internal/a/a.go",
+	  "start":{"line":42,"col":3},
+	  "extra":{"message":"This edge does not state its evidence category.","severity":"ERROR"}}],
+	  "errors":[]}`
+	status, summary := recipe.Semgrep(1, out, "")
+	if status != recipe.Fail {
+		t.Fatalf("status = %q, want fail", status)
+	}
+	if len(summary.Findings) != 1 {
+		t.Fatalf("got %d findings, want 1", len(summary.Findings))
+	}
+	f := summary.Findings[0]
+	if f.Rule != "evidence-must-be-stated" {
+		t.Errorf("rule = %q; a finding must be traceable to the rule that fired", f.Rule)
+	}
+	// The message is what reaches the model, and it is written as an
+	// instruction. Replacing it with a rule id throws away the useful half.
+	if !strings.Contains(f.Message, "evidence category") {
+		t.Errorf("message was not carried through: %q", f.Message)
+	}
+	if f.File != "internal/a/a.go" || f.Line != 42 {
+		t.Errorf("location lost: %+v", f)
+	}
+}
+
+func TestSemgrepCleanRunPasses(t *testing.T) {
+	status, summary := recipe.Semgrep(0, `{"results":[],"errors":[]}`, "")
+	if status != recipe.Pass {
+		t.Fatalf("status = %q, want pass", status)
+	}
+	if summary.Headline == "" {
+		t.Error("a passing run has no headline")
+	}
+}
+
+// Unparseable output must not be read as a clean run.
+func TestSemgrepUnparseableOutputIsNotAPass(t *testing.T) {
+	status, _ := recipe.Semgrep(2, "semgrep: command not found", "")
+	if status == recipe.Pass {
+		t.Fatal("unparseable output was reported as a pass")
+	}
+}
+
+// The recipe is skipped when there is nothing to check or no tool to check
+// with: semgrep is an addition, not a dependency of the build.
+func TestSemgrepAppliesOnlyWithRules(t *testing.T) {
+	if recipe.HasSemgrepRules(t.TempDir()) {
+		t.Error("the recipe applied to a repository with no rules")
+	}
 }

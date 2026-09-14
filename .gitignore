@@ -22,3 +22,6 @@ coverage.out
 
 # Fuzz crashers are kept; the working corpus is not.
 # (Regression seeds under testdata/fuzz/ ARE committed on purpose.)
+
+# Sidecar dependencies are installed, not committed; the lockfile is.
+sidecars/*/node_modules/

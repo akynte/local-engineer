@@ -88,6 +88,11 @@ type Finding struct {
 	Message string `json:"message"`
 	// Test names the failing test, when the tool reports one.
 	Test string `json:"test,omitempty"`
+	// Rule names the check that fired, when the tool has named rules. It is
+	// kept beside the message rather than folded into it so a finding can be
+	// traced back to the rule that produced it — and a rule that keeps firing
+	// on correct code can be found and removed.
+	Rule string `json:"rule,omitempty"`
 }
 
 // Summary is the compressed form of a run: what a next step needs, without

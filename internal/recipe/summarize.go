@@ -1,6 +1,7 @@
 package recipe
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -235,4 +236,101 @@ func lastLines(s string, n int) []string {
 		kept = kept[len(kept)-n:]
 	}
 	return kept
+}
+
+// semgrepOutput is the subset of semgrep's JSON this reads.
+type semgrepOutput struct {
+	Results []struct {
+		CheckID string `json:"check_id"`
+		Path    string `json:"path"`
+		Start   struct {
+			Line int `json:"line"`
+			Col  int `json:"col"`
+		} `json:"start"`
+		Extra struct {
+			Message  string `json:"message"`
+			Severity string `json:"severity"`
+		} `json:"extra"`
+	} `json:"results"`
+	Errors []struct {
+		Message string `json:"message"`
+		Level   string `json:"level"`
+	} `json:"errors"`
+}
+
+// Semgrep summarises a semgrep run.
+//
+// The message text is carried through verbatim because it is what reaches the
+// model as a finding: a rule's message is written as an instruction, and
+// replacing it with a rule id would throw away the only part that says what to
+// do instead.
+//
+// A semgrep *error* — an unparseable rule, a file it could not read — is not a
+// finding about the code and must not be reported as one. It is a fault in the
+// checking, and saying so is the difference between "your code is fine" and "we
+// did not manage to check it".
+func Semgrep(exitCode int, stdout, stderr string) (Status, Summary) {
+	var out semgrepOutput
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &out); err != nil {
+		// No parseable JSON: fall back rather than claim a clean run.
+		return Generic(exitCode, stdout, stderr)
+	}
+
+	if len(out.Results) == 0 && len(out.Errors) == 0 {
+		return Pass, Summary{Headline: "no semgrep findings"}
+	}
+
+	findings := make([]Finding, 0, len(out.Results))
+	bySeverity := map[string]int{}
+	for _, r := range out.Results {
+		sev := strings.ToUpper(r.Extra.Severity)
+		bySeverity[strings.ToLower(sev)]++
+		msg := strings.TrimSpace(r.Extra.Message)
+		if msg == "" {
+			msg = r.CheckID
+		}
+		findings = append(findings, Finding{
+			File: r.Path, Line: r.Start.Line, Column: r.Start.Col,
+			Message: msg, Rule: r.CheckID,
+		})
+	}
+
+	if len(out.Errors) > 0 {
+		// Report the fault in the checking, not as a verdict on the code.
+		var first string
+		if len(out.Errors) > 0 {
+			first = strings.TrimSpace(out.Errors[0].Message)
+		}
+		return Error, Summary{
+			Headline: fmt.Sprintf("semgrep could not complete: %s", truncateLine(first, 160)),
+			Findings: findings,
+			Counts:   countsOf(map[string]int{"errors": len(out.Errors), "findings": len(out.Results)}),
+		}
+	}
+
+	sortFindings(findings)
+	shown, truncated := trimFindings(findings)
+	if exitCode == 0 {
+		// Findings below the failing severity: real, reported, not fatal.
+		return Pass, Summary{
+			Headline:  fmt.Sprintf("%d semgrep finding(s), none blocking", len(findings)),
+			Findings:  shown,
+			Counts:    countsOf(bySeverity),
+			Truncated: truncated,
+		}
+	}
+	return Fail, Summary{
+		Headline:  fmt.Sprintf("%d semgrep finding(s)", len(findings)),
+		Findings:  shown,
+		Counts:    countsOf(bySeverity),
+		Truncated: truncated,
+	}
+}
+
+func truncateLine(s string, n int) string {
+	s = strings.TrimSpace(strings.ReplaceAll(s, "\n", " "))
+	if len(s) <= n {
+		return s
+	}
+	return s[:n-1] + "…"
 }
