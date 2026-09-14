@@ -55,14 +55,19 @@ func (e Evidence) Certain() bool { return e == Resolved || e == Declared }
 type NodeKind string
 
 const (
-	KindFile          NodeKind = "file"
-	KindDirectory     NodeKind = "directory"
-	KindPackage       NodeKind = "package"
-	KindModule        NodeKind = "module"
-	KindService       NodeKind = "service"
-	KindAPI           NodeKind = "api"
-	KindRoute         NodeKind = "route"
-	KindHandler       NodeKind = "handler"
+	KindFile      NodeKind = "file"
+	KindDirectory NodeKind = "directory"
+	KindPackage   NodeKind = "package"
+	KindModule    NodeKind = "module"
+	KindService   NodeKind = "service"
+	KindAPI       NodeKind = "api"
+	KindRoute     NodeKind = "route"
+	// KindHandler is deliberately absent: a handler is a function, and what
+	// makes it a handler is its incoming routes_to edge. Giving it a node kind
+	// of its own would mean a function that is also a handler needs two, and
+	// the graph would have to choose — losing either "this is a function" or
+	// "a route reaches this". The edge already says it, from the side that
+	// knows.
 	KindType          NodeKind = "type"
 	KindFunction      NodeKind = "function"
 	KindMethod        NodeKind = "method"

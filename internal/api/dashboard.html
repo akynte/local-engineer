@@ -51,6 +51,18 @@
   </section>
 
   <section>
+    <h2>Packet size per step</h2>
+    <div id="packets-empty" class="note">no packets recorded yet</div>
+    <div id="packet-chart" class="chart" hidden></div>
+    <p class="note" id="packet-note"></p>
+    <p class="note">§8.3. Bars are read against the cap, not against each other: a mean
+       well under the cap and a few steps pinned to it are very different situations,
+       and only the second means the cap is deciding what the model sees.
+       <strong>Retrieval misses</strong> are files a failure named that the packet did not
+       carry — the signal that retrieval, not the model, is what needs work.</p>
+  </section>
+
+  <section>
     <h2>Workspaces</h2>
     <table><thead><tr><th>Id</th><th>Name</th><th>Root</th></tr></thead>
     <tbody id="workspaces"></tbody></table>
@@ -58,8 +70,47 @@
        engine directories. Nothing is shared between them.</p>
   </section>
 </main>
+<style>
+.chart { display: flex; align-items: flex-end; gap: 2px; height: 120px;
+         border-bottom: 1px solid #ccc; padding-bottom: 2px; }
+.chart .bar { flex: 1 1 auto; min-width: 3px; background: #4a7; position: relative; }
+.chart .bar.at-cap { background: #c53; }
+.chart .bar.dropped { background: #c53; outline: 1px solid #911; }
+</style>
 <script>
 const $ = id => document.getElementById(id);
+
+// §8.3's chart. Oldest first, so it reads left to right as the task progressed.
+function renderPackets(m) {
+  const samples = (m.samples || []).slice().reverse();
+  const note = [];
+  if (m.workspace) note.push(`workspace ${m.workspace}`);
+  note.push(`${m.packets || 0} packet(s)`);
+  // The miss count sits beside the chart because the two are read together:
+  // a cap that is too small shows up as misses before it shows up anywhere else.
+  note.push(`${m.retrieval_misses || 0} retrieval miss(es)`);
+  $("packet-note").textContent = note.join(" · ");
+
+  if (samples.length === 0) {
+    $("packets-empty").hidden = false;
+    $("packet-chart").hidden = true;
+    return;
+  }
+  $("packets-empty").hidden = true;
+  $("packet-chart").hidden = false;
+
+  // Scale to the cap rather than to the tallest bar, so a chart of small
+  // packets does not look like a chart of large ones.
+  const cap = Math.max(...samples.map(s => s.budget || 0), 1);
+  $("packet-chart").innerHTML = samples.map(s => {
+    const pct = Math.min(100, Math.round((s.tokens / cap) * 100));
+    const atCap = s.budget > 0 && s.tokens >= s.budget * 0.95;
+    const cls = s.dropped > 0 ? "bar dropped" : (atCap ? "bar at-cap" : "bar");
+    const title = `${s.tokens} of ${s.budget || "?"} tokens` +
+      (s.dropped > 0 ? `, ${s.dropped} slice(s) dropped` : "");
+    return `<div class="${cls}" style="height:${pct}%" title="${esc(title)}"></div>`;
+  }).join("");
+}
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 async function get(path) {
@@ -68,8 +119,8 @@ async function get(path) {
 }
 
 async function refresh() {
-  const [status, ready, ws] = await Promise.all([
-    get("/v1/status"), get("/readyz"), get("/v1/workspaces"),
+  const [status, ready, ws, packets] = await Promise.all([
+    get("/v1/status"), get("/readyz"), get("/v1/workspaces"), get("/v1/packets"),
   ]);
 
   const v = status.body.version || {};
@@ -97,6 +148,8 @@ async function refresh() {
     $("sandbox").innerHTML = `${active} ${off}` || "—";
     $("sandbox-statement").textContent = sb.statement || "";
   }
+
+  renderPackets(packets.body || {});
 
   $("workspaces").innerHTML = (Array.isArray(ws.body) ? ws.body : []).map(w => `
     <tr><td class="mono">${esc(w.id)}</td><td>${esc(w.name)}</td>

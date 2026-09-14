@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/akynte/local-engineer/internal/analyzers/architecture"
 	"github.com/akynte/local-engineer/internal/analyzers/deploy"
 	"github.com/akynte/local-engineer/internal/analyzers/gitlog"
 	"github.com/akynte/local-engineer/internal/analyzers/golang"
@@ -111,7 +112,10 @@ func analyzers(cmd *cobra.Command) []index.Analyzer {
 	pa := protoavro.New()
 	pa.Warnf = warn
 
-	return []index.Analyzer{goa, ts, sqla, pa, dep, tf, gitl}
+	arch := architecture.New()
+	arch.Warnf = warn
+
+	return []index.Analyzer{goa, ts, sqla, pa, dep, tf, arch, gitl}
 }
 
 func newGraphCmd() *cobra.Command {

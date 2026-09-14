@@ -60,6 +60,7 @@ func New(addr string, deps Deps, log *slog.Logger) *Server {
 	mux.HandleFunc("GET /v1/status", s.status)
 	mux.HandleFunc("GET /v1/workspaces", s.workspaces)
 	mux.HandleFunc("GET /v1/sandbox", s.sandboxReport)
+	mux.HandleFunc("GET /v1/packets", s.packets)
 	mux.HandleFunc("GET /", s.dashboard)
 
 	s.srv = &http.Server{
@@ -251,4 +252,91 @@ func writeJSON(w http.ResponseWriter, code int, body any) {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(body)
+}
+
+// PacketSample is one step's packet, for the §8.3 chart.
+type PacketSample struct {
+	At     int64  `json:"at"`
+	TaskID string `json:"task_id,omitempty"`
+	Tokens int    `json:"tokens"`
+	// Budget is the cap that applied, so a bar can be read against its limit
+	// rather than against the largest bar on screen.
+	Budget int `json:"budget"`
+	// Dropped counts slices that did not fit, which §8.3 names as the signal
+	// that the cap is too small for the task.
+	Dropped int `json:"dropped"`
+}
+
+// PacketMetrics is what the dashboard charts.
+type PacketMetrics struct {
+	Samples []PacketSample `json:"samples"`
+	// Misses is the §8.3 primary metric: a needed file absent from the packet,
+	// discovered later by a failure. It sits beside packet size because the two
+	// are read together — a cap that is too small shows up here first.
+	Misses    int    `json:"retrieval_misses"`
+	Packets   int    `json:"packets"`
+	Workspace string `json:"workspace,omitempty"`
+}
+
+// packets serves §8.3's "packet size per step is charted in the dashboard".
+//
+// The chart exists to make one thing visible that a number cannot: whether
+// packets are pressing against the cap. A mean packet size well under the cap
+// and a handful of steps pinned to it are very different situations, and only
+// the second says the cap is doing the deciding.
+func (s *Server) packets(w http.ResponseWriter, r *http.Request) {
+	if s.deps.Root == nil {
+		writeJSON(w, http.StatusServiceUnavailable,
+			map[string]string{"error": "no data directory is open"})
+		return
+	}
+	records, err := s.deps.Root.ListWorkspaces()
+	if err != nil || len(records) == 0 {
+		// No workspace is not an error: a supervisor started outside one has
+		// nothing to chart, and an empty chart says that honestly.
+		writeJSON(w, http.StatusOK, PacketMetrics{})
+		return
+	}
+
+	// The most recently opened workspace is the one being worked in.
+	latest := records[0]
+	for _, rec := range records {
+		if rec.LastOpened.After(latest.LastOpened) {
+			latest = rec
+		}
+	}
+	st, err := s.deps.Root.OpenWorkspace(r.Context(), latest.ID)
+	if err != nil {
+		writeJSON(w, http.StatusOK, PacketMetrics{})
+		return
+	}
+
+	out := PacketMetrics{Workspace: latest.Name}
+	rows, err := st.Telemetry().SQL().QueryContext(r.Context(), `
+		SELECT COALESCE(ts,0), COALESCE(task_id,''), COALESCE(count,0), COALESCE(attrs,'{}')
+		FROM events WHERE kind = 'packet_built' ORDER BY ts DESC LIMIT 200`)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var sample PacketSample
+			var attrs string
+			if err := rows.Scan(&sample.At, &sample.TaskID, &sample.Tokens, &attrs); err != nil {
+				break
+			}
+			var parsed struct {
+				Budget  int `json:"budget"`
+				Dropped int `json:"dropped"`
+			}
+			_ = json.Unmarshal([]byte(attrs), &parsed)
+			sample.Budget, sample.Dropped = parsed.Budget, parsed.Dropped
+			out.Samples = append(out.Samples, sample)
+		}
+	}
+	out.Packets = len(out.Samples)
+
+	if err := st.Telemetry().SQL().QueryRowContext(r.Context(),
+		`SELECT COUNT(*) FROM events WHERE kind = 'retrieval_miss'`).Scan(&out.Misses); err != nil {
+		out.Misses = 0
+	}
+	writeJSON(w, http.StatusOK, out)
 }

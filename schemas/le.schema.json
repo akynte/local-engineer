@@ -65,7 +65,8 @@
           "type": "array",
           "items": {
             "type": "string"
-          }
+          },
+          "description": "Appended after the arguments derived from the active profile, so an operator can override any of them \u2014 llama-server takes the last occurrence of a repeated flag. Everything the profile expresses belongs there: \u00a79.3 puts thread counts and offload layers in the profile on purpose."
         },
         "port": {
           "type": "integer",
@@ -75,6 +76,10 @@
         "start_timeout_seconds": {
           "type": "integer",
           "minimum": 1
+        },
+        "model": {
+          "type": "string",
+          "description": "The GGUF to serve: an absolute path, or a filename under /data/models. Configuration rather than part of the profile, because a profile describes the machine and the same machine runs different models."
         }
       },
       "allOf": [

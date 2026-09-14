@@ -11,11 +11,14 @@ One SQLite file per workspace, at `workspaces/<id>/telemetry.db`.
 | Column | Meaning |
 |---|---|
 | `id` | row id |
-| `at` | unix milliseconds |
-| `kind` | what happened: `task_started`, `recipe_run`, `gate_opened`, `packet_built`, … |
+| `ts` | unix milliseconds |
+| `kind` | what happened: `task_started`, `recipe_run`, `gate_opened`, `packet_built`, `retrieval_miss`, … |
 | `task_id` | the task, when there is one |
 | `duration_ms` | how long it took |
-| `counts` | JSON of integers: tokens, findings, slices, retries |
+| `name` | what it was about: a recipe name, a file path |
+| `duration_ms` | how long it took |
+| `count` | the primary number: tokens for a packet, 1 for a miss |
+| `attrs` | JSON of numbers and enums, never source content |
 
 ### `gpu_samples`
 

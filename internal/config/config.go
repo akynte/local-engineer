@@ -92,9 +92,19 @@ type InferenceConfig struct {
 	Mode InferenceMode `yaml:"mode"`
 	// BaseURL is used when Mode is external.
 	BaseURL string `yaml:"base_url,omitempty"`
-	// Binary and Args drive the embedded llama-server.
-	Binary string   `yaml:"binary,omitempty"`
-	Args   []string `yaml:"args,omitempty"`
+	// Binary is the embedded llama-server executable.
+	Binary string `yaml:"binary,omitempty"`
+	// Model is the GGUF to serve: an absolute path, or a filename under
+	// /data/models. It is configuration rather than part of the profile
+	// because a profile describes the *machine*, and the same machine runs
+	// different models.
+	Model string `yaml:"model,omitempty"`
+	// Args are appended after the arguments derived from the active profile,
+	// so an operator can override any of them — llama-server takes the last
+	// occurrence of a repeated flag — or pass something the profile has no
+	// field for. Everything the profile does express belongs there, not here:
+	// §9.3 puts thread counts and offload layers in the profile on purpose.
+	Args []string `yaml:"args,omitempty"`
 	// Port is the embedded server's port; the sandbox allows TCP connect to
 	// exactly this port and nothing else (§6.1).
 	Port int `yaml:"port"`

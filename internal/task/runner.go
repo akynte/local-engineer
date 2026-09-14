@@ -18,6 +18,7 @@ import (
 	"github.com/akynte/local-engineer/internal/retrieval"
 	"github.com/akynte/local-engineer/internal/sandbox"
 	"github.com/akynte/local-engineer/internal/store"
+	"github.com/akynte/local-engineer/internal/telemetry"
 	"github.com/akynte/local-engineer/internal/worktree"
 )
 
@@ -67,6 +68,13 @@ type Runner struct {
 	// the default: a first failure is ordinary, a second repeat is a stuck
 	// hypothesis.
 	DiagnoseAfter int
+	// Telemetry records the retrieval-miss metric. Nil discards it; the misses
+	// still reach the outcome either way, so the measurement is never lost
+	// just because nobody is aggregating it.
+	Telemetry *telemetry.Recorder
+
+	// lastPacket is what the engine was given on the current attempt.
+	lastPacket *retrieval.Packet
 	// Logf reports progress. Nil discards it.
 	Logf func(format string, args ...any)
 
@@ -90,7 +98,8 @@ func NewRunner(s *store.Store, eng engine.Engine, sb sandbox.Runner, holder stri
 		Store: NewStore(s), Ledger: ledger.New(s), Worktrees: wm,
 		Retriever: retrieval.New(s), Artifacts: artifacts.New(s),
 		Engine: eng, Sandbox: sb, Holder: holder,
-		store: s, dirs: dirs,
+		Telemetry: telemetry.New(s),
+		store:     s, dirs: dirs,
 	}, nil
 }
 
@@ -133,6 +142,11 @@ type Outcome struct {
 	Review *critic.ReviewResult `json:"review,omitempty"`
 	// Diagnosis is a fresh reading of repeated failures, when one ran.
 	Diagnosis *critic.Hypothesis `json:"diagnosis,omitempty"`
+	// RetrievalMisses are files a failure named that the packet did not carry
+	// (§8.3). They are the signal that retrieval, not the model, is what needs
+	// work — and a task that fails with none of these failed for a different
+	// reason entirely.
+	RetrievalMisses []retrieval.Miss `json:"retrieval_misses,omitempty"`
 	// Diff is the change the task produced.
 	Diff string `json:"diff,omitempty"`
 	// Verified says which state the verdict describes. A verdict that does not
@@ -347,6 +361,12 @@ func (r *Runner) run(ctx context.Context, t *Task, wt *worktree.Worktree) (*Outc
 		out.Results = results
 		feedback = failedOnly(results)
 
+		// §8.3: a needed file absent from the packet, discovered later by a
+		// failure. It is counted apart from "the model got it wrong" because
+		// the two need opposite fixes — one is a retrieval problem no prompt
+		// will solve, the other a model problem a bigger packet makes worse.
+		r.recordMisses(ctx, t, out, feedback)
+
 		scope, err := wt.OutOfScope(ctx, budget.Scope)
 		if err != nil {
 			return nil, err
@@ -439,6 +459,19 @@ func (r *Runner) step(ctx context.Context, t *Task, wt *worktree.Worktree,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("task %s: retrieval: %w", t.ID, err)
+	}
+	// Kept so the next verification's failures can be compared against what the
+	// model was actually given. §8.3 makes that comparison a primary metric.
+	r.lastPacket = pkt
+
+	// §8.3: "packet size per step is charted in the dashboard". Recorded with
+	// the budget that applied, so a reader can see whether packets are pressing
+	// against the cap — a mean well under it and a few steps pinned to it are
+	// very different situations, and only the second says the cap is deciding.
+	if r.Telemetry != nil {
+		_ = r.Telemetry.Event(ctx, t.ID, "packet_built", "retrieval", 0, pkt.Tokens,
+			telemetry.Attrs{"budget": pkt.Budget, "dropped": pkt.Dropped,
+				"slices": len(pkt.Slices)})
 	}
 	// A packet carrying a foreign slice is an isolation incident, not a
 	// degraded result: refuse rather than proceed (§2.3).
@@ -872,5 +905,38 @@ func diagnosisAsFeedback(h critic.Hypothesis) recipe.Result {
 			Headline: "a fresh reading of the repeated failures: " + h.Cause,
 			Findings: findings,
 		},
+	}
+}
+
+// recordMisses compares what failed against what the packet carried.
+func (r *Runner) recordMisses(ctx context.Context, t *Task, out *Outcome, failures []recipe.Result) {
+	if r.lastPacket == nil || len(failures) == 0 {
+		return
+	}
+	converted := make([]retrieval.Failure, 0, len(failures))
+	for _, f := range failures {
+		rf := retrieval.Failure{Recipe: f.Recipe}
+		for _, finding := range f.Summary.Findings {
+			rf.Findings = append(rf.Findings, retrieval.FailureFinding{
+				File: finding.File, Message: finding.Message,
+			})
+		}
+		converted = append(converted, rf)
+	}
+
+	misses := retrieval.DetectMisses(r.lastPacket, converted)
+	if len(misses) == 0 {
+		return
+	}
+	out.RetrievalMisses = append(out.RetrievalMisses, misses...)
+	r.logf("task %s: %d retrieval miss(es): a failure named %d file(s) the packet did not carry",
+		t.ID, len(misses), len(misses))
+
+	if r.Telemetry != nil {
+		for _, m := range misses {
+			_ = r.Telemetry.Event(ctx, t.ID, "retrieval_miss", m.Path, 0, 1, telemetry.Attrs{
+				"recipe": m.Recipe,
+			})
+		}
 	}
 }

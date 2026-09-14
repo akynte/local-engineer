@@ -67,7 +67,7 @@ func newAPICmd() *cobra.Command {
 			_ = runner
 
 			procs := procman.New(func(f string, a ...any) { log.Info(fmt.Sprintf(f, a...)) })
-			if err := registerChildren(procs, cfg); err != nil {
+			if err := registerChildren(procs, cfg, profile, root.Layout().ModelsDir()); err != nil {
 				return err
 			}
 			go procs.Reap(ctx)
@@ -160,20 +160,27 @@ func selectSandbox(ctx context.Context, cfg config.Config) (sandbox.Runner, sand
 // registerChildren wires the §4.3 process model. `le api` itself is this
 // process, so only the inference server is a child in the default
 // configuration; `opencode serve` is started per task, not here.
-func registerChildren(m *procman.Manager, cfg config.Config) error {
+func registerChildren(m *procman.Manager, cfg config.Config, p *config.Profile, modelsDir string) error {
 	if cfg.Inference.Mode != config.ModeEmbedded {
 		return nil
+	}
+	// §4.3: the embedded server is started "with the active profile". The
+	// profile's runtime block is where §9.3 puts thread counts, offload layers,
+	// batch sizes and cache types, so building the command line anywhere else
+	// would put them back in the code.
+	args, err := config.LlamaArgs(cfg, p, modelsDir)
+	if err != nil {
+		return err
 	}
 	base := fmt.Sprintf("http://127.0.0.1:%d", cfg.Inference.Port)
 	return m.Add(procman.Child{
 		Name:      "llama-server",
 		Essential: true,
 		Build: func(ctx context.Context) (*exec.Cmd, error) {
-			args := append([]string{}, cfg.Inference.Args...)
-			// The binary and arguments come from le.yaml, which is operator
-			// configuration under /data/config — the same trust level as the
-			// supervisor itself. An operator who can edit it can already run
-			// anything in this container.
+			// The binary and arguments come from le.yaml and the active
+			// profile, both operator configuration under /data/config — the
+			// same trust level as the supervisor itself. An operator who can
+			// edit them can already run anything in this container.
 			return exec.CommandContext(ctx, cfg.Inference.Binary, args...), nil //nolint:gosec // see above
 		},
 		Health: func(ctx context.Context) error {

@@ -23,7 +23,8 @@ func newModelsCmd() *cobra.Command {
 			"`le models bench` measures this machine and writes a profile from what it saw,\n" +
 			"so the numbers the supervisor admits tasks against are measured rather than guessed.",
 	}
-	cmd.AddCommand(newModelsBenchCmd(), newModelsHealthCmd(), newModelsConformanceCmd())
+	cmd.AddCommand(newModelsBenchCmd(), newModelsHealthCmd(), newModelsConformanceCmd(),
+		newModelsNeedleCmd())
 	return cmd
 }
 
@@ -229,6 +230,92 @@ func newModelsConformanceCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&role, "role", string(llm.RoleCoding), "which role's provider to check")
 	cmd.Flags().IntVar(&timeout, "timeout", 180, "seconds allowed for each check")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON")
+	return cmd
+}
+
+// newModelsNeedleCmd measures where retrieval starts failing (§8.3).
+func newModelsNeedleCmd() *cobra.Command {
+	var (
+		sizes  []int
+		asJSON bool
+		write  bool
+	)
+	cmd := &cobra.Command{
+		Use:   "needle",
+		Short: "Measure the packet size this model can actually retrieve from",
+		Long: "§8.3: \"the needle test sets the hard packet cap per model profile\".\n\n" +
+			"A window a model accepts and a window it retrieves from are different\n" +
+			"sizes. The gap between them is where context-retrieval misses come from:\n" +
+			"the needed slice was in the packet and the model did not use it.\n\n" +
+			"A fact is hidden at several depths in a packet of code, and the cap is the\n" +
+			"largest size where every depth is recalled — not where the average is good.\n" +
+			"A packet builder cannot choose where the needed slice lands, so a size that\n" +
+			"works at the edges and fails in the middle is a size that fails.",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			root, err := openRoot()
+			if err != nil {
+				return err
+			}
+			defer closeRoot(cmd, root)
+
+			cfg, err := loadConfig(root)
+			if err != nil {
+				return err
+			}
+			f, err := llm.LoadProvidersFile(root.Layout().ConfigDir())
+			if err != nil {
+				return fmt.Errorf("no providers.yaml: run `le config init` first (%w)", err)
+			}
+			router, err := llm.NewRouter(f, cfg.Offline)
+			if err != nil {
+				return err
+			}
+			defer router.Close()
+
+			p, err := router.For(llm.RoleCoding)
+			if err != nil {
+				return err
+			}
+
+			ctx, cancel := context.WithTimeout(cmd.Context(), 60*time.Minute)
+			defer cancel()
+
+			res, err := models.Needle(ctx, p, models.NeedleOptions{
+				Sizes:    sizes,
+				Progress: func(msg string) { fmt.Fprintf(cmd.ErrOrStderr(), "  %s\n", msg) },
+			})
+			if err != nil {
+				return err
+			}
+			if asJSON {
+				return emitJSON(res)
+			}
+			fmt.Fprint(cmd.OutOrStdout(), "\n"+res.Format())
+
+			if !write {
+				return nil
+			}
+			if res.RecommendedCap == 0 {
+				return fmt.Errorf("nothing measured to write: recall failed at every size")
+			}
+			profile := loadProfile(root, cfg)
+			if profile == nil {
+				return fmt.Errorf("no active profile to update; run `le models bench --write` first")
+			}
+			previous := profile.MaxPacketTokens
+			profile.MaxPacketTokens = res.RecommendedCap
+			if err := config.SaveProfile(profileDir(root), *profile); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(),
+				"\nmax_packet_tokens in %s: %d -> %d (measured, not derived)\n",
+				profile.Name, previous, res.RecommendedCap)
+			return nil
+		},
+	}
+	cmd.Flags().IntSliceVar(&sizes, "sizes", nil, "packet sizes to try, in tokens")
+	cmd.Flags().BoolVar(&write, "write", false, "save the measured cap into the active profile")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON")
 	return cmd
 }
