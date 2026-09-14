@@ -1,0 +1,125 @@
+# Parcel.ContainsPerishable is computed in ParcelFor and consumed by nothing:
+# a half-built feature. The rule belongs where the other handling refusal
+# lives, in Rate, and the API already turns ErrNoCarrier into a 409.
+id: perishable-zone-001
+category: feature
+objective: >-
+  We keep shipping chilled goods to customers abroad and they arrive spoiled,
+  because only the domestic network is refrigerated. Stop the service from
+  quoting or accepting those shipments, and make the refusal reach the customer
+  as clearly as the other refusals already do.
+fixture: fixtures/warehouse
+scope:
+  - internal/shipping
+leak_risk: none
+verification: standard
+notes: >-
+  The parcel already records whether it contains perishable goods; nothing reads
+  it. The domestic zone is the only one with the refrigerated network, and it is
+  distinguishable by the same flag that gates special handling. A
+  wrong-but-passing solution refuses perishables everywhere including domestic,
+  or returns a bare error the API maps to 500 instead of the existing carrier
+  refusal that maps to 409.
+budget:
+  max_attempts: 3
+  max_wall_seconds: 600
+acceptance:
+  argv: ["go", "test", "./..."]
+  timeout_seconds: 300
+  must_not_change:
+    - internal/shipping/hidden_acceptance_test.go
+  files:
+    internal/shipping/hidden_acceptance_test.go: |
+      package shipping
+
+      import (
+        "context"
+        "errors"
+        "testing"
+
+        "example.com/warehouse/internal/domain"
+        "example.com/warehouse/internal/store"
+      )
+
+      func perishableSetup(t *testing.T) *Service {
+        t.Helper()
+        mem := store.NewMemory()
+        ctx := context.Background()
+        if err := mem.PutItem(ctx, domain.Item{
+          SKU: "PE-1111", Name: "Chilled", Category: domain.CategoryPerishable,
+          UnitPrice: domain.NewMoney(500, domain.GBP), WeightGram: 400,
+        }); err != nil {
+          t.Fatal(err)
+        }
+        return New(mem, DefaultZones()...)
+      }
+
+      func perishableParcel() Parcel {
+        return Parcel{WeightGram: 400, ContainsPerishable: true}
+      }
+
+      // Chilled goods must still go out on the domestic network.
+      func TestPerishableStillShipsDomestically(t *testing.T) {
+        s := perishableSetup(t)
+        z, err := s.ZoneFor("GB")
+        if err != nil {
+          t.Fatal(err)
+        }
+        if _, err := s.Rate(z, perishableParcel(), domain.GBP); err != nil {
+          t.Fatalf("domestic perishable shipment was refused: %v", err)
+        }
+      }
+
+      // They must not go abroad.
+      func TestPerishableRefusedAbroad(t *testing.T) {
+        s := perishableSetup(t)
+        for _, country := range []string{"FR", "US"} {
+          z, err := s.ZoneFor(country)
+          if err != nil {
+            t.Fatal(err)
+          }
+          _, err = s.Rate(z, perishableParcel(), domain.GBP)
+          if err == nil {
+            t.Fatalf("%s: a perishable parcel was quoted for a zone with no cold chain", country)
+          }
+          // The API turns ErrNoCarrier into a 409 the customer can act on;
+          // anything else becomes a 500.
+          if !errors.Is(err, ErrNoCarrier) {
+            t.Fatalf("%s: got %v, want an error wrapping ErrNoCarrier so the API "+
+              "reports it as a refusal rather than a fault", country, err)
+          }
+        }
+      }
+
+      // Non-perishable shipments abroad are unaffected.
+      func TestOrdinaryGoodsStillShipAbroad(t *testing.T) {
+        s := perishableSetup(t)
+        z, err := s.ZoneFor("FR")
+        if err != nil {
+          t.Fatal(err)
+        }
+        if _, err := s.Rate(z, Parcel{WeightGram: 400}, domain.GBP); err != nil {
+          t.Fatalf("an ordinary parcel to France was refused: %v", err)
+        }
+      }
+
+      // The quote path must refuse too, not just the rate call.
+      func TestQuoteRefusesPerishableAbroad(t *testing.T) {
+        mem := store.NewMemory()
+        ctx := context.Background()
+        if err := mem.PutItem(ctx, domain.Item{
+          SKU: "PE-1111", Category: domain.CategoryPerishable,
+          UnitPrice: domain.NewMoney(500, domain.GBP), WeightGram: 400,
+        }); err != nil {
+          t.Fatal(err)
+        }
+        s := New(mem, DefaultZones()...)
+        _, err := s.Quote(ctx, domain.Order{
+          Currency: domain.GBP, ShippingZone: "eu",
+          Lines: []domain.OrderLine{{SKU: "PE-1111", Quantity: 1,
+            UnitPrice: domain.NewMoney(500, domain.GBP)}},
+        })
+        if !errors.Is(err, ErrNoCarrier) {
+          t.Fatalf("Quote returned %v, want ErrNoCarrier", err)
+        }
+      }

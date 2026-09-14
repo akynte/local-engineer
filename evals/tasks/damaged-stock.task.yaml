@@ -1,0 +1,131 @@
+# A schema change with consumers spread across three packages. The field is
+# easy; finding everything that derives an availability number from it is the
+# task. inventory.Available, inventory.ReorderReport, the API's stock handler
+# and the reconciler all read the same row.
+id: damaged-stock-001
+category: schema_change
+objective: >-
+  Warehouse staff need to record units that are physically present but unsellable
+  — crushed boxes, split seals, expired date codes. Add a per-SKU damaged count
+  to the stock record, with an inventory method to write it, and make sure the
+  rest of the service stops promising those units to customers. Damaged units
+  are still on the premises and must keep showing up in the on-hand figure.
+fixture: fixtures/warehouse
+scope:
+  - internal/store
+  - internal/inventory
+  - internal/api
+  - internal/worker
+leak_risk: none
+verification: standard
+notes: >-
+  The interesting part is not the field, it is that four places derive a number
+  from the same row: Stock.Available, inventory.Available, ReorderReport and the
+  API's stock handler. A wrong-but-passing solution adds the field and updates
+  Stock.Available only, leaving the reorder report to under-count what needs
+  buying — the hidden tests cover the reorder path for that reason. Subtracting
+  damage from OnHand instead of from availability also passes the first check
+  and loses the physical count.
+budget:
+  max_attempts: 3
+  max_wall_seconds: 900
+acceptance:
+  argv: ["go", "test", "./..."]
+  timeout_seconds: 300
+  must_not_change:
+    - internal/inventory/hidden_acceptance_test.go
+  files:
+    internal/inventory/hidden_acceptance_test.go: |
+      package inventory
+
+      import (
+        "context"
+        "testing"
+
+        "example.com/warehouse/internal/domain"
+        "example.com/warehouse/internal/store"
+      )
+
+      func damagedSetup(t *testing.T) (*Service, *store.Memory) {
+        t.Helper()
+        mem := store.NewMemory()
+        ctx := context.Background()
+        if err := mem.PutItem(ctx, domain.Item{
+          SKU: "DM-2222", Name: "Crate", Category: domain.CategoryGeneral,
+          UnitPrice: domain.NewMoney(900, domain.GBP), WeightGram: 1200,
+        }); err != nil {
+          t.Fatal(err)
+        }
+        if err := mem.PutStock(ctx, store.Stock{SKU: "DM-2222", OnHand: 10}); err != nil {
+          t.Fatal(err)
+        }
+        return New(mem, mem), mem
+      }
+
+      // Damaged units cannot be promised to a customer.
+      func TestDamagedUnitsAreNotAvailable(t *testing.T) {
+        svc, _ := damagedSetup(t)
+        ctx := context.Background()
+        if err := svc.MarkDamaged(ctx, "DM-2222", 3); err != nil {
+          t.Fatal(err)
+        }
+        got, err := svc.Available(ctx, "DM-2222")
+        if err != nil {
+          t.Fatal(err)
+        }
+        if got != 7 {
+          t.Fatalf("available = %d with 10 on hand and 3 damaged, want 7", got)
+        }
+      }
+
+      // They are still physically present, so the on-hand count must not move.
+      func TestDamagedUnitsStayOnHand(t *testing.T) {
+        svc, mem := damagedSetup(t)
+        ctx := context.Background()
+        if err := svc.MarkDamaged(ctx, "DM-2222", 4); err != nil {
+          t.Fatal(err)
+        }
+        st, err := mem.GetStock(ctx, "DM-2222")
+        if err != nil {
+          t.Fatal(err)
+        }
+        if st.OnHand != 10 {
+          t.Fatalf("on hand = %d after marking damage, want 10: damaged units are "+
+            "still in the building", st.OnHand)
+        }
+      }
+
+      // A reservation cannot dip into damaged stock.
+      func TestReserveCannotTakeDamagedUnits(t *testing.T) {
+        svc, _ := damagedSetup(t)
+        ctx := context.Background()
+        if err := svc.MarkDamaged(ctx, "DM-2222", 6); err != nil {
+          t.Fatal(err)
+        }
+        if err := svc.Reserve(ctx, "DM-2222", 4); err != nil {
+          t.Fatalf("reserving within the sellable count failed: %v", err)
+        }
+        if err := svc.Reserve(ctx, "DM-2222", 1); err == nil {
+          t.Fatal("a reservation was allowed to take a damaged unit")
+        }
+      }
+
+      // The reorder report has to see the shortfall too, or nobody reorders.
+      func TestReorderReportCountsDamageAsMissing(t *testing.T) {
+        svc, _ := damagedSetup(t)
+        ctx := context.Background()
+        if err := svc.MarkDamaged(ctx, "DM-2222", 8); err != nil {
+          t.Fatal(err)
+        }
+        skus, err := svc.ReorderReport(ctx, 5)
+        if err != nil {
+          t.Fatal(err)
+        }
+        for _, s := range skus {
+          if s == "DM-2222" {
+            return
+          }
+        }
+        t.Fatalf("DM-2222 has 2 sellable units against a threshold of 5 and was not "+
+          "reported for reorder: %v", skus)
+      }

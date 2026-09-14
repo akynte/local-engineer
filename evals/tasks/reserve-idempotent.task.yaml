@@ -1,0 +1,136 @@
+# A signature change on inventory.Reserve, whose only caller is the reservation
+# loop in orders.Place. The graph's impact_of exists for exactly this: the
+# callers are in a different package and the compiler finds them only after the
+# change is made.
+id: reserve-idempotent-001
+category: api_change
+objective: >-
+  Order placement is retried by our API gateway when a response is slow. When
+  that happens the same order reserves its stock twice and the second customer
+  to ask is told we are out. Reservations need to be safe to repeat: asking for
+  the same order's stock again must not take any more of it. Give Reserve a way
+  to tell repeats apart and make placement use it.
+fixture: fixtures/warehouse
+scope:
+  - internal/inventory
+  - internal/orders
+  - internal/store
+leak_risk: none
+verification: standard
+notes: >-
+  The interesting part is that Reserve's caller is in another package, so the
+  signature change has to be carried into orders.Place and the existing
+  inventory tests updated. A wrong-but-passing solution makes Reserve a no-op
+  when the SKU already has any reservation at all, which breaks two different
+  orders reserving the same SKU — the third hidden test covers that.
+budget:
+  max_attempts: 3
+  max_wall_seconds: 900
+acceptance:
+  argv: ["go", "test", "./..."]
+  timeout_seconds: 300
+  must_not_change:
+    - internal/orders/hidden_acceptance_test.go
+  files:
+    internal/orders/hidden_acceptance_test.go: |
+      package orders
+
+      import (
+        "context"
+        "testing"
+
+        "example.com/warehouse/internal/audit"
+        "example.com/warehouse/internal/domain"
+        "example.com/warehouse/internal/inventory"
+        "example.com/warehouse/internal/notify"
+        "example.com/warehouse/internal/pricing"
+        "example.com/warehouse/internal/shipping"
+        "example.com/warehouse/internal/store"
+      )
+
+      func idemHarness(t *testing.T) (*Service, *store.Memory) {
+        t.Helper()
+        ctx := context.Background()
+        mem := store.NewMemory()
+        if err := mem.PutItem(ctx, domain.Item{
+          SKU: "AB-1234", Name: "Widget", Category: domain.CategoryGeneral,
+          UnitPrice: domain.NewMoney(1000, domain.GBP), WeightGram: 500,
+        }); err != nil {
+          t.Fatal(err)
+        }
+        if err := mem.PutStock(ctx, store.Stock{SKU: "AB-1234", OnHand: 20}); err != nil {
+          t.Fatal(err)
+        }
+        inv := inventory.New(mem, mem)
+        return New(mem, mem, inv,
+          pricing.New(mem, 2000),
+          shipping.New(mem, shipping.DefaultZones()...),
+          audit.NewMemoryLog(),
+          notify.New(notify.NewRecorder()),
+        ), mem
+      }
+
+      func placeReq(id string, qty int) PlaceRequest {
+        return PlaceRequest{
+          OrderID: domain.OrderID(id), CustomerID: "c1", Currency: domain.GBP,
+          CountryCode: "GB",
+          Lines: []RequestLine{{SKU: "AB-1234", Quantity: qty}},
+        }
+      }
+
+      func reservedCount(t *testing.T, mem *store.Memory) int {
+        t.Helper()
+        st, err := mem.GetStock(context.Background(), "AB-1234")
+        if err != nil {
+          t.Fatal(err)
+        }
+        return st.Reserved
+      }
+
+      // Placing the same order twice must not reserve twice.
+      func TestRepeatedPlacementReservesOnce(t *testing.T) {
+        svc, mem := idemHarness(t)
+        ctx := context.Background()
+
+        if _, _, err := svc.Place(ctx, placeReq("dup-1", 5)); err != nil {
+          t.Fatal(err)
+        }
+        if got := reservedCount(t, mem); got != 5 {
+          t.Fatalf("reserved = %d after the first placement, want 5", got)
+        }
+
+        // The gateway retries. The call may succeed or report the duplicate;
+        // what it must not do is take more stock.
+        _, _, _ = svc.Place(ctx, placeReq("dup-1", 5))
+        if got := reservedCount(t, mem); got != 5 {
+          t.Fatalf("reserved = %d after the retry, want 5: the repeat took more stock", got)
+        }
+      }
+
+      // A third repeat must not drift either.
+      func TestRepeatedPlacementIsStable(t *testing.T) {
+        svc, mem := idemHarness(t)
+        ctx := context.Background()
+        for i := 0; i < 3; i++ {
+          _, _, _ = svc.Place(ctx, placeReq("dup-2", 4))
+        }
+        if got := reservedCount(t, mem); got != 4 {
+          t.Fatalf("reserved = %d after three identical placements, want 4", got)
+        }
+      }
+
+      // Two different orders for the same SKU must both reserve. A fix that
+      // refuses whenever the SKU already has a reservation breaks this.
+      func TestDifferentOrdersBothReserve(t *testing.T) {
+        svc, mem := idemHarness(t)
+        ctx := context.Background()
+        if _, _, err := svc.Place(ctx, placeReq("first", 3)); err != nil {
+          t.Fatal(err)
+        }
+        if _, _, err := svc.Place(ctx, placeReq("second", 2)); err != nil {
+          t.Fatalf("a second, distinct order was refused: %v", err)
+        }
+        if got := reservedCount(t, mem); got != 5 {
+          t.Fatalf("reserved = %d for two distinct orders, want 5", got)
+        }
+      }

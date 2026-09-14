@@ -1,0 +1,167 @@
+# The reconciler releases a cancelled order's reservation on every pass, but
+# orders.Cancel already released it at cancellation time. The Stock row has a
+# single Reserved counter shared by every order, so the repeat release takes
+# stock away from unrelated live orders.
+#
+# Nothing in internal/worker says this. Finding it means reading Cancel in
+# internal/orders and noticing it already calls Release — which is exactly the
+# consumer relationship the graph exists to surface.
+id: reconcile-steals-reservations
+category: bug_fix
+objective: >-
+  Stock reserved by live orders is going missing. Orders placed successfully are
+  later found holding less reserved stock than they need, and it gets worse the
+  more cancellations there have been. The background jobs are suspected. Find
+  the cause and fix it, without breaking recovery of reservations that really
+  were orphaned.
+fixture: fixtures/warehouse
+scope:
+  - internal/worker
+  - internal/orders
+  - internal/domain
+  - internal/store
+leak_risk: none
+verification: standard
+notes: >-
+  Cancel releases the reservation, then the reconciler releases it again on its
+  next pass, decrementing a counter that now belongs to other orders. The fix
+  has to distinguish a cancellation whose stock was already returned from one
+  orphaned by a crash between the state write and the release. A
+  wrong-but-passing solution makes the reconciler never release anything, which
+  passes the "stock stops vanishing" half and silently removes the recovery the
+  job exists for — the second hidden test covers that case.
+budget:
+  max_attempts: 3
+  max_wall_seconds: 900
+acceptance:
+  argv: ["go", "test", "./..."]
+  timeout_seconds: 300
+  must_not_change:
+    - internal/worker/hidden_acceptance_test.go
+  files:
+    internal/worker/hidden_acceptance_test.go: |
+      package worker
+
+      import (
+        "context"
+        "testing"
+
+        "example.com/warehouse/internal/audit"
+        "example.com/warehouse/internal/domain"
+        "example.com/warehouse/internal/inventory"
+        "example.com/warehouse/internal/notify"
+        "example.com/warehouse/internal/orders"
+        "example.com/warehouse/internal/pricing"
+        "example.com/warehouse/internal/shipping"
+        "example.com/warehouse/internal/store"
+      )
+
+      // harness wires the real services, so these tests describe behaviour
+      // rather than any particular way of recording it.
+      func harness(t *testing.T) (*orders.Service, *Reconciler, *store.Memory) {
+        t.Helper()
+        ctx := context.Background()
+        mem := store.NewMemory()
+        if err := mem.PutItem(ctx, domain.Item{
+          SKU: "AB-1234", Name: "Widget", Category: domain.CategoryGeneral,
+          UnitPrice: domain.NewMoney(1000, domain.GBP), WeightGram: 500,
+        }); err != nil {
+          t.Fatal(err)
+        }
+        if err := mem.PutStock(ctx, store.Stock{SKU: "AB-1234", OnHand: 20}); err != nil {
+          t.Fatal(err)
+        }
+        inv := inventory.New(mem, mem)
+        svc := orders.New(mem, mem, inv,
+          pricing.New(mem, 2000),
+          shipping.New(mem, shipping.DefaultZones()...),
+          audit.NewMemoryLog(),
+          notify.New(notify.NewRecorder()),
+        )
+        return svc, NewReconciler(mem, mem, inv, audit.NewMemoryLog()), mem
+      }
+
+      func place(t *testing.T, svc *orders.Service, id string, qty int) {
+        t.Helper()
+        _, _, err := svc.Place(context.Background(), orders.PlaceRequest{
+          OrderID: domain.OrderID(id), CustomerID: "c1", Currency: domain.GBP,
+          CountryCode: "GB",
+          Lines: []orders.RequestLine{{SKU: "AB-1234", Quantity: qty}},
+        })
+        if err != nil {
+          t.Fatalf("placing %s: %v", id, err)
+        }
+      }
+
+      func reserved(t *testing.T, mem *store.Memory) int {
+        t.Helper()
+        st, err := mem.GetStock(context.Background(), "AB-1234")
+        if err != nil {
+          t.Fatal(err)
+        }
+        return st.Reserved
+      }
+
+      // A cancellation that already returned its stock must not be released a
+      // second time: the counter is shared, so the repeat release is taken from
+      // whichever orders are still live.
+      func TestReconcileDoesNotTakeStockFromLiveOrders(t *testing.T) {
+        ctx := context.Background()
+        svc, rec, mem := harness(t)
+
+        place(t, svc, "live-1", 4)
+        place(t, svc, "doomed-1", 3)
+        if got := reserved(t, mem); got != 7 {
+          t.Fatalf("reserved = %d after placing both orders, want 7", got)
+        }
+
+        if err := svc.Cancel(ctx, "doomed-1", "changed their mind"); err != nil {
+          t.Fatal(err)
+        }
+        if got := reserved(t, mem); got != 4 {
+          t.Fatalf("reserved = %d after cancelling, want 4", got)
+        }
+
+        for pass := 1; pass <= 3; pass++ {
+          if _, err := rec.RunOnce(ctx); err != nil {
+            t.Fatalf("pass %d: %v", pass, err)
+          }
+        }
+        if got := reserved(t, mem); got != 4 {
+          t.Fatalf("reserved = %d after %d reconciliation passes, want 4: the live "+
+            "order's reservation was released along with the cancelled one", got, 3)
+        }
+      }
+
+      // The job still has to do what it exists for. An order cancelled without
+      // its stock being returned — a crash between the state write and the
+      // release — must still be recovered.
+      func TestReconcileStillRecoversOrphanedReservations(t *testing.T) {
+        ctx := context.Background()
+        svc, rec, mem := harness(t)
+
+        place(t, svc, "live-2", 2)
+        place(t, svc, "orphan-1", 5)
+        if got := reserved(t, mem); got != 7 {
+          t.Fatalf("reserved = %d, want 7", got)
+        }
+
+        // Cancel the order the way a crashed process would leave it: the state
+        // is written, the stock never comes back.
+        order, err := mem.GetOrder(ctx, "orphan-1")
+        if err != nil {
+          t.Fatal(err)
+        }
+        order.State = domain.StateCancelled
+        if err := mem.PutOrder(ctx, order); err != nil {
+          t.Fatal(err)
+        }
+
+        if _, err := rec.RunOnce(ctx); err != nil {
+          t.Fatal(err)
+        }
+        if got := reserved(t, mem); got != 2 {
+          t.Fatalf("reserved = %d after reconciling an orphaned cancellation, want 2: "+
+            "the reconciler no longer recovers stock, which is what it is for", got)
+        }
+      }

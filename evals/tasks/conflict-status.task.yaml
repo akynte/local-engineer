@@ -1,0 +1,83 @@
+# store.ErrConflict is returned by PutStock when two reservations race. It
+# reaches the API through inventory.Reserve and orders.Place, and writeError
+# has no case for it — so a retryable conflict is reported as a 500.
+#
+# The error is defined in internal/store and consumed in internal/api. Neither
+# file mentions the other; finding the gap means following the consumer.
+id: conflict-status-001
+category: bug_fix
+objective: >-
+  When two customers reserve the last of a SKU at the same moment, one of them
+  gets a 500 Internal Server Error. Nothing is actually broken and the request
+  is safe to retry, but clients treat it as our fault and stop retrying. Make
+  the API report what really happened.
+fixture: fixtures/warehouse
+scope:
+  - internal/api
+leak_risk: none
+verification: standard
+notes: >-
+  writeError maps every error the service defines except store.ErrConflict,
+  which falls through to the 500 default. The conventional answer, and the one
+  the file already uses for the other retryable clash (insufficient stock), is
+  409. A wrong-but-passing solution changes the default case to 409, which would
+  turn every genuinely unknown failure into a retry loop.
+budget:
+  max_attempts: 3
+  max_wall_seconds: 600
+acceptance:
+  argv: ["go", "test", "./..."]
+  timeout_seconds: 300
+  must_not_change:
+    - internal/api/hidden_acceptance_test.go
+  files:
+    internal/api/hidden_acceptance_test.go: |
+      package api
+
+      import (
+        "errors"
+        "fmt"
+        "net/http"
+        "net/http/httptest"
+        "testing"
+
+        "example.com/warehouse/internal/store"
+      )
+
+      // A version conflict is retryable and must say so.
+      func TestConflictIsReportedAsConflict(t *testing.T) {
+        rec := httptest.NewRecorder()
+        writeError(rec, fmt.Errorf("reserving: %w", store.ErrConflict))
+        if rec.Code != http.StatusConflict {
+          t.Fatalf("status = %d for a version conflict, want %d",
+            rec.Code, http.StatusConflict)
+        }
+      }
+
+      // An error the service does not recognise must still be a 500. Turning the
+      // default into a conflict would make every unknown failure look retryable.
+      func TestUnknownErrorIsStillInternal(t *testing.T) {
+        rec := httptest.NewRecorder()
+        writeError(rec, errors.New("the database caught fire"))
+        if rec.Code != http.StatusInternalServerError {
+          t.Fatalf("status = %d for an unrecognised error, want %d",
+            rec.Code, http.StatusInternalServerError)
+        }
+      }
+
+      // The mappings that already worked must keep working.
+      func TestExistingMappingsSurvive(t *testing.T) {
+        for _, tc := range []struct {
+          name string
+          err  error
+          want int
+        }{
+          {"not found", store.ErrNotFound, http.StatusNotFound},
+        } {
+          rec := httptest.NewRecorder()
+          writeError(rec, tc.err)
+          if rec.Code != tc.want {
+            t.Errorf("%s: status = %d, want %d", tc.name, rec.Code, tc.want)
+          }
+        }
+      }
