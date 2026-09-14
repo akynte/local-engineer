@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/akynte/local-engineer/internal/analyzers/golang"
 	"github.com/akynte/local-engineer/internal/index"
 	"github.com/akynte/local-engineer/internal/retrieval"
 )
@@ -32,6 +33,7 @@ func newIndexCmd() *cobra.Command {
 				MaxFileBytes: cfg.Index.MaxFileBytes,
 				Excludes:     cfg.Index.Excludes,
 				ChunkLines:   cfg.Index.ChunkLines,
+				Analyzers:    analyzers(cmd),
 			})
 
 			results := map[string]index.Stats{}
@@ -62,6 +64,17 @@ func newIndexCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON")
 	return cmd
+}
+
+// analyzers returns the language analyzers `le index` runs after the
+// filesystem layer. Each reports its own non-fatal problems: a module that
+// will not type-check must not lose the rest of the index.
+func analyzers(cmd *cobra.Command) []index.Analyzer {
+	goa := golang.New()
+	goa.Warnf = func(format string, args ...any) {
+		fmt.Fprintf(cmd.ErrOrStderr(), format+"\n", args...)
+	}
+	return []index.Analyzer{goa}
 }
 
 func newGraphCmd() *cobra.Command {

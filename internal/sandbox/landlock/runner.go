@@ -155,16 +155,33 @@ func Apply(spec sandbox.Spec) error {
 	}
 	cfg := ll.V10.BestEffort()
 
-	rules := make([]ll.Rule, 0, len(spec.ReadOnly)+len(spec.ReadWrite)+len(spec.TCPConnect)+len(spec.TCPBind))
-	if len(spec.ReadOnly) > 0 {
-		// IgnoreIfMissing: a toolchain path absent from a slim image must not
-		// abort the task; the remaining rules still apply.
-		rules = append(rules, ll.RODirs(spec.ReadOnly...).IgnoreIfMissing())
+	// Landlock rules for a directory and for a regular file carry different
+	// access rights, and applying the wrong one is an error rather than a
+	// no-op. Classifying here means a caller can list paths without knowing
+	// which is which — and a caller that has to know will eventually get it
+	// wrong on someone else's filesystem layout.
+	roDirs, roFiles := classify(spec.ReadOnly)
+	rwDirs, rwFiles := classify(spec.ReadWrite)
+
+	rules := make([]ll.Rule, 0, 8+len(spec.TCPConnect)+len(spec.TCPBind))
+	// IgnoreIfMissing throughout: a toolchain path absent from a slim image
+	// must not abort the task; the remaining rules still apply.
+	if len(roDirs) > 0 {
+		rules = append(rules, ll.RODirs(roDirs...).IgnoreIfMissing())
 	}
-	if len(spec.ReadWrite) > 0 {
+	if len(roFiles) > 0 {
+		rules = append(rules, ll.ROFiles(roFiles...).IgnoreIfMissing())
+	}
+	if len(rwDirs) > 0 {
 		// WithRefer permits rename and link within the granted set, which a
 		// build or a test needs for atomic file replacement.
-		rules = append(rules, ll.RWDirs(spec.ReadWrite...).IgnoreIfMissing().WithRefer())
+		rules = append(rules, ll.RWDirs(rwDirs...).IgnoreIfMissing().WithRefer())
+	}
+	if len(rwFiles) > 0 {
+		// WithIoctlDev: device nodes such as /dev/null and /dev/tty are
+		// ioctl'd by ordinary programs, and denying that produces failures
+		// far from their cause.
+		rules = append(rules, ll.RWFiles(rwFiles...).IgnoreIfMissing().WithIoctlDev())
 	}
 	for _, p := range spec.TCPConnect {
 		rules = append(rules, ll.ConnectTCP(p))
@@ -177,6 +194,29 @@ func Apply(spec sandbox.Spec) error {
 		return fmt.Errorf("landlock: restrict: %w", err)
 	}
 	return nil
+}
+
+// classify splits paths into directories and non-directories.
+//
+// A path that does not exist is treated as a directory: the rule carries
+// IgnoreIfMissing, so it is dropped either way, and guessing "directory" is
+// the harmless choice.
+func classify(paths []string) (dirs, files []string) {
+	for _, p := range paths {
+		if p == "" {
+			continue
+		}
+		st, err := os.Stat(p)
+		switch {
+		case err != nil:
+			dirs = append(dirs, p)
+		case st.IsDir():
+			dirs = append(dirs, p)
+		default:
+			files = append(files, p)
+		}
+	}
+	return dirs, files
 }
 
 // Helper is the body of the hidden `__sandbox-exec` subcommand. It applies the

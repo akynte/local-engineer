@@ -80,9 +80,60 @@ from a deterministic table over the change kind and the edge kind.
 
 | Command | |
 |---|---|
+| `verify` | Put the current worktree under the completion contract |
+| `create` | Create a task |
+| `run <task-id>` | Run a task to a terminal state |
 | `list` | Tasks in this workspace |
 | `journal <task-id>` | The operation journal; `UNCERTAIN` marks a missing outcome |
 | `recover` | Reconcile every non-terminal task and report resumable state |
+
+### `le task verify`
+
+Creates a task, gives it a fresh git worktree, **syncs your uncommitted
+changes into it**, runs the verification recipes inside a sandbox, records
+every result as evidence tied to the exact content hash it describes, and
+reports whether the completion contract is met.
+
+| Flag | |
+|---|---|
+| `--verify` | `low` (build only), `standard` (build, vet, test), `high` (adds race and format) |
+| `--committed` | Verify the last commit instead of your working tree |
+| `--json` | Machine-readable outcome |
+
+Exit status is 1 when the contract is not met, so it composes in a script.
+
+The output always says which state it examined. A verdict that does not say
+what it looked at is not usable evidence — and verifying the last commit while
+you are looking at uncommitted changes would produce a pass describing code
+nobody is running.
+
+### `le task create` / `le task run`
+
+`create` flags: `--title` (required), `--verify`, `--requirement`, `--scope`
+(repeatable path prefixes the task may change), `--attempts`.
+
+`run` flags: `--json`, `--diff`.
+
+A task runs in its own worktree; your working copy is never touched. Every
+action is journalled intent-first, so an interruption at any point leaves a
+state `le task recover` can reconcile.
+
+**A change outside `--scope` blocks acceptance** even when every recipe passes.
+This is the out-of-scope check of the isolation model: such writes are detected
+by diff rather than prevented, because a task must be able to edit its worktree.
+
+### The completion contract
+
+A task is accepted only when:
+
+1. every recipe kind its verification level requires has a result,
+2. that result is a **pass** — a skip or an error satisfies nothing,
+3. it was produced against the **current** candidate, so evidence for an older
+   state cannot be reused,
+4. no file changed outside the declared scope.
+
+An engine's claim that it finished is an input to that decision and never the
+decision itself.
 
 `recover` reports, per task: the current candidate hash, whether the worktree
 drifted, each uncertain operation's classification, how many validations are

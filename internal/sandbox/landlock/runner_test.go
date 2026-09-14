@@ -156,3 +156,50 @@ func TestSelectReportsInactiveLayersWithReasons(t *testing.T) {
 		t.Logf("bwrap not installed here, as expected on a bare host: %v", err)
 	}
 }
+
+// Landlock carries different access rights for a directory and for a regular
+// file, and applying the wrong kind is an error rather than a no-op. A spec
+// mixing them — a toolchain directory plus /etc/passwd plus /dev/null — must
+// work, because that is what a real verification run needs.
+func TestSpecMayMixDirectoriesFilesAndDevices(t *testing.T) {
+	requireLandlock(t)
+
+	work := t.TempDir()
+	if err := os.WriteFile(filepath.Join(work, "in.txt"), []byte("payload"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := landlock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Self = os.Args[0]
+
+	spec := sandbox.Spec{
+		ReadOnly: []string{
+			"/usr", "/bin", "/lib", "/lib64", // directories
+			"/etc/passwd", "/etc/nsswitch.conf", // regular files
+			"/nonexistent/toolchain", // absent: must be ignored, not fatal
+		},
+		ReadWrite: []string{
+			work,                     // directory
+			"/dev/null", "/dev/zero", // character devices
+		},
+		Dir: work,
+		Env: os.Environ(),
+	}
+
+	out, err := runSandboxed(t, r, spec, "cat", filepath.Join(work, "in.txt"))
+	if err != nil {
+		t.Fatalf("a mixed spec must apply cleanly, got: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "payload") {
+		t.Fatalf("unexpected output: %q", out)
+	}
+
+	// And a write to a granted device node must succeed, since ordinary
+	// programs write to /dev/null constantly.
+	if out, err := runSandboxed(t, r, spec, "sh", "-c", "echo hi > /dev/null"); err != nil {
+		t.Fatalf("writing to a granted device node failed: %v\n%s", err, out)
+	}
+}

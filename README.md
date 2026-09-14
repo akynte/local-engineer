@@ -5,9 +5,15 @@ model, with strict per-project isolation, an intent-first execution journal,
 and evidence-backed verification.
 
 > **Status: pre-1.0, under active development.** The isolation contract, the
-> storage layout, the execution journal and the sandbox layering are
-> implemented and tested. The task-execution loop is not yet complete. See
-> [ROADMAP.md](ROADMAP.md) for what works today and what does not.
+> storage layout, the code graph with a full Go analyzer, the execution
+> journal, the sandbox layering, and the verification pipeline with its
+> completion contract are implemented and tested — `le task verify` runs a
+> change through build, vet and test inside a Landlock sandbox and decides
+> acceptance from the evidence.
+>
+> What is **not** implemented is the engine adapter that turns a retrieved
+> packet into edits. The machinery that judges a change is done; the part that
+> writes one with a model is not. See [ROADMAP.md](ROADMAP.md).
 
 ## What it is
 
@@ -60,6 +66,8 @@ Then:
 ```bash
 docker exec -it local-engineer le doctor          # what is actually in effect
 docker exec -it local-engineer bash -c 'cd /work/my-project && le workspace init && le index'
+docker exec -it local-engineer bash -c 'cd /work/my-project && le graph impact MyFunc --change signature'
+docker exec -it local-engineer bash -c 'cd /work/my-project && le task verify'
 ```
 
 `docker compose -f deploy/docker-compose.yml up -d` wraps the same thing.
@@ -100,7 +108,12 @@ reports what is *actually* in effect, not what the design hopes for:
 - **Benchmarks are not published yet.** Nothing in this README claims a
   success rate. When `docs/benchmarks/results/` has numbers, the claims will
   come from there and the methodology and scripts will be public so anyone can
-  reproduce or dispute them.
+  reproduce or dispute them. (Storage and graph numbers *are* published.)
+- **Only Go has a language analyzer.** TypeScript, schema, build and
+  infrastructure edges are declared in the schema but not yet produced; the
+  [graph schema reference](docs/reference/graph-schema.md) marks the state per
+  language, because a schema describing edges the code does not emit would
+  make impact reports look better than they are.
 
 ## Documentation
 

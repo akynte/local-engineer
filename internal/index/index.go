@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/akynte/local-engineer/internal/config"
 	"github.com/akynte/local-engineer/internal/graph"
 	"github.com/akynte/local-engineer/internal/store"
 	"github.com/akynte/local-engineer/internal/version"
@@ -92,9 +93,8 @@ type Options struct {
 func DefaultOptions() Options {
 	return Options{
 		MaxFileBytes: 1 << 20,
-		Excludes: []string{".git", "node_modules", "vendor", "dist", "build", ".next", ".nuxt",
-			"target", "__pycache__", ".venv", ".le", ".idea", ".cache"},
-		ChunkLines: 60,
+		Excludes:     config.DefaultExcludes(),
+		ChunkLines:   60,
 	}
 }
 

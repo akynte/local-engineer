@@ -52,27 +52,63 @@ report carries that sentence.
 
 ## Coverage and sources of truth
 
-| Relationship | Source | Evidence | Implemented |
-|---|---|---|---|
-| File, directory containment | Filesystem, git tree | `resolved` | **yes** |
-| Module and package graph | `go list`, `go mod graph`, TS program | `resolved` | not yet |
-| Caller to callee | VTA/CHA call graph; TS checker | `resolved` | not yet |
-| Interface to implementation | `types.Implements`; TS structural | `resolved` | not yet |
-| Type to usage | `types.Info`; TS references | `resolved` | not yet |
-| API to consumer | Route inventory plus literal client prefixes | `inferred` / `declared` | not yet |
-| Route, handler, service, repository | Router registration plus call graph | `resolved` + `declared` | not yet |
-| Schema to application code | `pg_query_go`, sqlc names, proto | `resolved` / `inferred` | not yet |
-| Configuration to consumer | `os.Getenv`, viper, envconfig, compose | `resolved` + `declared` | not yet |
-| Test to implementation | Call graph from `_test.go`, vitest | `resolved` | not yet |
-| Build target to dependency | `go list -deps`, Dockerfile, Makefile | `resolved` + `inferred` | not yet |
-| Deployment to service | Compose, Swarm, Helm, Kubernetes | `declared` | not yet |
-| Infrastructure to component | Terraform HCL, manifests | `declared` + `inferred` | not yet |
-| Commit to file and symbol | `git log -L`, blame | `observed` | not yet |
+| Relationship | Source | Evidence | Go | TypeScript |
+|---|---|---|---|---|
+| File, directory containment | Filesystem, git tree | `resolved` | **yes** | **yes** |
+| Module and package graph | `go list` via `go/packages` | `resolved` | **yes** | not yet |
+| Import to dependency | The compiler | `resolved` | **yes** | not yet |
+| Caller to callee (static) | Type-checked call sites | `resolved` | **yes** | not yet |
+| Caller to callee (interface dispatch) | CHA over `types.Implements` | `inferred` | **yes** | not yet |
+| Interface to implementation | `types.Implements` | `resolved` | **yes** | not yet |
+| Type to usage | `types.Info.Uses` | `resolved` | **yes** | not yet |
+| Signature to type (accepts, returns) | The type checker | `resolved` | **yes** | not yet |
+| Struct to field, embedding | The type checker | `resolved` | **yes** | not yet |
+| Test to implementation | Call graph from `_test.go` | `resolved` | **yes** | not yet |
+| Configuration to consumer | `os.Getenv` with a literal key | `resolved` | **yes** | not yet |
+| Route to handler | Router-registration call sites | `inferred` | **yes** | not yet |
+| Commit to file | `git log`, blame | `observed` | **yes** | **yes** |
+| API to consumer | Route inventory plus literal client prefixes | `inferred` / `declared` | not yet | not yet |
+| Schema to application code | `pg_query_go`, sqlc names, proto | `resolved` / `inferred` | not yet | not yet |
+| Build target to dependency | `go list -deps`, Dockerfile, Makefile | `resolved` + `inferred` | not yet | not yet |
+| Deployment to service | Compose, Swarm, Helm, Kubernetes | `declared` | not yet | not yet |
+| Infrastructure to component | Terraform HCL, manifests | `declared` + `inferred` | not yet | not yet |
 
-The "Implemented" column is deliberate. Today the graph holds the filesystem
-and containment layer; language analyzers are the next phase. A schema that
-described relationships the code does not produce would make the impact
-reports look better than they are.
+The per-language columns are deliberate. A schema that described relationships
+the code does not produce would make impact reports look better than they are.
+
+## Why interface dispatch is `inferred`
+
+A call through an interface does not resolve to one function. The compiler
+knows only the interface method; which implementation runs depends on the
+value at runtime.
+
+The analyzer over-approximates with class hierarchy analysis — every locally
+declared type satisfying the interface is a candidate — and labels those edges
+`inferred`, recording the assumption on the edge itself:
+
+```json
+{"dispatch":"interface","interface":"pkg.Loader",
+ "assumption":"CHA: any locally declared type satisfying this interface may receive the call",
+ "candidates":"2"}
+```
+
+Impact analysis then reports those consumers as `undetermined` rather than
+making a compatibility claim it cannot support. That is the difference between
+a tool that is useful and one that is confidently wrong.
+
+Satisfaction itself comes from `types.Implements`, not from name matching: a
+type with a `Load` method of a different signature is **not** reported as an
+implementation, and there is a test that asserts exactly that.
+
+## Why some things produce nothing
+
+A configuration key read as `os.Getenv(key)` where `key` is a variable
+produces no edge. A route registered with a computed path produces no route.
+Both are real relationships the analyzer cannot name.
+
+Naming them would mean guessing, and a wrong `config_key` node makes an impact
+report confidently incomplete — worse than an obviously missing one. The
+standing caveat covers it: a missing edge means "not discovered".
 
 ## Traversal
 

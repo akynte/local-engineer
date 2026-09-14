@@ -7,16 +7,22 @@ unticked box is unimplemented, not "mostly working".
 
 **Implemented and tested**: workspace identity and the isolation contract,
 per-workspace SQLite storage with migrations and recovery, the typed code graph
-with evidence categories and impact analysis, the filesystem/containment
-indexer, retrieval with the provenance guard, the intent-first execution
-journal with crash recovery and leases, the three-layer sandbox, the process
-manager, the provider abstraction with four provider kinds, hardware profiles
-and `le models bench`, the supervisor API and dashboard, `le doctor`, container
-images and compose files, and the CI gates.
+with evidence categories and impact analysis, the Go language analyzer and the
+commit-history analyzer, retrieval with the provenance guard, the intent-first
+execution journal with crash recovery and leases, the three-layer sandbox, the
+process manager, per-task worktrees, the verification recipes with output
+summarisers, the completion contract, the provider abstraction with four
+provider kinds, hardware profiles and `le models bench`, the supervisor API and
+dashboard, `le doctor`, container images and compose files, and the CI gates.
 
-**Not implemented**: the task-execution loop. The system can index, query,
-retrieve, journal and recover — it cannot yet run a task end to end. That is
-Phase 3.
+A task runs end to end today: `le task verify` creates a worktree, syncs your
+uncommitted changes into it, runs build, vet and test inside a Landlock
+sandbox, records every result as evidence tied to the exact content hash it
+describes, and decides acceptance from that evidence alone.
+
+**Not implemented**: the engine adapter that produces edits. The pipeline that
+judges a change is complete; what fills the worktree with a *model's* change is
+not. See Phase 3 below.
 
 ---
 
@@ -41,7 +47,8 @@ executes every marked command block and fails the build on stale documentation.
 - [x] Single-container process model with health checks and backoff
 - [x] Two-workspace isolation tests, and proof they fail when isolation breaks
 - [x] `le doctor` reports which DR-3 layers are active
-- [ ] First bug fix completes inside the container *(needs Phase 3)*
+- [x] Per-task worktrees, so a task never edits the operator's checkout
+- [ ] First model-authored bug fix completes inside the container *(needs the engine adapter)*
 
 ## Phase 2 — Crash safety ✅ (core)
 
@@ -50,28 +57,42 @@ executes every marked command block and fails the build on stale documentation.
       reconstruct working state, mark stale evidence
 - [x] Worktree leases with expiry
 - [x] `le backup` and `le restore`, round-trip verified
-- [ ] Full Stage D interruption-class suite driving real tasks *(needs Phase 3)*
+- [x] Every task attempt journalled intent-first, with a checkpoint on finish
+- [ ] Full Stage D interruption-class suite driving long-running model tasks
 
-## Phase 3 — Task execution ⬜ **next**
+## Phase 3 — Task execution 🟡 (deterministic half done)
 
-- [ ] Engine adapter contract and the OpenCode integration
-- [ ] Per-task worktrees and the sandbox spec for each
-- [ ] Task decomposition with executable acceptance criteria
-- [ ] Verification levels and the completion contract
-- [ ] Evidence summarisers for compiler, test and analyzer output
+- [x] Engine adapter contract (`internal/engine`), with a verification-only
+      implementation that exercises the whole pipeline without a model
+- [x] Per-task worktrees and the sandbox spec for each
+- [x] Verification levels (low, standard, high) and the completion contract
+- [x] Evidence summarisers for compiler, vet, test, race and format output
+- [x] Out-of-scope write detection against a declared scope
+- [ ] **The OpenCode integration** — the adapter that turns a packet into edits
+- [ ] Task decomposition into bounded child tasks
 - [ ] The broker and human gates
 
-## Phase 4 — Language analyzers and the full graph ⬜
+The completion contract is the part that matters most and it is done: a task
+is accepted only when every recipe its level requires has a **passing** result
+produced against the **current** candidate, with no out-of-scope writes. A
+skip, an error, or a pass against an older candidate satisfies nothing, and an
+engine's claim that it finished is an input to that decision, never the
+decision.
 
-- [ ] Go: packages, call graph, interface satisfaction, type usage, tests
-- [ ] TypeScript: program module graph, call sites, references
-- [ ] Configuration, schema, route, build, deployment and infrastructure edges
-- [ ] Commit history as a first-class relation
+## Phase 4 — Language analyzers and the full graph 🟡 (Go done)
+
+- [x] Go: modules, packages, imports, call graph, interface satisfaction,
+      type usage, signatures, struct fields, tests, configuration keys, routes
+- [x] Commit history as a first-class relation
 - [x] Storage and graph benchmarks published
+- [ ] TypeScript: program module graph, call sites, references
+- [ ] Schema edges: `pg_query_go` over migrations, sqlc, proto
+- [ ] Build, deployment and infrastructure edges: Dockerfile, Makefile,
+      compose, Helm, Terraform
 
-The graph schema already declares every relationship from the design's coverage
-table, and the reference documentation marks which are implemented. Today that
-is the filesystem and containment layer only.
+Every Go relationship from the design's coverage table is implemented and
+tested against a real type-checked fixture. The per-language state is in
+[the graph schema reference](docs/reference/graph-schema.md).
 
 ## Phase 5 — Evaluation ⬜
 

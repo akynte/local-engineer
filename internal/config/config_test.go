@@ -172,3 +172,30 @@ func TestEnvOverridesTheBindAddress(t *testing.T) {
 		t.Fatalf("LE_API_ADDR was not honoured: %q", cfg.API.Addr)
 	}
 }
+
+// A generated le.yaml must carry the excludes. Leaving them nil in Default
+// wrote `excludes: []`, which on the next load is an empty-but-present list —
+// and the indexer then walked .git and node_modules.
+func TestGeneratedConfigCarriesExcludes(t *testing.T) {
+	dir := t.TempDir()
+	if err := config.Save(dir, config.Default()); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := config.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.Index.Excludes) == 0 {
+		t.Fatal("a generated configuration must carry the default excludes, or indexing walks .git")
+	}
+	want := map[string]bool{".git": true, "node_modules": true, "vendor": true, ".le": true}
+	got := map[string]bool{}
+	for _, e := range loaded.Index.Excludes {
+		got[e] = true
+	}
+	for name := range want {
+		if !got[name] {
+			t.Errorf("the default excludes are missing %q", name)
+		}
+	}
+}

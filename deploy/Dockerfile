@@ -191,7 +191,12 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/* /tmp/node.sh
 
 # The compiler-backed analysis tools the verification loops depend on (§10.1).
+# HOME is overridden for this layer: the ENV sets it to /home/le, and a root
+# `go install` would leave a root-owned build cache there that the runtime user
+# then cannot write — which surfaces much later as a permission error from
+# inside the compiler.
 RUN set -eux; \
+    export HOME=/root; \
     mkdir -p "$GOBIN"; \
     go install golang.org/x/tools/gopls@latest; \
     go install honnef.co/go/tools/cmd/staticcheck@latest; \
@@ -211,7 +216,7 @@ RUN { \
       echo "benchstat: present"; \
     } > /opt/le/image-manifest.cpu.txt && mv /opt/le/image-manifest.cpu.txt /opt/le/image-manifest.txt
 
-RUN chown -R le:le /opt/le
+RUN chown -R le:le /opt/le /home/le
 
 # Re-assert the invariant after the root-owned toolchain install.
 RUN rm -rf /data/* /data/.[!.]* 2>/dev/null; \

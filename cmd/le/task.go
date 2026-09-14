@@ -2,12 +2,21 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/akynte/local-engineer/internal/config"
+	"github.com/akynte/local-engineer/internal/engine"
 	"github.com/akynte/local-engineer/internal/ledger"
+	"github.com/akynte/local-engineer/internal/recipe"
+	"github.com/akynte/local-engineer/internal/sandbox"
+	"github.com/akynte/local-engineer/internal/store"
+	"github.com/akynte/local-engineer/internal/task"
 )
 
 func newTaskCmd() *cobra.Command {
@@ -19,8 +28,259 @@ func newTaskCmd() *cobra.Command {
 			"is uncertain, and recovery classifies it by inspecting the worktree rather\n" +
 			"than assuming either success or failure.",
 	}
-	cmd.AddCommand(newTaskListCmd(), newTaskJournalCmd(), newTaskRecoverCmd())
+	cmd.AddCommand(newTaskListCmd(), newTaskJournalCmd(), newTaskRecoverCmd(),
+		newTaskCreateCmd(), newTaskRunCmd(), newTaskVerifyCmd())
 	return cmd
+}
+
+// runnerFor builds a task runner with the strongest available sandbox and the
+// per-workspace caches, so a task's toolchain caches are never shared with
+// another project's.
+func runnerFor(cmd *cobra.Command, root *store.Root, st *store.Store, eng engine.Engine) (*task.Runner, error) {
+	cfg, _ := loadConfig(root)
+	sb, report := selectSandbox(cmd.Context(), cfg)
+	if sb == nil {
+		return nil, fmt.Errorf("no sandbox runner is available; verification must not run unconfined")
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(), "sandbox: %s (%v)\n", report.Runner, report.Active)
+
+	holder, _ := os.Hostname()
+	r, err := task.NewRunner(st, eng, sb, fmt.Sprintf("%s/%d", holder, os.Getpid()))
+	if err != nil {
+		return nil, err
+	}
+	r.Logf = func(format string, args ...any) {
+		fmt.Fprintf(cmd.ErrOrStderr(), format+"\n", args...)
+	}
+
+	tmp := st.TmpDir()
+	r.SandboxSpec = sandbox.Spec{
+		ReadOnly: cfg.Sandbox.ReadOnlyPaths,
+		TmpDir:   tmp,
+		Env: recipe.GoEnv(
+			filepath.Join(st.CacheDir(), "go-build"),
+			filepath.Join(st.CacheDir(), "go-mod"),
+			tmp),
+	}
+	for _, port := range cfg.Sandbox.AllowedTCPConnect {
+		r.SandboxSpec.TCPConnect = append(r.SandboxSpec.TCPConnect, uint16(port)) //nolint:gosec // operator-configured port
+	}
+	if cfg.Inference.Mode == config.ModeEmbedded {
+		r.SandboxSpec.TCPConnect = append(r.SandboxSpec.TCPConnect, uint16(cfg.Inference.Port)) //nolint:gosec // operator-configured port
+	}
+	return r, nil
+}
+
+func newTaskCreateCmd() *cobra.Command {
+	var title, verify, requirement string
+	var scope []string
+	var attempts int
+
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create a task",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx := cmd.Context()
+			_, root, st, err := openWorkspace(ctx)
+			if err != nil {
+				return err
+			}
+			defer closeRoot(cmd, root)
+
+			level, ok := recipe.ParseLevel(verify)
+			if !ok {
+				return fmt.Errorf("--verify must be one of low, standard, high (got %q)", verify)
+			}
+			if title == "" {
+				return fmt.Errorf("--title is required")
+			}
+
+			t := task.Task{
+				ID: task.NewID("t"), Title: title, RequirementID: requirement,
+				Verification: level,
+				Budget: task.Budget{
+					MaxAttempts: attempts, MaxWallTime: 30 * time.Minute, Scope: scope,
+				},
+			}
+			if err := task.NewStore(st).Create(ctx, t); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s\n", t.ID)
+			fmt.Fprintf(cmd.ErrOrStderr(), "created: %s\nRun it with: le task run %s\n", t.Summary(), t.ID)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&title, "title", "", "what the task is for (required)")
+	cmd.Flags().StringVar(&verify, "verify", "standard", "verification level: low, standard, high")
+	cmd.Flags().StringVar(&requirement, "requirement", "", "requirement id this task serves")
+	cmd.Flags().StringSliceVar(&scope, "scope", nil,
+		"path prefixes the task may change; a change outside them blocks acceptance")
+	cmd.Flags().IntVar(&attempts, "attempts", 3, "how many engine attempts are allowed")
+	return cmd
+}
+
+func newTaskRunCmd() *cobra.Command {
+	var asJSON bool
+	var showDiff bool
+
+	cmd := &cobra.Command{
+		Use:   "run <task-id>",
+		Short: "Run a task to a terminal state",
+		Long: "run gives the task its own git worktree, journals every action intent-first,\n" +
+			"runs the verification recipes its level demands, and decides acceptance from\n" +
+			"the evidence.\n\n" +
+			"The engine's claim that it finished is an input to that decision, never the\n" +
+			"decision itself. Your working copy is never touched: the task edits a worktree.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			ws, root, st, err := openWorkspace(ctx)
+			if err != nil {
+				return err
+			}
+			defer closeRoot(cmd, root)
+
+			// Until an engine adapter is configured, a run verifies rather
+			// than edits. That is a real operation, not a placeholder: it puts
+			// a human's change under the same completion contract.
+			r, err := runnerFor(cmd, root, st, engine.Verify{})
+			if err != nil {
+				return err
+			}
+
+			repo := ws.Root
+			if len(ws.Manifest.Repositories) > 0 {
+				if p, err := ws.RepositoryPath(ws.Manifest.Repositories[0].ID); err == nil {
+					repo = p
+				}
+			}
+
+			out, err := r.Run(ctx, args[0], repo)
+			if err != nil {
+				return err
+			}
+			if asJSON {
+				return emitJSON(out)
+			}
+			return printOutcome(cmd, out, showDiff)
+		},
+	}
+	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON")
+	cmd.Flags().BoolVar(&showDiff, "diff", false, "print the diff the task produced")
+	return cmd
+}
+
+func newTaskVerifyCmd() *cobra.Command {
+	var verify string
+	var asJSON, committed bool
+
+	cmd := &cobra.Command{
+		Use:   "verify",
+		Short: "Put the current worktree under the completion contract",
+		Long: "verify creates a task, runs the verification recipes in a sandbox against a\n" +
+			"fresh worktree, records every result as evidence tied to the exact content\n" +
+			"hash it describes, and reports whether the completion contract is met.\n\n" +
+			"It is how a change you made by hand gets the same treatment as one the\n" +
+			"system made.",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx := cmd.Context()
+			ws, root, st, err := openWorkspace(ctx)
+			if err != nil {
+				return err
+			}
+			defer closeRoot(cmd, root)
+
+			level, ok := recipe.ParseLevel(verify)
+			if !ok {
+				return fmt.Errorf("--verify must be one of low, standard, high (got %q)", verify)
+			}
+			t := task.Task{
+				ID: task.NewID("verify"), Title: "verify " + ws.Name(), Verification: level,
+				Kind: "verification", Budget: task.Budget{MaxAttempts: 1, MaxWallTime: 30 * time.Minute},
+			}
+			if err := task.NewStore(st).Create(ctx, t); err != nil {
+				return err
+			}
+			r, err := runnerFor(cmd, root, st, engine.Verify{})
+			if err != nil {
+				return err
+			}
+			// Verify what the operator is actually looking at, not the last
+			// commit. --committed opts into the other meaning explicitly.
+			r.SyncUncommitted = !committed
+
+			out, err := r.Run(ctx, t.ID, ws.Root)
+			if err != nil {
+				return err
+			}
+			if asJSON {
+				return emitJSON(out)
+			}
+			if err := printOutcome(cmd, out, false); err != nil {
+				return err
+			}
+			if !out.Accepted {
+				os.Exit(1)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&verify, "verify", "standard", "verification level: low, standard, high")
+	cmd.Flags().BoolVar(&committed, "committed", false,
+		"verify the last commit instead of your uncommitted working tree")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON")
+	return cmd
+}
+
+func printOutcome(cmd *cobra.Command, out *task.Outcome, showDiff bool) error {
+	w := cmd.OutOrStdout()
+	verdict := "NOT ACCEPTED"
+	if out.Accepted {
+		verdict = "ACCEPTED"
+	}
+	fmt.Fprintf(w, "\n%s  %s (%d attempt(s), candidate %s)\n",
+		verdict, out.Task.ID, out.Attempts, short(out.Candidate))
+	if out.Verified != "" {
+		fmt.Fprintf(w, "%s\n", out.Verified)
+	}
+
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "\nRECIPE\tKIND\tSTATUS\tSUMMARY")
+	for _, res := range out.Results {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", res.Recipe, res.Kind, res.Status, res.Summary.Headline)
+	}
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+
+	for _, res := range out.Results {
+		if len(res.Summary.Findings) == 0 {
+			continue
+		}
+		fmt.Fprintf(w, "\n%s:\n", res.Recipe)
+		for _, f := range res.Summary.Findings {
+			loc := f.File
+			if f.Line > 0 {
+				loc = fmt.Sprintf("%s:%d", f.File, f.Line)
+			}
+			if f.Test != "" {
+				loc = strings.TrimSpace(loc + " " + f.Test)
+			}
+			fmt.Fprintf(w, "  %-40s %s\n", loc, f.Message)
+		}
+		if res.Summary.Truncated {
+			fmt.Fprintf(w, "  … more findings omitted; full output: artifact %s\n", short(res.ArtifactHash))
+		}
+	}
+
+	fmt.Fprintln(w, "\nWhy:")
+	for _, r := range out.Reasons {
+		fmt.Fprintf(w, "  - %s\n", r)
+	}
+	if showDiff && out.Diff != "" {
+		fmt.Fprintf(w, "\n--- diff ---\n%s\n", out.Diff)
+	}
+	return nil
 }
 
 func newTaskListCmd() *cobra.Command {

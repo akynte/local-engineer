@@ -60,6 +60,7 @@ project lives under that workspace's id and nowhere else.
 <!-- test:run -->
 ```console
 $ mkdir -p demo/internal/service && cd demo
+$ git init -q -b main
 $ printf 'module example.com/demo\n\ngo 1.26\n' > go.mod
 $ printf 'package service\n\ntype UserService struct{}\n\nfunc (s *UserService) GetUser(id string) string { return id }\n' > internal/service/user.go
 $ le workspace init --name demo
@@ -157,3 +158,78 @@ ever sees the result.
   measure your own machine.
 - [Why small models can work here](../explanation/why-small-models.md) if you
   want the argument behind the design.
+
+## 8. Put a change under the completion contract
+
+Indexing and impact analysis are read-only. The other half is verification: the
+system running the checks and recording what they said, as evidence tied to the
+exact state of the code they describe.
+
+Break something first, without committing it:
+
+<!-- test:run -->
+```console
+$ printf 'package service\n\nfunc Double(n int) int { return n + n }\n' > internal/service/double.go
+$ printf 'package service\n\nimport "testing"\n\nfunc TestDouble(t *testing.T) {\n\tif Double(3) != 6 {\n\t\tt.Fatalf("got %%d", Double(3))\n\t}\n}\n' > internal/service/double_test.go
+$ git add -A && git -c user.email=t@e.com -c user.name=t commit -qm "add Double" && echo committed
+committed
+```
+
+Now verify it:
+
+```console
+$ le task verify
+sandbox: landlock ([container landlock])
+
+ACCEPTED  verify-… (1 attempt(s), candidate fe09f5d6e6e0)
+the working tree was clean; this verifies the committed state
+
+RECIPE    KIND   STATUS  SUMMARY
+go build  build  pass    compiles
+go vet    vet    pass    no vet findings
+go test   test   pass    1 package(s) passed
+
+Why:
+  - build passed: compiles
+  - vet passed: no vet findings
+  - test passed: 1 package(s) passed
+```
+
+Then break it and run the same command:
+
+```console
+$ sed -i 's/return n + n/return n * 3/' internal/service/double.go
+$ le task verify
+NOT ACCEPTED  verify-… (1 attempt(s), candidate 78b529815f82)
+verifying your uncommitted changes
+
+RECIPE    KIND   STATUS  SUMMARY
+go build  build  pass    compiles
+go vet    vet    pass    no vet findings
+go test   test   fail    1 test(s) failed in 1 package(s)
+
+go test:
+  double_test.go:6 TestDouble               got 9
+
+Why:
+  - test failed: 1 test(s) failed in 1 package(s)
+```
+
+Three things are worth noticing.
+
+**It verified your uncommitted change.** A worktree is created from a commit,
+so a naive implementation would have verified the last commit and passed —
+producing a verdict about code nobody is running. The output says which state
+it examined, every time.
+
+**Your working copy was never touched.** The verification ran in a separate
+git worktree, inside a Landlock sandbox with only that worktree and the
+toolchain reachable.
+
+**The output is compressed at source.** A failing `go test ./...` can be
+megabytes; what you got is the failing test, its location and its message. The
+full output is kept as a content-addressed artifact, and only the summary would
+enter a model's context.
+
+Exit status is 1 when the contract is not met, so this composes in a script or
+a pre-push hook.

@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // BlobDir is a namespaced byte store inside a workspace's cache directory.
@@ -176,4 +177,54 @@ func (s *Store) RestoreFrom(dir string, force bool) ([]string, error) {
 		return nil, fmt.Errorf("store: %s holds none of index.db, ledger.db, telemetry.db", srcDir)
 	}
 	return restored, nil
+}
+
+// TaskDirs are the per-workspace directories a task run needs. They are
+// created here rather than by the task runner because §2.3 confines directory
+// creation to this package: the rule is what keeps every path a subsystem
+// touches one the store chose.
+type TaskDirs struct {
+	// Worktrees is where per-task checkouts live.
+	Worktrees string
+	// GoBuildCache and GoModCache are per-workspace, so one project's build
+	// cache never serves another's.
+	GoBuildCache string
+	GoModCache   string
+	// Tmp is the task's only visible temporary directory.
+	Tmp string
+}
+
+// TaskDirs returns the per-task directories, creating them.
+func (s *Store) TaskDirs() (TaskDirs, error) {
+	d := TaskDirs{
+		Worktrees:    filepath.Join(s.Dir(), "worktrees"),
+		GoBuildCache: filepath.Join(s.CacheDir(), "go-build"),
+		GoModCache:   filepath.Join(s.CacheDir(), "go-mod"),
+		Tmp:          s.TmpDir(),
+	}
+	for _, p := range []string{d.Worktrees, d.GoBuildCache, d.GoModCache, d.Tmp} {
+		if err := os.MkdirAll(p, 0o750); err != nil {
+			return d, fmt.Errorf("store: create %s: %w", p, err)
+		}
+	}
+	return d, nil
+}
+
+// EnsureSandboxDirs creates the writable paths a sandbox spec names, so a
+// Landlock rule is never dropped for a missing directory — which would fail
+// the task on a write the sandbox intended to allow.
+//
+// Only paths inside this workspace are created; anything else is left alone,
+// so a caller cannot use this to reach outside its own directory.
+func (s *Store) EnsureSandboxDirs(paths []string) error {
+	root := s.Dir()
+	for _, p := range paths {
+		if p == "" || !strings.HasPrefix(filepath.Clean(p), root) {
+			continue
+		}
+		if err := os.MkdirAll(p, 0o750); err != nil {
+			return fmt.Errorf("store: create %s: %w", p, err)
+		}
+	}
+	return nil
 }

@@ -50,11 +50,36 @@ Released sections are generated from Conventional Commits at release time.
   files, and an entrypoint that reports the active isolation layers before
   starting.
 
+- **Go language analyzer** producing the compiler-backed rows of the coverage
+  table: modules, packages, imports, the call graph, interface satisfaction via
+  `types.Implements`, type usage, signatures, struct fields and embedding,
+  tests, configuration keys and HTTP routes. Interface dispatch is
+  over-approximated with class hierarchy analysis and labelled `inferred` with
+  the assumption recorded on the edge, so impact analysis reports those
+  consumers as undetermined rather than making a claim it cannot support.
+- **Commit-history analyzer** contributing `observed` commit-to-file edges,
+  with sweeping commits skipped because a vendor drop says nothing about
+  coupling.
+- **Per-task git worktrees**, so a task never edits the operator's checkout,
+  and `SyncFrom` to carry uncommitted work into one deliberately.
+- **Verification recipes** for build, vet, test, race and format, each with a
+  summariser that compresses output at source: the full log becomes a
+  content-addressed artifact and only the findings travel.
+- **Verification levels and the completion contract.** A task is accepted only
+  when every recipe its level requires has a passing result produced against
+  the current candidate, with no out-of-scope writes. A skip, an error, or a
+  pass against an older candidate satisfies nothing.
+- **Engine adapter contract** (`internal/engine`) with a verification-only
+  implementation, so the whole pipeline runs and is tested without a model.
+- `le task verify`, `le task create` and `le task run`.
+
 ### Known gaps
 
-- The task-execution loop is not implemented; `le task` inspects and recovers
-  journals but does not yet run tasks.
-- Language analyzers beyond the filesystem and containment layer are not
-  implemented, so the graph currently holds `contains` edges only.
-- No benchmark results are published yet, and the README makes no performance
-  claims until they are.
+- The engine adapter that turns a packet into edits is not implemented. The
+  pipeline that judges a change is complete; what fills a worktree with a
+  model's change is not.
+- Language analyzers beyond Go and commit history are not implemented;
+  [the graph schema reference](docs/reference/graph-schema.md) marks the state
+  per language.
+- No task-success benchmark results are published, and the README makes no
+  performance claims until they are.

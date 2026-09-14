@@ -91,6 +91,18 @@ type IndexConfig struct {
 	WatchEnabled bool `yaml:"watch_enabled"`
 }
 
+// DefaultExcludes are the directories the indexer prunes. They are here
+// rather than only in internal/index so that `le config init` writes them into
+// le.yaml, where an operator can see and change them.
+func DefaultExcludes() []string {
+	return []string{
+		".git", ".le", ".idea", ".vscode",
+		"node_modules", "vendor", "dist", "build", "out", "target",
+		".next", ".nuxt", ".svelte-kit", "__pycache__", ".venv", ".tox",
+		".cache", ".gradle", ".terraform", "coverage",
+	}
+}
+
 // Default returns the shipped defaults. These are fallbacks, not tuning: the
 // operative values come from the active profile (§9.3).
 func Default() Config {
@@ -107,7 +119,14 @@ func Default() Config {
 				"/opt/le/toolchain", "/usr/local/go",
 			},
 		},
-		Index:   IndexConfig{MaxFileBytes: 1 << 20, ChunkLines: 60, WatchEnabled: true},
+		Index: IndexConfig{
+			MaxFileBytes: 1 << 20, ChunkLines: 60, WatchEnabled: true,
+			// Carried explicitly so the generated le.yaml holds them. Leaving
+			// this nil wrote `excludes: []` to the file, which on the next
+			// load is an empty-but-present list — and the indexer then walked
+			// .git and node_modules.
+			Excludes: DefaultExcludes(),
+		},
 		Profile: "reference-8gb-cuda-64gb-ram",
 	}
 }

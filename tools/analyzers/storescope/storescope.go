@@ -49,6 +49,11 @@ var exemptions = map[string]string{
 	"internal/config": "writes operator configuration under /data/config",
 	// Writes providers.yaml through the same operator-configuration path.
 	"internal/llm": "writes operator provider configuration",
+	// Manages git checkouts of the user's own code. Every path it touches is
+	// inside a worktree whose location internal/store chose, and a checkout is
+	// source being edited rather than workspace state — which is what this
+	// rule exists to keep scoped.
+	"internal/worktree": "manipulates git checkouts under a store-chosen root",
 	// The analyzer's own tests write fixtures.
 	"tools/analyzers": "analyzer test fixtures",
 }
