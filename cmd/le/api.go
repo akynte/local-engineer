@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"os/exec"
 	"time"
 
@@ -12,10 +14,13 @@ import (
 
 	"github.com/akynte/local-engineer/internal/api"
 	"github.com/akynte/local-engineer/internal/config"
+	"github.com/akynte/local-engineer/internal/index"
 	"github.com/akynte/local-engineer/internal/procman"
 	"github.com/akynte/local-engineer/internal/sandbox"
 	"github.com/akynte/local-engineer/internal/sandbox/bwrap"
 	"github.com/akynte/local-engineer/internal/sandbox/landlock"
+	"github.com/akynte/local-engineer/internal/store"
+	"github.com/akynte/local-engineer/internal/workspace"
 )
 
 func newAPICmd() *cobra.Command {
@@ -67,6 +72,20 @@ func newAPICmd() *cobra.Command {
 			go procs.Reap(ctx)
 			if err := procs.Start(ctx); err != nil {
 				return err
+			}
+
+			// §3.4: the file watcher marks scopes dirty so `le doctor` can
+			// report index drift. It is started only when the supervisor is
+			// running inside a workspace, because there is nothing to watch
+			// otherwise — and it never re-indexes on its own: re-analysis costs
+			// real time and belongs before a step that needs the graph, not in
+			// the middle of an editor save.
+			if cfg.Index.WatchEnabled {
+				if stop, err := startIndexWatcher(ctx, root, cfg, log); err != nil {
+					log.Warn("index watcher not started", "reason", err)
+				} else if stop != nil {
+					defer stop()
+				}
 			}
 
 			srv := api.New(cfg.API.Addr, api.Deps{
@@ -163,4 +182,47 @@ func registerChildren(m *procman.Manager, cfg config.Config) error {
 		// configurable rather than a global guess (§9.3).
 		StartTimeout: time.Duration(cfg.Inference.StartTimeoutSeconds) * time.Second,
 	})
+}
+
+// startIndexWatcher starts the §3.4 watcher for the workspace the supervisor
+// was launched in, if any. It returns a stop function, or a nil one when there
+// is no workspace to watch — which is not an error: the supervisor is often
+// started outside a repository.
+func startIndexWatcher(ctx context.Context, root *store.Root, cfg config.Config,
+	log *slog.Logger) (func(), error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	ws, err := workspace.Open(cwd)
+	if err != nil {
+		return nil, fmt.Errorf("not started inside a workspace: %w", err)
+	}
+	st, err := root.OpenWorkspace(ctx, ws.ID())
+	if err != nil {
+		return nil, err
+	}
+	ix := index.New(st, index.Options{
+		MaxFileBytes: cfg.Index.MaxFileBytes,
+		Excludes:     cfg.Index.Excludes,
+		ChunkLines:   cfg.Index.ChunkLines,
+	})
+	w, err := index.NewWatcher(ix, ws, index.WatchOptions{
+		Logf: func(f string, a ...any) { log.Warn(fmt.Sprintf(f, a...)) },
+		OnDirty: func(repositoryID string, paths int) {
+			log.Info("index marked dirty", "repository", repositoryID, "paths", paths)
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	watchCtx, cancel := context.WithCancel(ctx)
+	go func() {
+		if err := w.Run(watchCtx); err != nil && !errors.Is(err, context.Canceled) {
+			log.Warn("index watcher stopped", "error", err)
+		}
+	}()
+	log.Info("index watcher started", "workspace", ws.ID(), "root", ws.Root)
+	return cancel, nil
 }

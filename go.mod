@@ -3,6 +3,8 @@ module github.com/akynte/local-engineer
 go 1.26.0
 
 require (
+	github.com/fsnotify/fsnotify v1.10.1
+	github.com/hashicorp/hcl/v2 v2.24.0
 	github.com/landlock-lsm/go-landlock v0.10.1
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/tools v0.50.0
@@ -15,7 +17,6 @@ require (
 	github.com/apparentlymart/go-textseg/v15 v15.0.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/hashicorp/hcl/v2 v2.24.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/mitchellh/go-wordwrap v1.0.1 // indirect

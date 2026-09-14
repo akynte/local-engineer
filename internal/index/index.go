@@ -630,6 +630,33 @@ func (ix *Indexer) recordIndexKey(ctx context.Context, repositoryID string, file
 	})
 }
 
+// MarkDirty records that a scope's indexed state no longer matches the files on
+// disk. §3.4 requires re-analysis of dirty scopes before any task step that
+// needs the graph, and `le doctor` reports the count.
+//
+// The row may not exist yet — a repository can be watched before it is first
+// indexed — so this inserts a placeholder rather than failing. An index key
+// with no manifest is meaningfully dirty: nothing has been indexed at all.
+func (ix *Indexer) MarkDirty(ctx context.Context, scope, scopeID string) error {
+	return ix.st.Index().Tx(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `
+			INSERT INTO index_keys (scope, scope_id, manifest_hash, lockfile_hash, toolchain,
+			                        build_mode, index_version, dirty, updated_at)
+			VALUES (?, ?, '', '', '', '', ?, 1, ?)
+			ON CONFLICT(scope, scope_id) DO UPDATE SET dirty = 1, updated_at = excluded.updated_at`,
+			scope, scopeID, version.IndexerVersion, time.Now().UnixMilli())
+		return err
+	})
+}
+
+// Dirty reports how many scopes are waiting for re-analysis.
+func (ix *Indexer) Dirty(ctx context.Context) (int, error) {
+	var n int
+	err := ix.st.Index().SQL().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM index_keys WHERE dirty = 1`).Scan(&n)
+	return n, err
+}
+
 func manifestHash(pairs map[string]string) string {
 	keys := make([]string, 0, len(pairs))
 	for k := range pairs {
