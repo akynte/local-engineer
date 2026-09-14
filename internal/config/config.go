@@ -159,6 +159,16 @@ func Default() Config {
 // `-p 127.0.0.1:7777:7777` (§4.1).
 const EnvAPIAddr = "LE_API_ADDR"
 
+// EnvInferenceMode and EnvInferenceBaseURL override the inference block, so the
+// split deployment can point the supervisor at an inference container without
+// baking a le.yaml into the image. They follow the same rule as every other
+// override here: the environment wins over the file, so the deployment that
+// sets them does not depend on what a previous start happened to write.
+const (
+	EnvInferenceMode    = "LE_INFERENCE_MODE"
+	EnvInferenceBaseURL = "LE_INFERENCE_BASE_URL"
+)
+
 // LoopbackAddr is the safe default when running directly on a host.
 const LoopbackAddr = "127.0.0.1:7777"
 
@@ -229,6 +239,20 @@ func (c *Config) applyEnv() {
 	}
 	if v := os.Getenv("LE_OFFLINE"); v == "1" || v == "true" {
 		c.Offline = true
+	}
+	// The split deployment (deploy/docker-compose.split.yml) runs llama-server
+	// in its own container and points the supervisor at it over HTTP. DR-1
+	// promised that layout as the alternative to the single container, and it
+	// is a configuration change only — but only if the configuration actually
+	// arrives, which is what these two do.
+	if v := os.Getenv(EnvInferenceMode); v != "" {
+		// An unrecognised value is left for Validate to reject by name, rather
+		// than being silently dropped back to the default: a deployment that
+		// misspells the mode should fail loudly, not run with no inference.
+		c.Inference.Mode = InferenceMode(v)
+	}
+	if v := os.Getenv(EnvInferenceBaseURL); v != "" {
+		c.Inference.BaseURL = v
 	}
 }
 

@@ -192,7 +192,8 @@ evaluation results looks like one whose results mean something.
 
 - [ ] Provider implementations beyond the current four
 - [ ] Profiles for other hardware classes
-- [ ] Split compose variant exercised in CI
+- [x] Split compose variant exercised in CI — brought up against a stub
+      inference service and checked for the claim it makes, not just parsed
 - [ ] Optional semantic retrieval, if Phase 5 shows it earns its cost
 - [ ] Vision for UI review
 

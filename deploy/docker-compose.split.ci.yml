@@ -1,0 +1,53 @@
+# CI overlay for the split layout (design v3 §4.3, DR-1).
+#
+# The split file is the alternative DR-1's trade-off promised, and validating
+# its syntax proves nothing about whether it works. What the layout actually
+# claims is narrower and testable: running llama-server in its own container is
+# "a configuration change only" — the supervisor sets inference.mode to external
+# and talks to it over HTTP.
+#
+# That claim needs no GPU and no model. This overlay replaces the inference
+# service with a stub that answers its health check, so CI can assert the thing
+# under test: the supervisor comes up in external mode, reaches readiness
+# without managing an inference child, and reports the external profile.
+#
+# What this deliberately does NOT test is inference itself. A stub that answered
+# completions would be testing the stub.
+#
+#   docker compose -f deploy/docker-compose.split.yml \
+#                  -f deploy/docker-compose.split.ci.yml up -d
+services:
+  inference:
+    image: alpine:3
+    # A fixed 200 on every request. busybox no longer ships httpd, and adding a
+    # package would make the stub depend on a network fetch at start-up, so this
+    # answers with nc: enough to satisfy a health check and nothing more, which
+    # is the whole intent.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - 'while true; do printf "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok" | nc -l -p 8080 >/dev/null 2>&1 || true; done'
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/health"]
+      interval: 2s
+      timeout: 3s
+      start_period: 2s
+      retries: 15
+    # No GPU in CI, and the stub needs none. An empty device list does not
+    # remove the base file's reservation — Compose merges lists — so the whole
+    # block is reset.
+    deploy: !reset null
+
+  supervisor:
+    # The image under test is built by the job; there is no registry to pull it
+    # from, and a pull attempt fails the run with a misleading auth error.
+    image: ${LE_IMAGE:?set LE_IMAGE to the image under test}
+    pull_policy: never
+    # CI has no /work checkout to mount, and the claim under test does not
+    # involve one.
+    volumes:
+      - le-data:/data
+    healthcheck:
+      interval: 3s
+      timeout: 3s
+      start_period: 5s
+      retries: 20

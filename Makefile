@@ -89,6 +89,11 @@ schemas: ## Migrations apply, profiles validate, compose files parse
 	LE_MODEL=placeholder.gguf docker compose -f deploy/docker-compose.split.yml config -q
 	@echo "schemas: valid"
 
+.PHONY: split-smoke
+split-smoke: ## Exercise the split layout against a stub inference service
+	docker build -f deploy/Dockerfile --target cpu -t local-engineer:split-smoke .
+	LE_IMAGE=local-engineer:split-smoke scripts/check-split-layout.sh
+
 .PHONY: docs-test
 docs-test: build ## Execute the command blocks in the how-to pages
 	PATH="$(CURDIR)/$(BIN):$$PATH" $(GO) test -tags=docs -run TestDocumentedCommands ./docs/...

@@ -66,8 +66,8 @@ services:
       LE_DATA: /data
       LE_API_ADDR: 0.0.0.0:7777
       LE_PROFILE: external-inference
-      # The supervisor writes this into le.yaml on first start; afterwards the
-      # file wins, so edit /data/config/le.yaml to change it.
+      # These are read on every start and win over le.yaml, so the deployment
+      # does not depend on what a previous start happened to write.
       LE_INFERENCE_MODE: external
       LE_INFERENCE_BASE_URL: http://inference:8080
     user: "10001:10001"

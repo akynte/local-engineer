@@ -199,3 +199,78 @@ func TestGeneratedConfigCarriesExcludes(t *testing.T) {
 		}
 	}
 }
+
+// The split deployment (deploy/docker-compose.split.yml) points the supervisor
+// at an inference container purely through the environment. Those two variables
+// were set by the compose file and documented as honoured, and nothing read
+// them — so a supervisor deployed that way came up with inference.mode "none"
+// and no base URL, never talking to the container it was deployed beside.
+func TestInferenceModeAndBaseURLComeFromTheEnvironment(t *testing.T) {
+	dir := t.TempDir()
+	if err := config.Save(dir, config.Default()); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(config.EnvInferenceMode, "external")
+	t.Setenv(config.EnvInferenceBaseURL, "http://inference:8080")
+
+	cfg, err := config.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Inference.Mode != config.ModeExternal {
+		t.Errorf("inference mode = %q, want external", cfg.Inference.Mode)
+	}
+	if cfg.Inference.BaseURL != "http://inference:8080" {
+		t.Errorf("base URL = %q, want the value from the environment", cfg.Inference.BaseURL)
+	}
+}
+
+// A misspelled mode must fail by name. Falling back to a default would leave a
+// deployment running with no inference and no indication why.
+func TestBadInferenceModeIsRejectedByName(t *testing.T) {
+	dir := t.TempDir()
+	if err := config.Save(dir, config.Default()); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(config.EnvInferenceMode, "externl")
+
+	_, err := config.Load(dir)
+	if err == nil {
+		t.Fatal("a misspelled inference mode was accepted")
+	}
+	if !strings.Contains(err.Error(), "externl") {
+		t.Errorf("the error does not name the offending value: %v", err)
+	}
+}
+
+// External mode without a base URL is a misconfiguration, whichever way it
+// arrived.
+func TestExternalModeRequiresABaseURL(t *testing.T) {
+	dir := t.TempDir()
+	if err := config.Save(dir, config.Default()); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(config.EnvInferenceMode, "external")
+
+	if _, err := config.Load(dir); err == nil {
+		t.Fatal("external mode was accepted with no base URL")
+	}
+}
+
+// The file still wins when the environment says nothing, or the override would
+// be impossible to turn off.
+func TestInferenceEnvIsOptional(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Default()
+	cfg.Inference.Mode = config.ModeEmbedded
+	if err := config.Save(dir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	got, err := config.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Inference.Mode != config.ModeEmbedded {
+		t.Errorf("inference mode = %q, want the value from le.yaml", got.Inference.Mode)
+	}
+}
