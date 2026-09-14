@@ -92,6 +92,8 @@ func newRootCmd() *cobra.Command {
 		newGateCmd(),
 		newPlanCmd(),
 		newEvalCmd(),
+		newMemoryCmd(),
+		newLessonsCmd(),
 	)
 	return root
 }

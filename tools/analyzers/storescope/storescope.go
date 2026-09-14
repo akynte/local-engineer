@@ -59,6 +59,13 @@ var exemptions = map[string]string{
 	// it writes a caller-supplied path — acceptance files, whose names come
 	// from a task file — goes through internal/worktree's confinement.
 	"internal/eval": "manages ephemeral evaluation scratch directories",
+	// Writes notes under `.le/memory/` inside the user's repository. §2.2
+	// places them there on purpose so they travel with the repository, which
+	// makes them repository files rather than data-directory state — the same
+	// reasoning as the identity pin above. Confining them to the store would
+	// put them in $LE_DATA, where they would not travel and a clone would lose
+	// them.
+	"internal/memory": "writes the repository's own memory notes",
 	// The analyzer's own tests write fixtures.
 	"tools/analyzers": "analyzer test fixtures",
 }
