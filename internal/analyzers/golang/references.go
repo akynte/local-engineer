@@ -239,6 +239,12 @@ func (b *builder) emitCall(p *packages.Package, callerFQN string, ck graph.NodeK
 	if b.emitRoute(p, callerFQN, ck, fn, call) {
 		return
 	}
+	// An HTTP client call with a literal URL is a consumer of some route. The
+	// match against routes happens after every package is walked, since the
+	// two are nearly always in different ones.
+	if b.emitAPICall(p, callerFQN, ck, fn, call) {
+		return
+	}
 
 	if fn.Pkg() == nil {
 		return

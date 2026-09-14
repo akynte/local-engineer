@@ -119,6 +119,9 @@ func (b *builder) emitRoute(p *packages.Package, callerFQN string, ck graph.Node
 	}
 
 	fqn := routeFQN(method, pattern)
+	// Kept for the consumer pass: the client call sites that reach this route
+	// are in other packages and cannot be matched while walking this one.
+	b.routes = append(b.routes, routeRef{fqn: fqn, method: method, pattern: pattern})
 	b.addNode(graph.Node{
 		Kind: graph.KindRoute, Name: strings.TrimSpace(method + " " + pattern), FQN: fqn,
 		Attrs: attrsJSON(map[string]string{"method": method, "pattern": pattern, "registrar": fn.Name()}),

@@ -586,3 +586,162 @@ func (r *Repo) List(ctx context.Context) error {
 		t.Error("no schema reference from a wrapper driver")
 	}
 }
+
+// §3.2's "API to consumer" row. `references` was an edge kind the impact
+// analyser traversed and no analyzer ever produced, so "who calls this
+// endpoint" always answered nobody — which reads as a safe change rather than
+// as an unanswered question.
+func TestAPIConsumerEdgesReachTheRoute(t *testing.T) {
+	res := analyzeFixture(t, map[string]string{
+		"go.mod": "module example.test/api\n\ngo 1.26\n",
+		"server/server.go": `package server
+
+import "net/http"
+
+func Payment(w http.ResponseWriter, r *http.Request) {}
+
+func Routes() *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /payments/{id}", Payment)
+	return mux
+}
+`,
+		"client/client.go": `package client
+
+import (
+	"net/http"
+)
+
+// FetchPayment is the consumer: a literal path that reaches the route above.
+func FetchPayment() (*http.Response, error) {
+	return http.Get("http://billing.internal/payments/42")
+}
+`,
+	})
+
+	var found bool
+	for _, e := range res.Edges {
+		if e.Kind == graph.EdgeReferences &&
+			strings.Contains(e.SrcFQN, "FetchPayment") &&
+			strings.Contains(e.DstFQN, "payments") {
+			found = true
+			if e.Evidence != graph.Inferred {
+				t.Errorf("the consumer edge is %q; a literal URL is a convention, "+
+					"not a compiler fact", e.Evidence)
+			}
+			if !strings.Contains(e.Attrs, "assumption") {
+				t.Errorf("the edge does not record its assumption: %s", e.Attrs)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("no references edge from the client call to the route:\n%s", edgeSummary(res))
+	}
+}
+
+// A path that matches no route must not invent an edge.
+func TestUnmatchedClientCallProducesNoEdge(t *testing.T) {
+	res := analyzeFixture(t, map[string]string{
+		"go.mod": "module example.test/api\n\ngo 1.26\n",
+		"server/server.go": `package server
+
+import "net/http"
+
+func Payment(w http.ResponseWriter, r *http.Request) {}
+
+func Routes() *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /payments/{id}", Payment)
+	return mux
+}
+`,
+		"client/client.go": `package client
+
+import "net/http"
+
+func FetchSomethingElse() (*http.Response, error) {
+	return http.Get("http://other.internal/invoices/7")
+}
+`,
+	})
+	for _, e := range res.Edges {
+		if e.Kind == graph.EdgeReferences && strings.Contains(e.SrcFQN, "FetchSomethingElse") {
+			t.Errorf("a client call to an unrelated path produced an edge: %+v", e)
+		}
+	}
+}
+
+// A method mismatch is not a match: POSTing to a GET route reaches nothing.
+func TestMethodMismatchProducesNoEdge(t *testing.T) {
+	res := analyzeFixture(t, map[string]string{
+		"go.mod": "module example.test/api\n\ngo 1.26\n",
+		"server/server.go": `package server
+
+import "net/http"
+
+func Payment(w http.ResponseWriter, r *http.Request) {}
+
+func Routes() *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /payments/{id}", Payment)
+	return mux
+}
+`,
+		"client/client.go": `package client
+
+import (
+	"net/http"
+	"strings"
+)
+
+func CreatePayment() (*http.Response, error) {
+	return http.Post("http://billing.internal/payments/42", "application/json",
+		strings.NewReader("{}"))
+}
+`,
+	})
+	for _, e := range res.Edges {
+		if e.Kind == graph.EdgeReferences && strings.Contains(e.SrcFQN, "CreatePayment") {
+			t.Errorf("a POST matched a GET route: %+v", e)
+		}
+	}
+}
+
+// analyzeFixture writes a module and runs the analyzer over it, returning the
+// raw result. The other tests here use a shared fixture; these need their own
+// because the property under test is a match between two packages.
+func analyzeFixture(t *testing.T, files map[string]string) index.Result {
+	t.Helper()
+	dir := t.TempDir()
+	var list []index.File
+	for rel, body := range files {
+		p := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		lang := ""
+		if strings.HasSuffix(rel, ".go") {
+			lang = "go"
+		}
+		list = append(list, index.File{Path: rel, AbsPath: p, Lang: lang})
+	}
+
+	a := golang.New()
+	a.Warnf = func(format string, args ...any) { t.Logf("analyzer: "+format, args...) }
+	res, err := a.Analyze(context.Background(), dir, list)
+	if err != nil {
+		t.Fatalf("analyze: %v", err)
+	}
+	return res
+}
+
+func edgeSummary(res index.Result) string {
+	var b strings.Builder
+	for _, e := range res.Edges {
+		b.WriteString("  " + string(e.Kind) + " " + e.SrcFQN + " -> " + e.DstFQN + "\n")
+	}
+	return b.String()
+}

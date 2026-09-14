@@ -123,6 +123,30 @@ type builder struct {
 
 	// pkgCount bounds total work across modules.
 	pkgCount int
+
+	// routes and apiCalls are collected across every package so that §3.2's
+	// "API to consumer" row can be resolved at the end. A client call site and
+	// the route it reaches are almost never in the same package — that is the
+	// whole reason the edge is worth having — so the match cannot be made while
+	// walking one of them.
+	routes   []routeRef
+	apiCalls []apiCallRef
+}
+
+// routeRef is a route this repository serves.
+type routeRef struct {
+	fqn     string
+	method  string
+	pattern string
+}
+
+// apiCallRef is a client call site with a literal path.
+type apiCallRef struct {
+	callerFQN  string
+	callerKind graph.NodeKind
+	method     string
+	path       string
+	registrar  string
 }
 
 func newBuilder(a *Analyzer) *builder {
@@ -130,6 +154,10 @@ func newBuilder(a *Analyzer) *builder {
 }
 
 func (b *builder) result() index.Result {
+	// The API-consumer edges are resolved here rather than while walking,
+	// because a client call site and the route it reaches are nearly always in
+	// different packages.
+	b.resolveAPIConsumers()
 	return index.Result{Nodes: b.nodes, Edges: b.edges}
 }
 
