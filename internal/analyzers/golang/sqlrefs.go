@@ -70,13 +70,43 @@ var tableRef = regexp.MustCompile(`(?i)\b(?:FROM|JOIN|INTO|UPDATE)\s+([a-zA-Z_][
 // literal passed to a same-named method on an unrelated type would produce
 // phantom table references.
 func looksLikeSQL(s string) bool {
-	upper := strings.ToUpper(strings.TrimSpace(s))
+	upper := strings.ToUpper(skipSQLComments(s))
 	for _, verb := range []string{"SELECT ", "INSERT ", "UPDATE ", "DELETE ", "WITH "} {
 		if strings.HasPrefix(upper, verb) {
 			return true
 		}
 	}
 	return false
+}
+
+// skipSQLComments drops leading comments and whitespace so a query that opens
+// with one is still recognised.
+//
+// This is what §3.2 means by "sqlc generated code names": sqlc puts every query
+// in a package-level constant that begins with its own directive comment,
+// `-- name: GetInvoice :one`. Requiring the string to start with a verb made
+// every sqlc query invisible — the call was recognised and then discarded, so a
+// table change found none of the generated code that reads it. Hand-written
+// queries opening with a comment were lost the same way.
+func skipSQLComments(s string) string {
+	for {
+		s = strings.TrimLeft(s, " \t\r\n")
+		switch {
+		case strings.HasPrefix(s, "--"):
+			if i := strings.IndexByte(s, '\n'); i >= 0 {
+				s = s[i+1:]
+				continue
+			}
+			return ""
+		case strings.HasPrefix(s, "/*"):
+			if i := strings.Index(s, "*/"); i >= 0 {
+				s = s[i+2:]
+				continue
+			}
+			return ""
+		}
+		return s
+	}
 }
 
 // emitSQLRef recognises a database call and emits reads_schema edges to the

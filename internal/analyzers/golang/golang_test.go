@@ -745,3 +745,42 @@ func edgeSummary(res index.Result) string {
 	}
 	return b.String()
 }
+
+// §3.2 names "sqlc generated code names" as a source of truth for the
+// schema-to-application-code row. sqlc puts each query in a package-level
+// constant and passes the identifier to the call, so the question is whether a
+// constant reference resolves the way an inline literal does.
+func TestSqlcStyleConstantQueriesReachTheTable(t *testing.T) {
+	res := analyzeFixture(t, map[string]string{
+		"go.mod": "module example.test/sqlc\n\ngo 1.26\n",
+		"db/queries.go": `package db
+
+import (
+	"context"
+	"database/sql"
+)
+
+// This is the shape sqlc generates: the SQL lives in a constant and the call
+// site passes the identifier.
+const getInvoice = ` + "`" + `-- name: GetInvoice :one
+SELECT id, amount FROM invoices WHERE id = $1
+` + "`" + `
+
+type Queries struct{ db *sql.DB }
+
+func (q *Queries) GetInvoice(ctx context.Context, id string) *sql.Row {
+	return q.db.QueryRowContext(ctx, getInvoice, id)
+}
+`,
+	})
+
+	var found bool
+	for _, e := range res.Edges {
+		if e.Kind == graph.EdgeReadsSchema && e.DstFQN == "table:invoices" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("a sqlc-style constant query did not reach its table:\n%s", edgeSummary(res))
+	}
+}
