@@ -87,7 +87,24 @@ schemas: ## Migrations apply, profiles validate, compose files parse
 	$(GO) test -run 'TestMigrations|TestShippedProfiles' ./internal/... 
 	docker compose -f deploy/docker-compose.yml config -q
 	LE_MODEL=placeholder.gguf docker compose -f deploy/docker-compose.split.yml config -q
+	$(MAKE) --no-print-directory benchmarks-check
 	@echo "schemas: valid"
+
+.PHONY: benchmarks
+benchmarks: ## Regenerate BENCHMARKS.md from the committed results
+	scripts/make-benchmarks.sh > BENCHMARKS.md
+	@echo "wrote BENCHMARKS.md"
+
+.PHONY: benchmarks-check
+benchmarks-check: ## Fail if BENCHMARKS.md is out of date with the results
+	@scripts/make-benchmarks.sh > /tmp/benchmarks.check.$$$$ && \
+	  if ! diff -q BENCHMARKS.md /tmp/benchmarks.check.$$$$ >/dev/null; then \
+	    echo "BENCHMARKS.md is out of date with docs/benchmarks/results/." >&2; \
+	    echo "Run 'make benchmarks' and commit the result." >&2; \
+	    diff -u BENCHMARKS.md /tmp/benchmarks.check.$$$$ | head -40 >&2; \
+	    rm -f /tmp/benchmarks.check.$$$$; exit 1; \
+	  fi; rm -f /tmp/benchmarks.check.$$$$
+	@echo "BENCHMARKS.md: current"
 
 .PHONY: split-smoke
 split-smoke: ## Exercise the split layout against a stub inference service

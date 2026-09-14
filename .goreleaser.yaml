@@ -104,6 +104,11 @@ changelog:
 release:
   draft: false
   prerelease: auto
+  # §1.2: every release attaches a benchmark snapshot. It is assembled from the
+  # committed results rather than measured here, because a shared cloud runner
+  # is not any reference configuration.
+  extra_files:
+    - glob: BENCHMARKS.md
   footer: |
     ## Verifying this release
 

@@ -206,7 +206,10 @@ evaluation results looks like one whose results mean something.
 
 - [ ] Everything above
 - [ ] The acceptance matrix passing end to end
-- [ ] Signed release with SBOM, provenance and a published benchmark snapshot
+- [x] Signed release with SBOM, provenance and a published benchmark snapshot —
+      Sigstore signing, SPDX SBOMs and SLSA provenance were already wired;
+      `BENCHMARKS.md` is now assembled from the committed results and attached,
+      with CI failing if it drifts from them
 
 **The acceptance matrix has no specification here.** v3 defers it to "the v2.0
 Section 18 matrix", and v2.0 is not in this repository — v3 is the only source

@@ -140,6 +140,11 @@ jobs:
           docker compose -f deploy/docker-compose.yml config -q
           LE_MODEL=placeholder.gguf docker compose -f deploy/docker-compose.split.yml config -q
 
+      # Every release attaches this snapshot, so it must not drift away from the
+      # results it claims to summarise.
+      - name: The benchmark snapshot is current
+        run: make benchmarks-check
+
   split-layout:
     name: Split deployment
     runs-on: ubuntu-latest
