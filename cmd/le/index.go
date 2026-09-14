@@ -12,6 +12,7 @@ import (
 	"github.com/akynte/local-engineer/internal/analyzers/golang"
 	sqlan "github.com/akynte/local-engineer/internal/analyzers/sql"
 	"github.com/akynte/local-engineer/internal/analyzers/terraform"
+	"github.com/akynte/local-engineer/internal/analyzers/typescript"
 	"github.com/akynte/local-engineer/internal/index"
 	"github.com/akynte/local-engineer/internal/retrieval"
 )
@@ -100,7 +101,10 @@ func analyzers(cmd *cobra.Command) []index.Analyzer {
 	gitl := gitlog.New()
 	gitl.Warnf = warn
 
-	return []index.Analyzer{goa, sqla, dep, tf, gitl}
+	ts := typescript.New()
+	ts.Warnf = warn
+
+	return []index.Analyzer{goa, ts, sqla, dep, tf, gitl}
 }
 
 func newGraphCmd() *cobra.Command {

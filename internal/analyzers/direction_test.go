@@ -23,6 +23,7 @@ import (
 	"github.com/akynte/local-engineer/internal/analyzers/golang"
 	sqlan "github.com/akynte/local-engineer/internal/analyzers/sql"
 	"github.com/akynte/local-engineer/internal/analyzers/terraform"
+	"github.com/akynte/local-engineer/internal/analyzers/typescript"
 	"github.com/akynte/local-engineer/internal/graph"
 	"github.com/akynte/local-engineer/internal/index"
 	"github.com/akynte/local-engineer/internal/store"
@@ -34,6 +35,13 @@ import (
 // migration defining that table, and the manifests setting that variable.
 var fullStack = map[string]string{
 	"go.mod": "module example.test/full\n\ngo 1.26\n",
+
+	// A TypeScript front end over the same stack, so the direction invariant is
+	// checked across analyzers rather than only within the Go one.
+	"web/models/user.ts": "export interface UserStore { load(id: string): string }\n",
+	"web/sql_store.ts": "import { UserStore } from './models/user';\n" +
+		"export class SqlUserStore implements UserStore {\n" +
+		"  load(id: string) { return id; }\n}\n",
 
 	"store.go": `package full
 
@@ -116,9 +124,10 @@ func impactOf(t *testing.T, symbol string, change graph.ChangeKind) map[string]g
 
 	quiet := func(string, ...any) {}
 	goa, sq, dep, tf := golang.New(), sqlan.New(), deploy.New(), terraform.New()
-	goa.Warnf, sq.Warnf, dep.Warnf, tf.Warnf = quiet, quiet, quiet, quiet
+	ts := typescript.New()
+	goa.Warnf, sq.Warnf, dep.Warnf, tf.Warnf, ts.Warnf = quiet, quiet, quiet, quiet, quiet
 
-	ix := index.New(st, index.Options{Analyzers: []index.Analyzer{goa, sq, dep, tf}})
+	ix := index.New(st, index.Options{Analyzers: []index.Analyzer{goa, ts, sq, dep, tf}})
 	repo := workspace.Repository{ID: "r1", Name: "full", Path: ".", DefaultBranch: "main"}
 	if err := ix.RegisterRepository(ctx, repo); err != nil {
 		t.Fatal(err)
@@ -240,4 +249,27 @@ func list(consumers map[string]graph.Consumer) string {
 		b.WriteString("\n  " + string(c.Via) + " " + fqn)
 	}
 	return b.String()
+}
+
+// TestTypeScriptImplementsPointsAtTheInterface holds the TypeScript analyzer to
+// the same invariant as the Go one. The direction is load-bearing: impact
+// analysis is a reverse traversal, so an `implements` edge that pointed
+// interface to class would report zero implementations when a method is added
+// to an interface — the exact question the edge exists to answer.
+func TestTypeScriptImplementsPointsAtTheInterface(t *testing.T) {
+	consumers := impactOf(t, "UserStore", graph.ChangeSignature)
+	if _, ok := consumers["ts:web/sql_store.ts#SqlUserStore"]; !ok {
+		t.Fatalf("changing the UserStore interface did not report SqlUserStore as a "+
+			"consumer; the implements edge points the wrong way.\n%s", list(consumers))
+	}
+}
+
+// And an importer must be a consumer of what it imports, for the same reason:
+// changing a module has to find the modules that pull it in.
+func TestTypeScriptImporterIsAConsumer(t *testing.T) {
+	consumers := impactOf(t, "user.ts", graph.ChangeSignature)
+	if _, ok := consumers["ts:web/sql_store.ts"]; !ok {
+		t.Fatalf("changing a module did not report its importer as a consumer; "+
+			"the imports edge points the wrong way.\n%s", list(consumers))
+	}
 }

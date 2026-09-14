@@ -126,8 +126,13 @@ reports what is *actually* in effect, not what the design hopes for:
   4 of 15 runs. Storage and graph latency numbers **are** published. See
   [the results directory](docs/benchmarks/results/) for what is and is not
   there.
-- **TypeScript has no analyzer yet.** Go, SQL schemas, Dockerfiles, Makefiles,
-  compose, Kubernetes and Terraform do. The
+- **TypeScript is analysed lexically, not type-checked.** Go, SQL schemas,
+  Dockerfiles, Makefiles, compose, Kubernetes and Terraform are. TypeScript
+  imports, declarations, heritage clauses and `process.env` reads are indexed
+  by reading the source; there is no call graph, because without the compiler
+  an identifier in call position may be a local or a shadowed binding, and an
+  edge that is wrong half the time is worse than no edge. Every TypeScript edge
+  carries the evidence category that reading supports. The
   [graph schema reference](docs/reference/graph-schema.md) marks the state per
   relationship, because a schema describing edges the code does not emit would
   make impact reports look better than they are.

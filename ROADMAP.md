@@ -7,8 +7,9 @@ unticked box is unimplemented, not "mostly working".
 
 **Implemented and tested**: workspace identity and the isolation contract,
 per-workspace SQLite storage with migrations and recovery, the typed code graph
-with evidence categories and impact analysis, the Go language analyzer and the
-commit-history analyzer, retrieval with the provenance guard, the intent-first
+with evidence categories and impact analysis, the Go, SQL-schema, build,
+deployment, Terraform, TypeScript and commit-history analyzers, retrieval with
+the provenance guard, the intent-first
 execution journal with crash recovery and leases, the three-layer sandbox, the
 process manager, per-task worktrees, the verification recipes with output
 summarisers, the completion contract, the provider abstraction with four
@@ -22,13 +23,17 @@ through a confined tool loop with verification as the correction signal, and
 decides acceptance from evidence alone — then opens a human gate carrying the
 diff and the findings before anything is applied.
 
-**Not implemented**: language analyzers beyond Go.
+**Not implemented**: a TypeScript type checker (the analyzer is lexical; see
+Phase 4), and the Stage D interruption suite.
 
-The evaluation harness has now been run against a local model — 3 tasks × 4 arms
-× 5 passes, 60 runs, published in `docs/benchmarks/results/`. It settles nothing:
-every arm's interval overlaps every other's and a third of the cells changed
-verdict between passes. The task set is too small and too easy to answer the
-questions the arms were built to ask.
+The evaluation harness has been run against a local model — 3 tasks × 4 arms ×
+5 passes, 60 runs, published in `docs/benchmarks/results/`. It settled nothing:
+every arm's interval overlapped every other's and a third of the cells changed
+verdict between passes. The run's own conclusion was that the fixtures were too
+small — at 17 to 87 lines of Go, reading the whole repository fits in one packet,
+so retrieval and the graph had nothing to contribute by construction. A
+2,075-line fixture and five tasks over it now exist to answer that; whether they
+discriminate is being measured, not asserted.
 
 ---
 
@@ -98,7 +103,7 @@ implementation of `engine.Engine` — the contract was designed for exactly that
 — and the decision record should be superseded rather than quietly ignored if
 the native engine turns out to be the permanent answer.
 
-## Phase 4 — Language analyzers and the full graph ✅ (except TypeScript)
+## Phase 4 — Language analyzers and the full graph ✅
 
 - [x] Go: modules, packages, imports, call graph, interface satisfaction,
       type usage, signatures, struct fields, tests, configuration keys, routes
@@ -113,7 +118,9 @@ the native engine turns out to be the permanent answer.
       environment variables they set
 - [x] Commit history as a first-class relation
 - [x] Storage and graph benchmarks published
-- [ ] **TypeScript**: program module graph, call sites, references
+- [x] **TypeScript**: module graph, declarations, heritage and config reads —
+      lexical, without a type checker, and every edge carries the evidence
+      category that reading actually supports
 
 An impact report now crosses analyzer boundaries: changing a table finds the Go
 queries that read it, and changing a configuration key finds the code, the
@@ -126,9 +133,18 @@ Two things are recorded as deviations rather than done quietly:
   build is load-bearing for DR-1's static multi-arch binary. The DDL subset is
   narrow and *reports* what it could not parse. See
   [the graph schema reference](docs/reference/graph-schema.md).
-- **TypeScript needs a Node sidecar**, because real type checking means the TS
-  compiler API. The design anticipates this — `sidecars/` is in the repository
-  layout — but it is not built.
+- **TypeScript is analysed lexically, not type-checked.** Real type checking
+  means the TS compiler API, which means a Node sidecar; `sidecars/` is in the
+  repository layout and is still not built. What ships instead reads the source
+  and records what that reading supports: imports resolved against the
+  filesystem are `resolved`, bare specifiers and heritage clauses are
+  `declared`, and `process.env` reads are `inferred`. There is deliberately no
+  call graph — without a type checker an identifier in call position may be a
+  local, a shadowed binding or a method on an unrelated object, and an edge
+  that is wrong half the time is worse than no edge. An ambiguous heritage name
+  produces no edge for the same reason. This is the §3.2 evidence model doing
+  its job: the TypeScript rows are weaker than the Go ones and say so, rather
+  than being absent or overstated.
 
 ## Phase 5 — Evaluation 🟡 (harness built, no results run)
 
