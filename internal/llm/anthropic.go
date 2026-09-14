@@ -3,6 +3,7 @@ package llm
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -124,6 +125,9 @@ func (p *Anthropic) messages(ctx context.Context, req ChatRequest, schema json.R
 	if len(req.Tools) > 0 && !p.caps.ToolCalling {
 		return nil, &UnsupportedError{Provider: p.name, Capability: "tool calling"}
 	}
+	if HasImages(req.Messages) && !p.caps.Vision {
+		return nil, &UnsupportedError{Provider: p.name, Capability: "vision"}
+	}
 
 	// The system prompt is a top-level field here, not a message. Splitting it
 	// out is required, not stylistic: a "system" role inside messages is
@@ -162,6 +166,28 @@ func (p *Anthropic) messages(ctx context.Context, req ChatRequest, schema json.R
 				}
 				blocks = append(blocks, map[string]any{
 					"type": "tool_use", "id": tc.ID, "name": tc.Name, "input": input,
+				})
+			}
+			turns = append(turns, map[string]any{"role": m.Role, "content": blocks})
+		case len(m.Images) > 0:
+			// Anthropic takes images as base64 source blocks rather than data
+			// URIs. Text first, for the same reason as the OpenAI surface: the
+			// instruction is what the caller asked for.
+			blocks := make([]map[string]any, 0, len(m.Images)+1)
+			if m.Content != "" {
+				blocks = append(blocks, map[string]any{"type": "text", "text": m.Content})
+			}
+			for _, img := range m.Images {
+				media := img.MediaType
+				if media == "" {
+					media = "image/png"
+				}
+				blocks = append(blocks, map[string]any{
+					"type": "image",
+					"source": map[string]any{
+						"type": "base64", "media_type": media,
+						"data": base64.StdEncoding.EncodeToString(img.Data),
+					},
 				})
 			}
 			turns = append(turns, map[string]any{"role": m.Role, "content": blocks})

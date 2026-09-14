@@ -222,3 +222,71 @@ func (o *overrunner) Embed(context.Context, llm.EmbedRequest) (*llm.EmbedRespons
 func (o *overrunner) Infill(context.Context, llm.InfillRequest) (*llm.ChatResponse, error) {
 	return nil, &llm.UnsupportedError{Provider: "overrun", Capability: "infill"}
 }
+
+// A provider that quietly accepts an image it never declared it can read is
+// reported, not failed: from outside there is no way to tell whether it read
+// the image or dropped it, and failing would assert the worse of the two.
+func TestUndeclaredVisionThatAcceptsImagesIsReported(t *testing.T) {
+	caps := honest()
+	caps.Vision = false
+	res := CheckConformance(context.Background(), &liar{caps: caps, toolResponse: &llm.ChatResponse{
+		FinishReason: "tool_calls",
+		ToolCalls: []llm.ToolCall{{
+			ID: "1", Name: "get_weather",
+			Arguments: json.RawMessage(`{"city":"Berlin","units":"celsius"}`),
+		}},
+	}}, ConformanceOptions{})
+
+	c := checkNamed(t, res, "vision")
+	if c.Status != StatusUnproven {
+		t.Errorf("vision = %q, want unproven for a provider that accepted an "+
+			"undeclared image", c.Status)
+	}
+	if !res.Passed {
+		t.Error("an unproven check failed the whole report; only a broken declaration should")
+	}
+}
+
+// And a provider that refuses, as every provider in this repository does, is a
+// clean skip.
+func TestUndeclaredVisionThatRefusesIsASkip(t *testing.T) {
+	caps := honest()
+	caps.Vision = false
+	res := CheckConformance(context.Background(), &blindRefuser{caps: caps}, ConformanceOptions{})
+
+	if c := checkNamed(t, res, "vision"); c.Status != StatusSkip {
+		t.Errorf("vision = %q (%s), want skip for a provider that refuses images",
+			c.Status, c.Detail)
+	}
+}
+
+type blindRefuser struct{ caps llm.Capabilities }
+
+func (b *blindRefuser) Name() string                   { return "blind" }
+func (b *blindRefuser) Capabilities() llm.Capabilities { return b.caps }
+func (b *blindRefuser) Health(context.Context) error   { return nil }
+func (b *blindRefuser) Close() error                   { return nil }
+func (b *blindRefuser) Chat(_ context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
+	if llm.HasImages(req.Messages) && !b.caps.Vision {
+		return nil, &llm.UnsupportedError{Provider: "blind", Capability: "vision"}
+	}
+	if len(req.Tools) > 0 {
+		return &llm.ChatResponse{
+			FinishReason: "tool_calls",
+			ToolCalls: []llm.ToolCall{{
+				ID: "1", Name: "get_weather",
+				Arguments: json.RawMessage(`{"city":"Berlin","units":"celsius"}`),
+			}},
+		}, nil
+	}
+	return &llm.ChatResponse{Content: "blue", OutputTokens: 2, FinishReason: "stop"}, nil
+}
+func (b *blindRefuser) ChatStructured(context.Context, llm.ChatRequest, json.RawMessage) (*llm.ChatResponse, error) {
+	return &llm.ChatResponse{Content: `{"language":"Go","confident":true}`, OutputTokens: 9}, nil
+}
+func (b *blindRefuser) Embed(context.Context, llm.EmbedRequest) (*llm.EmbedResponse, error) {
+	return &llm.EmbedResponse{Vectors: [][]float32{{1, 2}, {3, 4}}, Dims: 2}, nil
+}
+func (b *blindRefuser) Infill(context.Context, llm.InfillRequest) (*llm.ChatResponse, error) {
+	return nil, &llm.UnsupportedError{Provider: "blind", Capability: "infill"}
+}

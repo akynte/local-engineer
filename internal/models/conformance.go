@@ -99,6 +99,7 @@ func CheckConformance(ctx context.Context, p llm.Provider, opts ConformanceOptio
 		checkStructuredOutput,
 		checkStructuredRefusal,
 		checkEmbeddings,
+		checkVision,
 	} {
 		select {
 		case <-ctx.Done():
@@ -405,4 +406,81 @@ func (c Conformance) Format() string {
 			"rather than a model being poor at its job.\n")
 	}
 	return b.String()
+}
+
+// onePixelPNG is a valid 1x1 PNG. It is the smallest thing that answers the
+// question this check asks — whether the provider accepts an image at all —
+// without depending on the model being able to describe anything.
+var onePixelPNG = []byte{
+	0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+	0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+	0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+	0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+	0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41,
+	0x54, 0x08, 0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00,
+	0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xDD, 0x8D,
+	0xB0, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E,
+	0x44, 0xAE, 0x42, 0x60, 0x82,
+}
+
+// checkVision asks whether a provider that declares it can actually take an
+// image. It deliberately does not test whether the model describes the picture
+// well: the failure this guards against is an image being accepted and ignored,
+// or a declaration that no endpoint backs.
+func checkVision(ctx context.Context, p llm.Provider, caps llm.Capabilities, o ConformanceOptions) Check {
+	c := Check{Name: "vision", Declared: caps.Vision}
+	if !caps.Vision {
+		// The other half of the contract: a provider that does not declare
+		// vision must refuse an image rather than drop it, because a dropped
+		// image produces a confident answer about something never seen.
+		ctx, cancel := context.WithTimeout(ctx, o.Timeout)
+		defer cancel()
+		_, err := p.Chat(ctx, llm.ChatRequest{
+			Messages: []llm.Message{{
+				Role: "user", Content: "What colour is this?",
+				Images: []llm.Image{{MediaType: "image/png", Data: onePixelPNG}},
+			}},
+			MaxTokens: 64,
+		})
+		var unsupported *llm.UnsupportedError
+		if errors.As(err, &unsupported) {
+			c.Status, c.Detail = StatusSkip, "not declared, and images are refused rather than dropped"
+			return c
+		}
+		if err != nil {
+			c.Status, c.Detail = StatusSkip, "not declared; the image was rejected: "+err.Error()
+			return c
+		}
+		// The provider took an image it never declared it could read. From
+		// outside there is no way to tell whether it used the image or dropped
+		// it, and the two are very different — so this is reported for a human
+		// rather than failed, which would assert something unverifiable. Every
+		// provider in this repository refuses instead, which is the behaviour
+		// that makes the difference decidable.
+		c.Status = StatusUnproven
+		c.Detail = "did not declare vision and accepted an image rather than refusing; " +
+			"whether it was read or silently dropped cannot be told from here"
+		return c
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, o.Timeout)
+	defer cancel()
+	temp := 0.0
+	resp, err := p.Chat(ctx, llm.ChatRequest{
+		Messages: []llm.Message{{
+			Role: "user", Content: "Describe this image in a few words.",
+			Images: []llm.Image{{MediaType: "image/png", Data: onePixelPNG}},
+		}},
+		MaxTokens: 2048, Temperature: &temp, Thinking: "off",
+	})
+	if err != nil {
+		c.Status, c.Detail = StatusFail, err.Error()
+		return c
+	}
+	if strings.TrimSpace(resp.Content) == "" {
+		c.Status, c.Detail = StatusUnproven, "accepted the image and returned no content"
+		return c
+	}
+	c.Status, c.Detail = StatusPass, firstLine(resp.Content)
+	return c
 }

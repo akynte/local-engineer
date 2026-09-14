@@ -5,6 +5,7 @@ package llm_test
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -381,4 +382,107 @@ func keysOf(m map[string]any) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// A provider that does not declare Vision must refuse an image, not drop it.
+// A dropped image is the worst shape of failure available here: the request
+// succeeds, the model answers confidently, and the answer is about nothing.
+func TestImagesAreRefusedWhenVisionIsNotDeclared(t *testing.T) {
+	var reached bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		reached = true
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"a cat"}}]}`))
+	}))
+	defer srv.Close()
+
+	p := llm.NewOpenAICompatible(llm.Options{
+		Name: "blind", BaseURL: srv.URL,
+		Caps: llm.Capabilities{Kind: llm.KindOpenAICompatible, Vision: false},
+	})
+	_, err := p.Chat(context.Background(), llm.ChatRequest{
+		Messages: []llm.Message{{
+			Role: "user", Content: "What is in this picture?",
+			Images: []llm.Image{{MediaType: "image/png", Data: []byte{0x89, 'P', 'N', 'G'}}},
+		}},
+	})
+	var unsupported *llm.UnsupportedError
+	if !errors.As(err, &unsupported) {
+		t.Fatalf("got %v, want an UnsupportedError for vision", err)
+	}
+	if reached {
+		t.Error("the request was sent to the provider despite the image being unsupported")
+	}
+}
+
+// A provider that declares Vision encodes the image as a data URI in the
+// content-array form, with the text first.
+func TestImagesAreEncodedAsDataURIs(t *testing.T) {
+	var body map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"a cat"}}]}`))
+	}))
+	defer srv.Close()
+
+	p := llm.NewOpenAICompatible(llm.Options{
+		Name: "seeing", BaseURL: srv.URL,
+		Caps: llm.Capabilities{Kind: llm.KindOpenAICompatible, Vision: true},
+	})
+	if _, err := p.Chat(context.Background(), llm.ChatRequest{
+		Messages: []llm.Message{{
+			Role: "user", Content: "What is in this picture?",
+			Images: []llm.Image{{MediaType: "image/png", Data: []byte("PNGDATA")}},
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	msgs, ok := body["messages"].([]any)
+	if !ok || len(msgs) == 0 {
+		t.Fatalf("no messages in the request body: %v", body)
+	}
+	content, ok := msgs[0].(map[string]any)["content"].([]any)
+	if !ok {
+		t.Fatalf("a message with an image did not use the content-array form: %v", msgs[0])
+	}
+	if len(content) != 2 {
+		t.Fatalf("got %d content parts, want text then image", len(content))
+	}
+	if content[0].(map[string]any)["type"] != "text" {
+		t.Error("the text part is not first; several servers ignore a trailing instruction")
+	}
+	img := content[1].(map[string]any)
+	if img["type"] != "image_url" {
+		t.Fatalf("second part is %v, want image_url", img["type"])
+	}
+	url := img["image_url"].(map[string]any)["url"].(string)
+	want := "data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("PNGDATA"))
+	if url != want {
+		t.Errorf("data URI = %q, want %q", url, want)
+	}
+}
+
+// A turn with no images keeps the plain string form, so nothing changes for
+// every existing caller.
+func TestMessagesWithoutImagesKeepTheStringForm(t *testing.T) {
+	var body map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"ok"}}]}`))
+	}))
+	defer srv.Close()
+
+	p := llm.NewOpenAICompatible(llm.Options{
+		Name: "plain", BaseURL: srv.URL,
+		Caps: llm.Capabilities{Kind: llm.KindOpenAICompatible, Vision: true},
+	})
+	if _, err := p.Chat(context.Background(), llm.ChatRequest{
+		Messages: []llm.Message{{Role: "user", Content: "hello"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	msgs := body["messages"].([]any)
+	if _, isString := msgs[0].(map[string]any)["content"].(string); !isString {
+		t.Errorf("a message with no images did not keep the string content form: %v", msgs[0])
+	}
 }

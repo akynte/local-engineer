@@ -3,6 +3,7 @@ package llm
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -92,6 +93,11 @@ func (p *OpenAICompatible) ChatStructured(ctx context.Context, req ChatRequest, 
 func (p *OpenAICompatible) chat(ctx context.Context, req ChatRequest, schema json.RawMessage) (*ChatResponse, error) {
 	if len(req.Tools) > 0 && !p.caps.ToolCalling {
 		return nil, &UnsupportedError{Provider: p.name, Capability: "tool calling"}
+	}
+	// A dropped image is worse than a refused one: the request succeeds and the
+	// model answers confidently about something it never saw.
+	if HasImages(req.Messages) && !p.caps.Vision {
+		return nil, &UnsupportedError{Provider: p.name, Capability: "vision"}
 	}
 	model := req.Model
 	if model == "" {
@@ -230,6 +236,24 @@ func openAIMessages(msgs []Message) []map[string]any {
 	out := make([]map[string]any, 0, len(msgs))
 	for _, m := range msgs {
 		wire := map[string]any{"role": m.Role, "content": m.Content}
+		// A turn carrying images uses the content-array form. Text stays first:
+		// several servers ignore a leading image when the instruction follows
+		// it, and the instruction is what the caller actually asked.
+		if len(m.Images) > 0 {
+			parts := make([]map[string]any, 0, len(m.Images)+1)
+			if m.Content != "" {
+				parts = append(parts, map[string]any{"type": "text", "text": m.Content})
+			}
+			for _, img := range m.Images {
+				parts = append(parts, map[string]any{
+					"type": "image_url",
+					"image_url": map[string]any{
+						"url": dataURI(img),
+					},
+				})
+			}
+			wire["content"] = parts
+		}
 		if m.Name != "" {
 			wire["name"] = m.Name
 		}
@@ -369,4 +393,15 @@ func (p *OpenAICompatible) post(ctx context.Context, path string, payload, out a
 		return fmt.Errorf("llm: %s %s: decode response: %w", p.name, path, err)
 	}
 	return nil
+}
+
+// dataURI encodes an image the way the OpenAI-compatible surface expects. A
+// media type is required: servers reject a data URI without one, and guessing
+// from the bytes would be a silent wrong answer when the guess is off.
+func dataURI(img Image) string {
+	media := img.MediaType
+	if media == "" {
+		media = "application/octet-stream"
+	}
+	return "data:" + media + ";base64," + base64.StdEncoding.EncodeToString(img.Data)
 }

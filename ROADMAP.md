@@ -200,7 +200,10 @@ evaluation results looks like one whose results mean something.
 - [x] Split compose variant exercised in CI — brought up against a stub
       inference service and checked for the claim it makes, not just parsed
 - [ ] Optional semantic retrieval, if Phase 5 shows it earns its cost
-- [ ] Vision for UI review
+- [x] Vision at the provider boundary: images on a message, encoded for both
+      wire formats, and refused rather than dropped by a provider that does not
+      declare it. Using it for UI review needs a vision model configured, which
+      no shipped profile assumes
 
 ## 1.0
 

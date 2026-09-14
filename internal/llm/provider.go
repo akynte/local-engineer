@@ -79,6 +79,19 @@ type Capabilities struct {
 	CostPerMTokOut float64 `json:"cost_per_mtok_out"`
 }
 
+// Image is an image attached to a message.
+//
+// Callers pass raw bytes and a media type; the provider encodes them in
+// whatever shape its wire format wants. Building a data URI at the call site
+// would put the encoding in every caller and make a mistake in it silent — the
+// request succeeds and the model simply never sees the picture.
+type Image struct {
+	// MediaType is the MIME type, e.g. "image/png" or "image/jpeg".
+	MediaType string
+	// Data is the raw image, unencoded.
+	Data []byte
+}
+
 // Message is one chat turn.
 type Message struct {
 	Role    string `json:"role"` // system | user | assistant | tool
@@ -90,6 +103,21 @@ type Message struct {
 	// replayed verbatim on the next request: a provider that receives a tool
 	// result without the call that produced it rejects the conversation.
 	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
+	// Images attached to this turn. A provider that does not declare Vision
+	// refuses a request carrying them rather than dropping them, for the same
+	// reason it refuses tools it cannot call: a silently discarded image
+	// produces a confident answer about something the model never saw.
+	Images []Image `json:"-"`
+}
+
+// HasImages reports whether any turn carries an image.
+func HasImages(msgs []Message) bool {
+	for _, m := range msgs {
+		if len(m.Images) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // ToolDef declares a tool the model may call.
