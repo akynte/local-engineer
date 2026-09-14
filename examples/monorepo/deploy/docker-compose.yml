@@ -1,0 +1,14 @@
+# Two services from one repository, so the deployment analyzer has something to
+# link back to the code.
+services:
+  billing:
+    build: ../services/billing
+    environment:
+      BILLING_DATABASE_URL: postgres://localhost/billing
+    ports: ["8081:8080"]
+
+  notifications:
+    build: ../services/notifications
+    environment:
+      NOTIFICATIONS_SMTP_URL: smtp://localhost:1025
+    depends_on: [billing]

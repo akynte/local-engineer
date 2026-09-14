@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "baseUrl": ".",
+    "paths": {
+      "~/*": ["./*"],
+      "@types/*": ["./types/*"]
+    },
+    "noEmit": true
+  },
+  "include": ["server", "composables", "types", "components"]
+}

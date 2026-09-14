@@ -23,8 +23,9 @@ through a confined tool loop with verification as the correction signal, and
 decides acceptance from evidence alone — then opens a human gate carrying the
 diff and the findings before anything is applied.
 
-**Not implemented**: a TypeScript type checker (the analyzer is lexical; see
-Phase 4).
+**Not implemented**: nothing from §1.2's layout is missing. `workflows/` is
+empty on purpose — §1.2 lists it and v3 defines it nowhere, so it carries a
+README saying so rather than an invented mechanism.
 
 The evaluation harness has been run against a local model — 3 tasks × 4 arms ×
 5 passes, 60 runs, published in `docs/benchmarks/results/`. It settled nothing:

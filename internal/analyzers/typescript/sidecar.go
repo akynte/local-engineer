@@ -38,6 +38,10 @@ import (
 // SidecarDir is where the sidecar lives relative to the installation root.
 const SidecarDir = "sidecars/typescript"
 
+// EnvSidecarDir names the directory holding analyze.js, for installations that
+// do not keep it beside the binary.
+const EnvSidecarDir = "LE_TYPESCRIPT_SIDECAR_DIR"
+
 // sidecarResult is the JSON contract documented in sidecars/typescript/README.md.
 type sidecarResult struct {
 	Nodes []struct {
@@ -71,6 +75,12 @@ var ErrNoSidecar = errors.New("typescript: the sidecar is not installed")
 // configured root. Returns ErrNoSidecar when there is none.
 func SidecarPath(installRoot string) (string, error) {
 	var candidates []string
+	// An explicit override wins. The sidecar belongs to the installation, not
+	// to the repository being analysed, so this is how a non-standard install
+	// says where it put it.
+	if dir := os.Getenv(EnvSidecarDir); dir != "" {
+		candidates = append(candidates, filepath.Join(dir, "analyze.js"))
+	}
 	if installRoot != "" {
 		candidates = append(candidates, filepath.Join(installRoot, SidecarDir, "analyze.js"))
 	}
@@ -80,6 +90,9 @@ func SidecarPath(installRoot string) (string, error) {
 			filepath.Join(dir, SidecarDir, "analyze.js"),
 			filepath.Join(dir, "..", SidecarDir, "analyze.js"))
 	}
+	// The working directory is checked last and not searched upwards: walking
+	// up would find a `sidecars/` belonging to the repository being analysed,
+	// and running that would be running the analysed code.
 	if cwd, err := os.Getwd(); err == nil {
 		candidates = append(candidates, filepath.Join(cwd, SidecarDir, "analyze.js"))
 	}

@@ -1,0 +1,10 @@
+// A monorepo: several modules in one workspace, sharing a library. §2.1 calls
+// this one workspace with several repositories, each with its own repository
+// id — which is what makes "what depends on the shared library" answerable.
+go 1.26
+
+use (
+	./libs/money
+	./services/billing
+	./services/notifications
+)

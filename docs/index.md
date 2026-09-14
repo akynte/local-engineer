@@ -10,6 +10,7 @@ matches what you are doing.
 |---|---|
 | [First task in 15 minutes](tutorials/first-task.md) | A running container, an indexed repository, and a graph you can query |
 | [Index a Go microservice](tutorials/index-a-go-service.md) | A worked example on a real service layout |
+| [Run the reference evaluation](tutorials/run-the-evaluation.md) | Numbers for your own hardware, and the caveats that go with them |
 
 ## How-to guides — solving a specific problem
 
@@ -23,6 +24,9 @@ matches what you are doing.
 | [Back up and restore](how-to/backup-and-restore.md) | Before every upgrade |
 | [Run fully offline](how-to/run-offline.md) | No egress at all |
 | [Add a provider](how-to/add-a-provider.md) | Extending the provider boundary |
+| [Add a language analyzer](how-to/add-a-language-analyzer.md) | Which evidence category, and which direction |
+| [Write a recipe](how-to/write-a-recipe.md) | A verification command and its summariser |
+| [Write a policy rule](how-to/write-a-policy-rule.md) | What no task may change, whatever it was asked |
 | [Verify a release](how-to/verify-a-release.md) | Signatures, SBOM, provenance |
 | [Troubleshooting](how-to/troubleshooting.md) | When `le doctor` reports a problem |
 
@@ -35,6 +39,11 @@ matches what you are doing.
 | [Graph schema](reference/graph-schema.md) | Node kinds, edge kinds, evidence categories |
 | [HTTP API](reference/http-api.md) | The supervisor's endpoints |
 | [Storage layout](reference/storage-layout.md) | What is on disk and why |
+| [Tool schemas](reference/tool-schemas.md) | The tools the engine exposes, and how the surface is capped |
+| [Recipe format](reference/recipe-format.md) | Recipes, summarisers, verification levels |
+| [Telemetry schema](reference/telemetry-schema.md) | What is recorded, and what deliberately is not |
+| [Image manifest](reference/image-manifest.md) | Every tool version, generated from the image |
+| [The verify list](reference/verify-list.md) | What §16 asked to be checked, and what was found |
 
 ## Explanation — why it is built this way
 
@@ -44,6 +53,9 @@ matches what you are doing.
 | [Isolation model](explanation/isolation-model.md) | What each layer guarantees, and what it does not |
 | [Why small models can work here](explanation/why-small-models.md) | The argument, and how it will be tested |
 | [Crash recovery](explanation/crash-recovery.md) | Intent-first journalling |
+| [Trust boundaries](explanation/trust-boundaries.md) | Who can affect what, and what each boundary does not protect against |
+| [Known limitations](explanation/known-limitations.md) | What this does not do, in one place |
+| [C4 diagrams](architecture/c4-context.md) | Context, container and component views |
 | [Decision records](adr/) | Every architectural decision, in a fixed format |
 
 ## A note on the command blocks

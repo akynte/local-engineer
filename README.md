@@ -1,5 +1,11 @@
 # local-engineer
 
+[![CI](https://github.com/akynte/local-engineer/actions/workflows/ci.yml/badge.svg)](https://github.com/akynte/local-engineer/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/akynte/local-engineer/badge)](https://scorecard.dev/viewer/?uri=github.com/akynte/local-engineer)
+[![CodeQL](https://github.com/akynte/local-engineer/actions/workflows/codeql.yml/badge.svg)](https://github.com/akynte/local-engineer/actions/workflows/codeql.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/akynte/local-engineer.svg)](https://pkg.go.dev/github.com/akynte/local-engineer)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
 A supervised local coding engineer: a deterministic harness around a local
 model, with strict per-project isolation, an intent-first execution journal,
 and evidence-backed verification.
