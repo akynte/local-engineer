@@ -72,6 +72,8 @@ func (e *Engine) Exec(ctx context.Context, wt string, call llmToolCall) Result {
 		return e.impact(ctx, args)
 	case ToolRunRecipe:
 		return e.runRecipe(ctx, wt, args)
+	case ToolGitTouch:
+		return e.gitTouch(ctx, args)
 	case ToolDone:
 		return Result{Done: true, Summary: str(args, "summary"), Content: "Recorded."}
 	}
@@ -362,4 +364,127 @@ func num(args map[string]any, key string) int {
 		return v
 	}
 	return 0
+}
+
+// gitTouch answers §11's RepoMem row: "repository memory from commit history —
+// cheap extra signal".
+//
+// It reads the commit-to-file edges the gitlog analyzer wrote, rather than
+// shelling out to git. Two reasons, and the second is the one that matters:
+// the index is already scoped to this workspace, and running git inside a task
+// would hand a model a general-purpose command in the checkout it is editing.
+//
+// The evidence category is `observed` throughout, which is the honest label: a
+// commit touching a file is a fact about history, not about whether the code is
+// related today.
+func (e *Engine) gitTouch(ctx context.Context, args map[string]any) Result {
+	if e.Graph == nil {
+		return failed("Commit history is unavailable: the repository is not indexed.")
+	}
+	path, symbol := str(args, "path"), str(args, "symbol")
+	if path == "" && symbol == "" {
+		return failed("Give either a path or a symbol.")
+	}
+	limit := num(args, "limit")
+	if limit <= 0 || limit > 50 {
+		limit = 10
+	}
+
+	// Find the node the history hangs off. A file and a symbol are looked up
+	// the same way; the kinds differ.
+	name := path
+	kinds := []graph.NodeKind{graph.KindFile}
+	if symbol != "" {
+		name = symbol
+		kinds = []graph.NodeKind{
+			graph.KindFunction, graph.KindMethod, graph.KindType,
+			graph.KindClass, graph.KindInterface,
+		}
+	} else if i := strings.LastIndex(name, "/"); i >= 0 {
+		// Files are indexed by their repository-relative path, but a caller
+		// naturally writes the whole path; try the base name too.
+		name = name[i+1:]
+	}
+
+	nodes, err := e.Graph.NodesByName(ctx, name, kinds, 5)
+	if err != nil {
+		return failed("history lookup failed: %v", err)
+	}
+	if len(nodes) == 0 {
+		return failed("Nothing indexed under %q. Use list_files or find_symbol first.",
+			firstNonEmpty(path, symbol))
+	}
+
+	var b strings.Builder
+	var total int
+	for _, n := range nodes {
+		// Commits point at what they touched, so the commits for a file are its
+		// *incoming* edges — the same reverse traversal impact analysis uses.
+		edges, err := e.Graph.Neighbors(ctx, n.ID, graph.Reverse, []graph.EdgeKind{graph.EdgeTouches})
+		if err != nil {
+			return failed("history lookup failed: %v", err)
+		}
+		if len(edges) == 0 {
+			continue
+		}
+		fmt.Fprintf(&b, "%s\n", n.Path)
+		if n.Path == "" {
+			fmt.Fprintf(&b, "%s\n", n.FQN)
+		}
+		for _, ed := range edges {
+			if total >= limit {
+				break
+			}
+			commit, err := e.Graph.Node(ctx, ed.Src)
+			if err != nil {
+				continue
+			}
+			fmt.Fprintf(&b, "  %s %s\n", commit.Name, commitDetail(commit))
+			total++
+		}
+		if total >= limit {
+			break
+		}
+	}
+	if total == 0 {
+		return Result{Content: fmt.Sprintf(
+			"No commit history is indexed for %s. The gitlog analyzer records it; a "+
+				"shallow clone has none to record.", firstNonEmpty(path, symbol))}
+	}
+	return Result{Content: strings.TrimRight(b.String(), "\n")}
+}
+
+// commitDetail renders what the gitlog analyzer recorded: the subject lives in
+// the node's signature, the author and timestamp in its attributes.
+func commitDetail(n graph.Node) string {
+	parts := make([]string, 0, 3)
+	if n.Signature != "" {
+		parts = append(parts, n.Signature)
+	}
+	if n.Attrs != "" {
+		var attrs map[string]any
+		if err := json.Unmarshal([]byte(n.Attrs), &attrs); err == nil {
+			if v, ok := attrs["author"].(string); ok && v != "" {
+				parts = append(parts, v)
+			}
+			if v, ok := attrs["when"].(string); ok && v != "" {
+				// The date alone is what a reader wants; the clock time is
+				// noise at this level.
+				if len(v) >= 10 {
+					v = v[:10]
+				}
+				parts = append(parts, v)
+			}
+		}
+	}
+	return strings.Join(parts, " · ")
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }

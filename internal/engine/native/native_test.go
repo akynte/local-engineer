@@ -3,7 +3,9 @@ package native_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/akynte/local-engineer/internal/workspace"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/akynte/local-engineer/internal/engine"
 	"github.com/akynte/local-engineer/internal/engine/native"
+	"github.com/akynte/local-engineer/internal/graph"
 	"github.com/akynte/local-engineer/internal/llm"
 	"github.com/akynte/local-engineer/internal/recipe"
 )
@@ -546,4 +549,130 @@ func toolNames(t *testing.T, e *native.Engine, p *scripted, wt string) map[strin
 		out[tool.Name] = true
 	}
 	return out
+}
+
+// §11 adopts "repository memory from commit history" as a cheap extra signal,
+// naming git_touch as the tool. The gitlog analyzer wrote commit-to-file edges
+// and nothing could read them.
+func TestGitTouchReadsIndexedHistory(t *testing.T) {
+	g := &fakeGraph{
+		byName: map[string][]graph.Node{
+			"payment.go": {{ID: 1, Kind: graph.KindFile, Name: "payment.go", Path: "internal/payment.go"}},
+		},
+		incoming: map[int64][]graph.Edge{
+			1: {{Src: 10, Dst: 1, Kind: graph.EdgeTouches, Evidence: graph.Observed}},
+		},
+		nodes: map[int64]graph.Node{
+			10: {
+				ID: 10, Kind: graph.KindCommit, Name: "a1b2c3d",
+				Signature: "handle the refund case",
+				Attrs:     `{"author":"someone","when":"2026-03-04T10:00:00Z","files":3}`,
+			},
+		},
+	}
+	wt := worktree(t, map[string]string{"internal/payment.go": "package payment\n"})
+	p := newScripted(
+		call("1", "git_touch", map[string]any{"path": "internal/payment.go"}),
+		&llm.ChatResponse{FinishReason: "stop", Content: "read the history"},
+	)
+	e, err := native.New(native.Options{Provider: p, Graph: g, MaxSteps: 5, Logf: t.Logf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Step(context.Background(), engine.Request{
+		TaskID: "t1", Objective: "why is this here", Worktree: wt, Attempt: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The tool result reaches the model as a tool turn.
+	var toolContent string
+	for _, m := range p.lastRequest(t).Messages {
+		if m.Role == "tool" {
+			toolContent = m.Content
+		}
+	}
+	for _, want := range []string{"a1b2c3d", "handle the refund case", "someone", "2026-03-04"} {
+		if !strings.Contains(toolContent, want) {
+			t.Errorf("history output does not carry %q:\n%s", want, toolContent)
+		}
+	}
+	// The clock time is noise at this level.
+	if strings.Contains(toolContent, "10:00:00") {
+		t.Errorf("the full timestamp was included:\n%s", toolContent)
+	}
+}
+
+// Without a graph there is no indexed history, and the tool must say so rather
+// than reporting an empty result that reads as "this file has no history".
+func TestGitTouchWithoutAGraphSaysSo(t *testing.T) {
+	wt := worktree(t, map[string]string{"a.go": "package a\n"})
+	p := newScripted(
+		call("1", "git_touch", map[string]any{"path": "a.go"}),
+		&llm.ChatResponse{FinishReason: "stop", Content: "done"},
+	)
+	e := newEngine(t, p) // no graph
+	if _, err := e.Step(context.Background(), engine.Request{
+		TaskID: "t1", Objective: "o", Worktree: wt, Attempt: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// And it is not even advertised, since the engine cannot run it.
+	for _, tool := range p.lastRequest(t).Tools {
+		if tool.Name == "git_touch" {
+			t.Error("git_touch was advertised to an engine with no graph")
+		}
+	}
+}
+
+// fakeGraph answers the three calls git_touch makes and refuses the rest, so a
+// test that accidentally depends on something else fails loudly.
+type fakeGraph struct {
+	byName   map[string][]graph.Node
+	incoming map[int64][]graph.Edge
+	nodes    map[int64]graph.Node
+}
+
+func (f *fakeGraph) WorkspaceID() workspace.ID { return workspace.ID("fakefakefakefakefakefakefa") }
+
+func (f *fakeGraph) NodesByName(_ context.Context, name string, _ []graph.NodeKind, _ int) ([]graph.Node, error) {
+	return f.byName[name], nil
+}
+
+func (f *fakeGraph) Neighbors(_ context.Context, id int64, dir graph.Direction, _ []graph.EdgeKind) ([]graph.Edge, error) {
+	if dir != graph.Reverse {
+		return nil, nil
+	}
+	return f.incoming[id], nil
+}
+
+func (f *fakeGraph) Node(_ context.Context, id int64) (graph.Node, error) {
+	n, ok := f.nodes[id]
+	if !ok {
+		return graph.Node{}, fmt.Errorf("no node %d", id)
+	}
+	return n, nil
+}
+
+func (f *fakeGraph) UpsertNode(context.Context, graph.Node) (int64, error) {
+	return 0, errors.New("not used by these tests")
+}
+func (f *fakeGraph) UpsertNodes(context.Context, []graph.Node) ([]int64, error) {
+	return nil, errors.New("not used by these tests")
+}
+func (f *fakeGraph) UpsertEdges(context.Context, []graph.Edge) error {
+	return errors.New("not used by these tests")
+}
+func (f *fakeGraph) NodeByFQN(context.Context, string, graph.NodeKind, string) (graph.Node, error) {
+	return graph.Node{}, errors.New("not used by these tests")
+}
+func (f *fakeGraph) Traverse(context.Context, graph.Query) ([]graph.Reached, error) {
+	return nil, errors.New("not used by these tests")
+}
+func (f *fakeGraph) ImpactOf(context.Context, []int64, graph.ChangeKind) (graph.Impact, error) {
+	return graph.Impact{}, errors.New("not used by these tests")
+}
+
+func (f *fakeGraph) Stats(context.Context) (graph.Stats, error) {
+	return graph.Stats{}, errors.New("not used by these tests")
 }

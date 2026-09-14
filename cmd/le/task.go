@@ -13,6 +13,7 @@ import (
 
 	"github.com/akynte/local-engineer/internal/broker"
 	"github.com/akynte/local-engineer/internal/config"
+	"github.com/akynte/local-engineer/internal/critic"
 	"github.com/akynte/local-engineer/internal/engine"
 	"github.com/akynte/local-engineer/internal/engine/native"
 	"github.com/akynte/local-engineer/internal/ledger"
@@ -131,6 +132,24 @@ func runnerFor(cmd *cobra.Command, root *store.Root, st *store.Store, eng engine
 			len(policies.Policies), len(policies.Paths()))
 	}
 	r.Policies = policies
+
+	// §10.1's out-of-conversation calls. They need structured output, so a
+	// provider that cannot constrain its answers simply does not get them —
+	// DR-4 refuses rather than degrading, and a review parsed out of prose is
+	// a review whose concerns are sometimes silently lost.
+	if provider, err := reviewProvider(root); err == nil && provider != nil &&
+		provider.Capabilities().StructuredOutput {
+		r.Critic = &critic.Critic{
+			Provider: provider, MaxTokens: 2048, Temperature: 0.1,
+		}
+		if profile := loadProfile(root, cfg); profile != nil {
+			r.Critic.Thinking = profile.Thinking
+			r.Critic.MaxTokens = profile.ReservedOutput
+		}
+	} else if err == nil && provider != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(),
+			"review and diagnosis are off: %s does not declare structured output\n", provider.Name())
+	}
 
 	tmp := st.TmpDir()
 	r.SandboxSpec = sandbox.Spec{
@@ -534,4 +553,27 @@ func loadRepoPolicies() (policy.Set, error) {
 		return policy.Set{}, nil
 	}
 	return policy.Load(filepath.Join(ws.Root, "policies"))
+}
+
+// reviewProvider resolves the provider for the review role. §10.1's
+// out-of-conversation calls use it, and routing them separately is what makes
+// "model routing (stronger slow lane for diagnosis)" a configuration change
+// rather than a code one.
+//
+// A missing providers.yaml is not an error here: review and diagnosis are
+// additions, and a task that can still verify should still run.
+func reviewProvider(root *store.Root) (llm.Provider, error) {
+	cfg, err := loadConfig(root)
+	if err != nil {
+		return nil, err
+	}
+	f, err := llm.LoadProvidersFile(root.Layout().ConfigDir())
+	if err != nil {
+		return nil, nil //nolint:nilnil // no providers configured is not a fault
+	}
+	router, err := llm.NewRouter(f, cfg.Offline)
+	if err != nil {
+		return nil, err
+	}
+	return router.For(llm.RoleReview)
 }

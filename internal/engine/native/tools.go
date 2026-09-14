@@ -32,6 +32,7 @@ const (
 	ToolFindSymbol = "find_symbol"
 	ToolImpact     = "impact_of"
 	ToolRunRecipe  = "run_verification"
+	ToolGitTouch   = "git_touch"
 	ToolDone       = "done"
 )
 
@@ -67,7 +68,9 @@ func (w Wired) has(name string) bool {
 	switch name {
 	case ToolSearch:
 		return w.Retrieval
-	case ToolFindSymbol, ToolImpact:
+	case ToolFindSymbol, ToolImpact, ToolGitTouch:
+		// git_touch reads commit-to-file edges, which the gitlog analyzer
+		// writes into the graph. No graph, no history.
 		return w.Graph
 	case ToolRunRecipe:
 		return w.Recipes
@@ -156,6 +159,21 @@ func Definitions(most int, wired Wired) []llm.ToolDef {
 						"enum":["signature","behaviour","remove","rename","add_field"]}
 				},
 				"required":["symbol","change"],
+				"additionalProperties":false}`),
+		},
+		{
+			Name: ToolGitTouch,
+			Description: "Show which commits recently touched a file or symbol, with who " +
+				"changed it and when. Useful for finding why code is the way it is before " +
+				"changing it, and for spotting a file that several unrelated changes keep " +
+				"colliding in.",
+			Schema: schema(`{
+				"type":"object",
+				"properties":{
+					"path":{"type":"string","description":"A file path relative to the worktree root."},
+					"symbol":{"type":"string","description":"A symbol name, as an alternative to a path."},
+					"limit":{"type":"integer","description":"How many commits to return, default 10."}
+				},
 				"additionalProperties":false}`),
 		},
 		{

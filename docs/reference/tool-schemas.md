@@ -33,6 +33,7 @@ for the component it was meant to be measured without.
 | `search_code` | retrieval | `query` (required), `limit` |
 | `find_symbol` | the graph | `name` (required) |
 | `impact_of` | the graph | `symbol` (required), `change`: `signature` \| `behaviour` \| `remove` \| `rename` \| `add_field` |
+| `git_touch` | the graph | `path` or `symbol`, `limit` |
 | `done` | — | `summary` (required) |
 
 ## Notes on individual tools
@@ -45,6 +46,12 @@ never read, which `write_file` can.
 evidence categories, a compatibility verdict, and the migration steps a change
 implies. Consumers with `inferred` or `unknown` evidence are treated as present,
 because a missing edge means "not discovered" rather than "not there".
+
+**`git_touch` reads indexed history, not git.** It answers from the
+commit-to-file edges the gitlog analyzer wrote. Shelling out to git would hand a
+model a general-purpose command inside the checkout it is editing, and the index
+is already scoped to this workspace. Its edges are `observed`: a commit touching
+a file is a fact about history, not about whether the code is related today.
 
 **`done` is an input, not a decision.** The supervisor checks the evidence
 itself; calling `done` before verification passes wastes an attempt.

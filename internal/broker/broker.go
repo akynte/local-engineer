@@ -162,6 +162,15 @@ type Evidence struct {
 	Diff          string        `json:"diff,omitempty"`
 	Findings      []string      `json:"findings,omitempty"`
 	Plan          any           `json:"plan,omitempty"`
+	// PolicyReasons say why a protected path matters, in the words the policy
+	// author chose. Without them a violation is a path the operator has to
+	// judge with nothing to judge on.
+	PolicyReasons []string `json:"policy_reasons,omitempty"`
+	// ReviewConcerns are what a fresh-context reviewer noticed (§10.1). They
+	// are listed last and labelled advisory on purpose: everything above is
+	// deterministic evidence, and these are a model's opinion about work a
+	// model did. Mixing the two would let the weakest input look like the rest.
+	ReviewConcerns []string `json:"review_concerns,omitempty"`
 }
 
 // MaxDiffInGate bounds the diff a gate carries. A person asked to approve a

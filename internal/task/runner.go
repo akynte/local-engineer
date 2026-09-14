@@ -10,6 +10,7 @@ import (
 
 	"github.com/akynte/local-engineer/internal/artifacts"
 	"github.com/akynte/local-engineer/internal/broker"
+	"github.com/akynte/local-engineer/internal/critic"
 	"github.com/akynte/local-engineer/internal/engine"
 	"github.com/akynte/local-engineer/internal/ledger"
 	"github.com/akynte/local-engineer/internal/policy"
@@ -54,6 +55,18 @@ type Runner struct {
 	// whatever it was asked to do. Empty means none are installed, which is the
 	// ordinary case for a fresh checkout.
 	Policies policy.Set
+	// Critic makes the two out-of-conversation calls of §10.1: a fresh-context
+	// review of a finished change, and a fresh diagnosis when attempts keep
+	// failing the same way. Nil turns both off.
+	//
+	// Neither decides anything. A review raises concerns a person reads at the
+	// gate; a diagnosis changes what the next attempt is told. Acceptance stays
+	// with the completion contract, on evidence.
+	Critic *critic.Critic
+	// DiagnoseAfter is how many failed attempts trigger a diagnosis. Zero uses
+	// the default: a first failure is ordinary, a second repeat is a stuck
+	// hypothesis.
+	DiagnoseAfter int
 	// Logf reports progress. Nil discards it.
 	Logf func(format string, args ...any)
 
@@ -114,6 +127,12 @@ type Outcome struct {
 	// out-of-scope too, so acceptance already refuses them — this field keeps
 	// *why* alongside the fact.
 	PolicyViolations []policy.Violation `json:"policy_violations,omitempty"`
+	// Review is what a fresh-context reviewer noticed, when one ran. It is
+	// advisory: it reaches the human gate and has no authority over acceptance,
+	// because a model judging work is not evidence about it.
+	Review *critic.ReviewResult `json:"review,omitempty"`
+	// Diagnosis is a fresh reading of repeated failures, when one ran.
+	Diagnosis *critic.Hypothesis `json:"diagnosis,omitempty"`
 	// Diff is the change the task produced.
 	Diff string `json:"diff,omitempty"`
 	// Verified says which state the verdict describes. A verdict that does not
@@ -299,6 +318,16 @@ func (r *Runner) run(ctx context.Context, t *Task, wt *worktree.Worktree) (*Outc
 			return nil, err
 		}
 
+		// §10.1's fresh diagnosis. An attempt that failed the same way twice is
+		// not going to be fixed by a third with the same context: the context
+		// is what keeps producing the hypothesis. The one call this costs buys
+		// a different starting point, and what it rules out stops the next
+		// attempt retreading ground the evidence already closed.
+		if diag := r.diagnose(ctx, t, attempt, feedback); diag != nil {
+			out.Diagnosis = diag
+			feedback = append(feedback, diagnosisAsFeedback(*diag))
+		}
+
 		used, err := r.step(ctx, t, wt, attempt, before, feedback)
 		if err != nil {
 			return nil, err
@@ -341,6 +370,11 @@ func (r *Runner) run(ctx context.Context, t *Task, wt *worktree.Worktree) (*Outc
 		out.Reasons = reasons
 		if accepted {
 			out.Accepted = true
+			// §10.1's fresh-context review, after the contract has decided and
+			// before a person sees it. The order is the point: the review
+			// cannot influence acceptance, only what the gate says. A reviewer
+			// that could reject would be a model voting on evidence.
+			r.review(ctx, t, wt, out, results)
 			if diff, err := wt.Diff(ctx); err == nil {
 				out.Diff = diff
 			}
@@ -605,6 +639,20 @@ func (r *Runner) gate(ctx context.Context, t *Task, out *Outcome) (broker.Gate, 
 		ev.Findings = append(ev.Findings,
 			fmt.Sprintf("%s: %s — %s", res.Recipe, res.Status, res.Summary.Headline))
 	}
+	for _, v := range out.PolicyViolations {
+		ev.PolicyReasons = append(ev.PolicyReasons,
+			fmt.Sprintf("%s (%s): %s", v.Path, v.Policy, v.Reason))
+	}
+	if out.Review != nil {
+		for _, c := range out.Review.Concerns {
+			where := c.Path
+			if where == "" {
+				where = "the change"
+			}
+			ev.ReviewConcerns = append(ev.ReviewConcerns,
+				fmt.Sprintf("[%s] %s: %s", c.Severity, where, c.Detail))
+		}
+	}
 	return r.Broker.Ask(ctx, t.ID, broker.KindApply,
 		"This task met the completion contract. Apply its change?", ev)
 }
@@ -759,4 +807,70 @@ func contains(list []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// DefaultDiagnoseAfter is how many failed attempts precede a diagnosis. One
+// failure is ordinary; a second means the same reading has now failed twice.
+const DefaultDiagnoseAfter = 2
+
+// review runs the fresh-context review, if one is configured. Its failure is
+// logged and never fatal: a task that verified is accepted whether or not a
+// reviewer had anything to add, and letting an advisory call fail the run would
+// give it authority it is specifically denied.
+func (r *Runner) review(ctx context.Context, t *Task, wt *worktree.Worktree,
+	out *Outcome, results []recipe.Result) {
+	if r.Critic == nil {
+		return
+	}
+	diff, err := wt.Diff(ctx)
+	if err != nil || strings.TrimSpace(diff) == "" {
+		return
+	}
+	res, err := r.Critic.Review(ctx, t.Title, diff, results)
+	if err != nil {
+		r.logf("task %s: review did not run: %v", t.ID, err)
+		return
+	}
+	out.Review = &res
+	if len(res.Concerns) > 0 {
+		r.logf("task %s: review raised %d concern(s); they are advisory and reach the gate",
+			t.ID, len(res.Concerns))
+	}
+}
+
+// diagnose runs a fresh diagnosis once attempts have repeated a failure.
+func (r *Runner) diagnose(ctx context.Context, t *Task, attempt int, feedback []recipe.Result) *critic.Hypothesis {
+	if r.Critic == nil || len(feedback) == 0 {
+		return nil
+	}
+	after := r.DiagnoseAfter
+	if after <= 0 {
+		after = DefaultDiagnoseAfter
+	}
+	if attempt <= after {
+		return nil
+	}
+	h, err := r.Critic.Diagnose(ctx, t.Title, feedback)
+	if err != nil {
+		r.logf("task %s: diagnosis did not run: %v", t.ID, err)
+		return nil
+	}
+	r.logf("task %s: diagnosis: %s", t.ID, h.Cause)
+	return &h
+}
+
+// diagnosisAsFeedback carries a hypothesis into the next attempt's brief in the
+// shape the engine already renders, so it needs no special case there.
+func diagnosisAsFeedback(h critic.Hypothesis) recipe.Result {
+	findings := []recipe.Finding{{Message: "Try instead: " + h.Suggestion}}
+	for _, r := range h.RuledOut {
+		findings = append(findings, recipe.Finding{Message: "Already ruled out: " + r})
+	}
+	return recipe.Result{
+		Recipe: "diagnosis", Kind: recipe.KindCustom, Status: recipe.Fail,
+		Summary: recipe.Summary{
+			Headline: "a fresh reading of the repeated failures: " + h.Cause,
+			Findings: findings,
+		},
+	}
 }
