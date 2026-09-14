@@ -1,0 +1,70 @@
+# A signature change with two consumers in packages the objective does not
+# name. Finding them is exactly what impact analysis is for; a solution that
+# only edits the package it was pointed at will not compile.
+id: signature-change-001
+category: api_change
+objective: >-
+  billing.Total ignores currency. Change it to take a currency code and to
+  return the total alongside that currency, and update everything that calls it
+  so the project still builds.
+fixture: fixtures/signature-change
+scope:
+  - internal
+leak_risk: none
+verification: standard
+notes: >-
+  The two consumers are in internal/report and internal/api. A solution that
+  edits only internal/billing fails to compile, so the build check catches it —
+  this task measures whether the system finds consumers before editing rather
+  than after failing.
+budget:
+  max_attempts: 3
+  max_wall_seconds: 900
+acceptance:
+  argv: ["go", "test", "./..."]
+  timeout_seconds: 300
+  must_not_change:
+    - internal/billing/hidden_acceptance_test.go
+  files:
+    internal/billing/hidden_acceptance_test.go: |
+      package billing
+
+      import (
+        "reflect"
+        "testing"
+      )
+
+      // Total must take a currency and return it with the amount. The exact
+      // spelling is left open: the test discovers the signature by reflection
+      // so a reasonable design is not penalised for naming.
+      func TestTotalTakesAndReturnsCurrency(t *testing.T) {
+        fn := reflect.ValueOf(Total)
+        ft := fn.Type()
+
+        if ft.NumIn() != 2 {
+          t.Fatalf("Total should take the lines and a currency; it takes %d argument(s)", ft.NumIn())
+        }
+        if ft.In(1).Kind() != reflect.String {
+          t.Fatalf("the second argument should be a currency code string, got %s", ft.In(1))
+        }
+        if ft.NumOut() != 2 {
+          t.Fatalf("Total should return the amount and the currency; it returns %d value(s)", ft.NumOut())
+        }
+        if ft.Out(0).Kind() != reflect.Int {
+          t.Fatalf("the first result should be the amount in pence, got %s", ft.Out(0))
+        }
+        if ft.Out(1).Kind() != reflect.String {
+          t.Fatalf("the second result should be the currency code, got %s", ft.Out(1))
+        }
+
+        results := fn.Call([]reflect.Value{
+          reflect.ValueOf([]Line{{PenceEach: 100, Quantity: 2}, {PenceEach: 50, Quantity: 1}}),
+          reflect.ValueOf("GBP"),
+        })
+        if got := results[0].Int(); got != 250 {
+          t.Fatalf("total = %d, want 250", got)
+        }
+        if got := results[1].String(); got != "GBP" {
+          t.Fatalf("currency = %q, want GBP", got)
+        }
+      }

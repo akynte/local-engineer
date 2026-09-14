@@ -1,0 +1,70 @@
+# A bug fix whose correct solution requires noticing a consumer the visible
+# tests do not cover. The handler already treats a non-nil error as a 404, so
+# the intended fix is to return ErrNotFound rather than to panic — but nothing
+# visible says so. Finding the handler is what the graph is for.
+id: nil-deref-001
+category: bug_fix
+objective: >-
+  UserService.Email panics when the user does not exist. Make it return an
+  error instead of panicking, in the way the rest of the codebase already
+  expects.
+fixture: fixtures/nil-deref
+scope:
+  - internal/service
+leak_risk: none
+verification: standard
+notes: >-
+  A wrong-but-passing solution returns a bare errors.New, or an empty string
+  with a nil error. The hidden test requires ErrNotFound specifically, because
+  the handler distinguishes it — which is only discoverable by looking at the
+  consumer.
+budget:
+  max_attempts: 3
+  max_wall_seconds: 600
+acceptance:
+  argv: ["go", "test", "./..."]
+  timeout_seconds: 300
+  must_not_change:
+    - internal/service/hidden_acceptance_test.go
+  files:
+    internal/service/hidden_acceptance_test.go: |
+      package service
+
+      import (
+        "errors"
+        "testing"
+      )
+
+      // The missing user must produce ErrNotFound, not a panic and not a bare
+      // error: the handler layer distinguishes it to return a 404.
+      func TestEmailMissingReturnsErrNotFound(t *testing.T) {
+        svc := NewUserService(NewMemoryStore())
+
+        defer func() {
+          if r := recover(); r != nil {
+            t.Fatalf("Email panicked on a missing user: %v", r)
+          }
+        }()
+
+        _, err := svc.Email("absent")
+        if err == nil {
+          t.Fatal("expected an error for a missing user")
+        }
+        if !errors.Is(err, ErrNotFound) {
+          t.Fatalf("expected ErrNotFound, got %v", err)
+        }
+      }
+
+      // The existing behaviour must survive the fix.
+      func TestEmailFoundStillWorks(t *testing.T) {
+        store := NewMemoryStore()
+        store.Add(&User{ID: "u1", Email: "a@example.com"})
+
+        got, err := NewUserService(store).Email("u1")
+        if err != nil {
+          t.Fatal(err)
+        }
+        if got != "a@example.com" {
+          t.Fatalf("got %q", got)
+        }
+      }

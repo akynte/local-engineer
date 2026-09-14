@@ -1,0 +1,8 @@
+services:
+  api:
+    build: .
+    environment:
+      DB_URL: postgres://db/svc
+      LISTEN_ADDR: ":8080"
+  db:
+    image: postgres:17

@@ -54,6 +54,11 @@ var exemptions = map[string]string{
 	// source being edited rather than workspace state — which is what this
 	// rule exists to keep scoped.
 	"internal/worktree": "manipulates git checkouts under a store-chosen root",
+	// Creates and removes scratch copies of evaluation fixtures, outside any
+	// workspace and deleted after each run. Not workspace state. The one place
+	// it writes a caller-supplied path — acceptance files, whose names come
+	// from a task file — goes through internal/worktree's confinement.
+	"internal/eval": "manages ephemeral evaluation scratch directories",
 	// The analyzer's own tests write fixtures.
 	"tools/analyzers": "analyzer test fixtures",
 }

@@ -110,10 +110,13 @@ reports what is *actually* in effect, not what the design hopes for:
   forward-only; `le backup` before every upgrade.
 - **The shipped hardware profiles are starting points, not measurements.** Run
   `le models bench --write` on your own machine; `le doctor` warns until you do.
-- **Benchmarks are not published yet.** Nothing in this README claims a
-  success rate. When `docs/benchmarks/results/` has numbers, the claims will
-  come from there and the methodology and scripts will be public so anyone can
-  reproduce or dispute them. (Storage and graph numbers *are* published.)
+- **No task-success numbers exist.** The evaluation harness is built and
+  tested and the task set is validated on every CI run, but no run against a
+  real model has been done — so nothing here claims a success rate, and the
+  code graph's contribution is *measurable*, not *measured*. Storage and graph
+  latency numbers **are** published. See
+  [the results directory](docs/benchmarks/results/) for what is and is not
+  there.
 - **TypeScript has no analyzer yet.** Go, SQL schemas, Dockerfiles, Makefiles,
   compose, Kubernetes and Terraform do. The
   [graph schema reference](docs/reference/graph-schema.md) marks the state per

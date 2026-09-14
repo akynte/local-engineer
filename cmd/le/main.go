@@ -91,6 +91,7 @@ func newRootCmd() *cobra.Command {
 		newTaskCmd(),
 		newGateCmd(),
 		newPlanCmd(),
+		newEvalCmd(),
 	)
 	return root
 }

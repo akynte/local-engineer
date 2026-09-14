@@ -59,21 +59,106 @@ Committed results in `results/` always disclose:
 - the filesystem the data directory was on (it matters: see §5.4),
 - the full raw `go test -bench` output.
 
-## What these benchmarks do not tell you
+## Task success (`evals/tasks/`, `internal/eval/`)
 
-They measure the deterministic layer only — the part that runs without a model.
-They say nothing about task success rates, and nothing about whether the
-supervised system produces better results than the same model unsupervised.
+This is the measurement that actually matters, and the one the README's claims
+are gated on.
 
-That comparison is the one that actually matters, and it is not implemented
-yet. When it is, it will compare, per task category and within a fixed budget:
+### What is compared
 
-- **(a)** the local model driven directly, with no supervisor,
-- **(b)** the supervised system,
-- **(c)** a frontier agent on a non-sensitive task set,
+| Arm | What it isolates |
+|---|---|
+| `unsupervised` | The same local model given the objective and the worktree — no retrieval, no graph, no verification loop |
+| `supervised` | The full system |
+| `supervised-no-graph` | The full system with graph expansion and impact analysis off, lexical retrieval left on |
+| `supervised-no-verification` | The full system with the compiler-and-test correction loop off |
+| `frontier` | A hosted model through the same pipeline, to calibrate task difficulty |
 
-with the task set, model manifest, budget and scripts published. Until those
-numbers exist in `results/`, the README claims nothing about success rates.
+`le eval arms` prints these with the question each pairing answers.
+
+**`unsupervised` is the comparison this project is judged on.** If the
+supervised system is not clearly better than the same model driven directly,
+the harness is not earning its complexity, and no result against a frontier
+agent changes that.
+
+The two ablation arms exist because §3.1 requires measuring the graph's
+contribution "with an ablation, not by assumption". An ablation that leaves the
+ablated component partly running measures nothing, so the arms differ
+structurally — a different retriever, a different recipe set — rather than by a
+flag the pipeline might ignore.
+
+### What makes a result trustworthy
+
+**Acceptance is hidden.** A task's tests are never in the worktree while the
+task runs; they are written in afterwards. A model that can read the test can
+satisfy it without solving the problem, and that failure looks exactly like
+success in the numbers.
+
+**Ground truth is separate from the system's own verdict.** The pipeline
+decides acceptance from the evidence it gathered; the harness decides it from
+the hidden tests. When those disagree in the system's favour that is a **false
+acceptance** — it claimed success and was wrong — and it is reported as its own
+rate. A solved rate should never be read without it.
+
+**Protected paths are checked.** A task "passed" by deleting the failing test
+is not solved. Tasks declare `must_not_change`, and a run that touches one is
+counted as unsolved.
+
+**A harness fault is not a failed task.** A run that errors is excluded from
+every rate and counted separately; treating a crashed runner as evidence about
+the system would understate it.
+
+**Provenance is disclosed per task.** A task the model saw in training gives an
+inflated number. Every task declares its leak risk, and a report mixing risks
+says so in its caveats.
+
+### What makes the statistics honest
+
+Rates are reported with a 95% Wilson interval, not as bare percentages. Wilson
+rather than the normal approximation because at small samples and rates near 0
+or 1 the normal interval produces bounds outside [0,1] — which is exactly the
+regime a twenty-task set sits in.
+
+A comparison is called significant only when the two intervals do not overlap.
+That is a deliberately weak test: with a set this size, claiming a difference
+the data cannot support is the likeliest way these numbers mislead. A 10-point
+gap over 20 tasks is reported as "no detectable difference".
+
+### Running it
+
+```console
+$ le eval tasks                       # list and validate the set
+$ le eval arms                        # what each configuration isolates
+$ le eval run --arms unsupervised,supervised --out results.json
+$ le eval report results.json
+```
+
+### The task set
+
+Tasks live in `evals/tasks/` as `*.task.yaml` with a fixture directory. Each
+carries an objective phrased as a user would phrase it, a scope, a budget, and
+hidden acceptance files.
+
+`internal/eval/taskset_test.go` checks every task two ways on every CI run:
+
+- the acceptance command must **fail** on the untouched fixture, or the task
+  measures nothing;
+- a reference solution must **pass**, or the task is unsolvable and every arm
+  scores zero for reasons unrelated to the system.
+
+A task with no reference solution fails the suite. It also checks that fixtures
+start green on their own visible tests, and that objectives do not name the
+fix — an objective that says what to change measures typing, not engineering.
+
+### Status: no results are published
+
+**The harness is built and tested. No task-success numbers exist yet**, because
+producing them needs a local model running on disclosed hardware, and that run
+has not been done.
+
+Until `results/` contains them, the README claims nothing about success rates,
+and neither does anything else in this repository. The harness existing is not
+a result.
 
 ## Model throughput
 

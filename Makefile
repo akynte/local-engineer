@@ -38,7 +38,7 @@ fmt: ## Format all Go source
 	gofmt -w $$(find . -name '*.go' -not -path './vendor/*')
 
 .PHONY: check
-check: fmt-check vet storescope lint staticcheck test isolation schemas ## Everything CI runs
+check: fmt-check vet storescope lint staticcheck test isolation schemas taskset ## Everything CI runs
 
 .PHONY: fmt-check
 fmt-check: ## Fail if anything is not gofmt'd
@@ -92,6 +92,10 @@ schemas: ## Migrations apply, profiles validate, compose files parse
 .PHONY: docs-test
 docs-test: build ## Execute the command blocks in the how-to pages
 	PATH="$(CURDIR)/$(BIN):$$PATH" $(GO) test -tags=docs -run TestDocumentedCommands ./docs/...
+
+.PHONY: taskset
+taskset: ## Validate the evaluation task set
+	$(GO) test -run 'TestShippedTaskSet|TestObjectives|TestFixtures|TestAcceptanceFails|TestKnownGood' ./internal/eval/
 
 .PHONY: bench
 bench: ## Run the storage and graph benchmarks

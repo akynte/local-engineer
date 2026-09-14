@@ -125,17 +125,30 @@ Two things are recorded as deviations rather than done quietly:
   compiler API. The design anticipates this — `sidecars/` is in the repository
   layout — but it is not built.
 
-## Phase 5 — Evaluation ⬜ **next**
+## Phase 5 — Evaluation 🟡 (harness built, no results run)
 
-- [ ] Task set and harness
-- [ ] The (a) unsupervised / (b) supervised / (c) frontier comparison
-- [ ] Graph ablation: measure the graph's contribution rather than assume it
-- [ ] Published results with hardware disclosure
+- [x] Task set and harness, with hidden acceptance, protected paths, and
+      ground truth recorded separately from the system's own verdict
+- [x] The arm set: unsupervised, supervised, and the frontier calibration
+- [x] Graph ablation and verification ablation, so each component's
+      contribution is measurable rather than assumed
+- [x] Statistics that refuse to overclaim: Wilson intervals on every rate, and
+      a difference called significant only when the intervals do not overlap
+- [x] Task-set validation in CI: acceptance must fail on the untouched fixture,
+      and a reference solution must pass
+- [ ] **A run against a real model on disclosed hardware**
+- [ ] Published results
 
-Until this phase produces numbers, the README claims nothing about success
-rates.
+**Nothing has been measured yet.** The harness exists and is tested; producing
+numbers needs a local model on disclosed hardware, and that run has not been
+done. Until `docs/benchmarks/results/` contains task-success numbers, the
+README claims none — and the graph's contribution is *measurable*, not
+*measured*.
 
-## Phase 6 — Breadth ⬜
+The distinction matters because a repository containing an evaluation harness
+looks like one with evaluation results.
+
+## Phase 6 — Breadth ⬜ **next**
 
 - [ ] Provider implementations beyond the current four
 - [ ] Profiles for other hardware classes

@@ -131,10 +131,33 @@ Released sections are generated from Conventional Commits at release time.
   first. The indexer now runs every analyzer, writes every node, then resolves
   every edge.
 
+- **Evaluation harness** (`internal/eval/`, `evals/tasks/`, `le eval`):
+  - Acceptance tests are never in the worktree while a task runs. A model that
+    can read the test can satisfy it without solving the problem, and that
+    failure looks exactly like success in the numbers.
+  - The system's own verdict is recorded separately from the ground truth, so
+    "claimed success and was wrong" is its own rate rather than something
+    averaged away.
+  - Protected paths are checked: a task passed by deleting the failing test is
+    counted as unsolved.
+  - A run that errors is excluded from every rate, because a harness fault is
+    not evidence about the system.
+  - Arms for the unsupervised baseline, the full system, and ablations of the
+    graph and of the verification loop — structurally different pipelines, not
+    flags the system might ignore.
+  - Wilson confidence intervals on every rate, and a difference called
+    significant only when the intervals do not overlap.
+  - Task-set validation in CI: acceptance must fail on the untouched fixture,
+    a reference solution must pass, fixtures must start green, and objectives
+    must not name the fix.
+
 ### Known gaps
 
 - TypeScript has no analyzer. It needs a Node sidecar for the TS compiler API.
-- The evaluation harness. No task-success numbers are published.
+- **No task-success numbers have been produced.** The harness is built and
+  tested; a run against a real model on disclosed hardware has not been done.
+  Until `docs/benchmarks/results/` contains them, nothing here claims a success
+  rate, and the graph's contribution is measurable rather than measured.
 - [The graph schema reference](docs/reference/graph-schema.md) marks the state
   per language.
 - The design chose OpenCode as the execution engine (DR-5). What shipped is a

@@ -1,0 +1,50 @@
+# A configuration rename that spans Go code, a compose file and a Dockerfile.
+# Only the cross-analyzer graph knows all three places; a solution that renames
+# the Go constant and stops leaves the deployment broken in a way no Go test
+# would catch.
+id: config-rename-001
+category: refactor
+objective: >-
+  The environment variable DB_URL is too vague. Rename it to DATABASE_URL
+  everywhere it is read or set.
+fixture: fixtures/config-rename
+scope:
+  - internal
+  - docker-compose.yml
+  - Dockerfile
+leak_risk: none
+verification: low
+notes: >-
+  A wrong-but-compiling solution changes only internal/config. Nothing in the
+  Go build catches the stale manifests, which is precisely why the deployment
+  analyzers exist. The hidden check greps the manifests as well as the code.
+budget:
+  max_attempts: 3
+  max_wall_seconds: 600
+acceptance:
+  argv: ["sh", "hidden_check.sh"]
+  timeout_seconds: 120
+  must_not_change:
+    - hidden_check.sh
+  files:
+    hidden_check.sh: |
+      #!/bin/sh
+      # The rename must reach the code AND the manifests. A Go build would not
+      # notice a stale compose file, so this checks every place the name lives.
+      set -e
+      fail() { echo "FAIL: $1" >&2; exit 1; }
+
+      grep -q 'DATABASE_URL' internal/config/config.go || fail "the Go code does not read DATABASE_URL"
+      grep -q 'DATABASE_URL' docker-compose.yml        || fail "docker-compose.yml does not set DATABASE_URL"
+      grep -q 'DATABASE_URL' Dockerfile                || fail "the Dockerfile does not set DATABASE_URL"
+
+      # The old name must be gone from all three.
+      ! grep -q 'DB_URL' internal/config/config.go || fail "internal/config/config.go still uses DB_URL"
+      ! grep -q 'DB_URL' docker-compose.yml        || fail "docker-compose.yml still uses DB_URL"
+      ! grep -q 'DB_URL' Dockerfile                || fail "the Dockerfile still uses DB_URL"
+
+      # And the unrelated variable must be left alone.
+      grep -q 'LISTEN_ADDR' internal/config/config.go || fail "LISTEN_ADDR was lost"
+
+      go build ./... || fail "the project does not build"
+      echo "ok"
