@@ -44,9 +44,8 @@ type Bridge struct {
 	// Logf reports connections and failures.
 	Logf func(format string, args ...any)
 
-	mu      sync.Mutex
-	active  int
-	closers []io.Closer
+	mu     sync.Mutex
+	active int
 }
 
 // ErrNoAgent is returned when no agent command is configured. It is a named

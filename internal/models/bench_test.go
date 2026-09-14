@@ -174,7 +174,11 @@ func TestStableFillerDiffersBetweenRuns(t *testing.T) {
 	// Within one run the prefix must stay stable, or cache reuse is never
 	// exercised and §8.2's layout goes unmeasured.
 	n := runNonce()
-	if stableFiller(256, n) != stableFiller(256, n) {
+	// Through variables, because the point is that two calls with the same
+	// nonce produce the same bytes, and comparing the calls inline reads to a
+	// static analyser as an expression compared against itself.
+	first, second := stableFiller(256, n), stableFiller(256, n)
+	if first != second {
 		t.Fatal("the prefix is not stable within a run")
 	}
 }
