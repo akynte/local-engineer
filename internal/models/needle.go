@@ -88,6 +88,10 @@ type NeedleResult struct {
 	// CharsPerToken is the ratio measured for this model, kept so a reader can
 	// see the sweep sized its own haystacks rather than guessing.
 	CharsPerToken float64 `json:"chars_per_token,omitempty"`
+	// PromptOverhead is the fixed cost of the template, the system prompt and
+	// the question — the part that does not scale with the haystack, and the
+	// part a bare characters-per-token ratio silently gets wrong.
+	PromptOverhead int `json:"prompt_overhead,omitempty"`
 	// TokensMeasured records that the sizes above came from the provider's own
 	// count rather than from the estimate used to build the haystacks. A cap
 	// reported without it is a cap in estimated tokens, and the difference has
@@ -116,28 +120,84 @@ type NeedleOptions struct {
 // English rule of thumb suggests.
 const DefaultCharsPerToken = 3.5
 
-// calibrate measures this tokenizer rather than assuming it.
+// tokenModel is how this provider turns a haystack into a prompt:
+//
+//	tokens = chars/CharsPerToken + Overhead
+//
+// The overhead term is the part a bare ratio cannot express — the chat
+// template, the system prompt and the question are counted by the provider and
+// do not scale with the haystack. Folding them into a per-character ratio makes
+// the ratio wrong at every size except the one it was measured at.
+type tokenModel struct {
+	CharsPerToken float64
+	Overhead      int
+	// Measured records that both terms came from the provider rather than from
+	// the estimate below.
+	Measured bool
+}
+
+func defaultTokenModel() tokenModel {
+	return tokenModel{CharsPerToken: DefaultCharsPerToken}
+}
+
+// targetChars is how long a haystack must be to make a prompt of sizeTokens.
+func (m tokenModel) targetChars(sizeTokens int) int {
+	r := m.CharsPerToken
+	if r <= 0 {
+		r = DefaultCharsPerToken
+	}
+	return int(float64(sizeTokens-m.Overhead) * r)
+}
+
+// calibrate measures this provider rather than assuming it.
+//
+// Two probe-shaped requests at different sizes, solved for slope and
+// intercept. Two, because one request cannot separate the per-character cost
+// from the fixed cost of the template and the system prompt: a single
+// measurement folds the fixed part into the ratio, and the ratio is then
+// correct only at the size it was taken at. The requests carry the same system
+// prompt and question the sweep uses, so the overhead measured is the overhead
+// the sweep will pay.
 //
 // The first version of this test assumed four characters per token, asked for
 // 32,000 and sent 36,526 — a 14% error in the very axis the answer is read off.
-// A cap derived from an estimate is an estimate wearing a measurement's
-// clothes, so the ratio is measured against the same filler the sweep uses.
-func calibrate(ctx context.Context, p llm.Provider) (float64, bool, error) {
-	body := buildHaystack(2000, 0.5, "calibration", DefaultCharsPerToken)
-	temp := 0.0
-	resp, err := p.Chat(ctx, llm.ChatRequest{
-		Messages:  []llm.Message{{Role: "user", Content: body}},
-		MaxTokens: 1, Temperature: &temp, Thinking: "off",
-	})
+func calibrate(ctx context.Context, p llm.Provider) (tokenModel, error) {
+	sample := func(sizeTokens int) (chars, tokens int, err error) {
+		body := buildHaystack(sizeTokens, 0.5, "calibration", defaultTokenModel())
+		temp := 0.0
+		resp, err := p.Chat(ctx, llm.ChatRequest{
+			Messages:  needleMessages(body),
+			MaxTokens: 1, Temperature: &temp, Thinking: "off",
+		})
+		if err != nil {
+			return 0, 0, err
+		}
+		return len(body), resp.PromptTokens, nil
+	}
+
+	loChars, loTokens, err := sample(1000)
 	if err != nil {
-		return DefaultCharsPerToken, false, err
+		return defaultTokenModel(), err
 	}
-	if resp.PromptTokens <= 0 {
-		// No count to calibrate against. Say so by returning the default: a
-		// ratio nobody measured must not be presented as one that was.
-		return DefaultCharsPerToken, false, nil
+	hiChars, hiTokens, err := sample(4000)
+	if err != nil {
+		return defaultTokenModel(), err
 	}
-	return float64(len(body)) / float64(resp.PromptTokens), true, nil
+	if loTokens <= 0 || hiTokens <= loTokens {
+		// No usable counts to solve against. Say so by returning the estimate:
+		// a model nobody measured must not be presented as one that was.
+		return defaultTokenModel(), nil
+	}
+
+	ratio := float64(hiChars-loChars) / float64(hiTokens-loTokens)
+	overhead := hiTokens - int(float64(hiChars)/ratio)
+	if ratio <= 0 {
+		return defaultTokenModel(), nil
+	}
+	if overhead < 0 {
+		overhead = 0
+	}
+	return tokenModel{CharsPerToken: ratio, Overhead: overhead, Measured: true}, nil
 }
 
 // isOverContext reports whether a provider refused because the request was
@@ -168,20 +228,22 @@ func Needle(ctx context.Context, p llm.Provider, opts NeedleOptions) (NeedleResu
 		progress = func(string) {}
 	}
 
-	ratio, calibrated, err := calibrate(ctx, p)
+	model, err := calibrate(ctx, p)
 	switch {
 	case err != nil:
-		progress(fmt.Sprintf("could not calibrate the tokenizer (%v); using the default estimate", err))
-		ratio = DefaultCharsPerToken
-	case !calibrated:
+		progress(fmt.Sprintf("could not calibrate this provider (%v); using the default estimate", err))
+		model = defaultTokenModel()
+	case !model.Measured:
 		progress("this provider reports no token counts; sizes below are requested, not measured")
 	default:
-		progress(fmt.Sprintf("measured %.2f characters per token for this model", ratio))
+		progress(fmt.Sprintf("measured %.2f characters per token plus %d tokens of fixed "+
+			"prompt overhead", model.CharsPerToken, model.Overhead))
 	}
 
 	var res NeedleResult
-	if calibrated {
-		res.CharsPerToken = ratio
+	if model.Measured {
+		res.CharsPerToken = model.CharsPerToken
+		res.PromptOverhead = model.Overhead
 	}
 	for _, size := range opts.Sizes {
 		if ctx.Err() != nil {
@@ -193,7 +255,7 @@ func Needle(ctx context.Context, p llm.Provider, opts NeedleOptions) (NeedleResu
 		overContext := false
 		measured := 0
 		for _, place := range opts.Placements {
-			probe := runNeedleProbe(ctx, p, size, place, ratio)
+			probe := runNeedleProbe(ctx, p, size, place, model)
 			res.Probes = append(res.Probes, probe)
 			if probe.OverContext {
 				overContext = true
@@ -255,7 +317,7 @@ func verdictOf(p NeedleProbe) string {
 }
 
 func runNeedleProbe(ctx context.Context, p llm.Provider, size int, place NeedlePlacement,
-	charsPerToken float64) NeedleProbe {
+	m tokenModel) NeedleProbe {
 	probe := NeedleProbe{Requested: size, Placement: place}
 
 	// A random value, so the answer cannot be produced from anything but the
@@ -268,14 +330,10 @@ func runNeedleProbe(ctx context.Context, p llm.Provider, size int, place NeedleP
 	}
 	secret := hex.EncodeToString(raw[:])
 
-	haystack := buildHaystack(size, place, secret, charsPerToken)
+	haystack := buildHaystack(size, place, secret, m)
 	temp := 0.0
 	resp, err := p.Chat(ctx, llm.ChatRequest{
-		Messages: []llm.Message{
-			{Role: "system", Content: needleSystem},
-			{Role: "user", Content: haystack + "\n\nWhat is the access code recorded above? " +
-				"Answer with the code and nothing else."},
-		},
+		Messages:  needleMessages(haystack),
 		MaxTokens: 2048, Temperature: &temp, Thinking: "off",
 	})
 	if err != nil {
@@ -293,34 +351,49 @@ func runNeedleProbe(ctx context.Context, p llm.Provider, size int, place NeedleP
 const needleSystem = `You are answering a question about a document. The answer is
 stated somewhere in it. Quote it exactly and say nothing else.`
 
+// needleMessages is the one place a probe's prompt is assembled, so that
+// calibration measures the overhead the sweep will actually pay rather than
+// the overhead of a differently-shaped request.
+func needleMessages(haystack string) []llm.Message {
+	return []llm.Message{
+		{Role: "system", Content: needleSystem},
+		{Role: "user", Content: haystack + "\n\nWhat is the access code recorded above? " +
+			"Answer with the code and nothing else."},
+	}
+}
+
 // buildHaystack pads a document to roughly size tokens with the needle placed
 // at the given depth.
 //
 // The filler is deliberately code-shaped rather than prose: this measures what a
 // packet of retrieved source does, and a model's recall over English is not
 // evidence about its recall over Go.
-func buildHaystack(sizeTokens int, place NeedlePlacement, secret string, charsPerToken float64) string {
-	const unit = "func handler%d(ctx context.Context, req *Request) (*Response, error) {\n" +
-		"\treturn service%d.Process(ctx, req.Payload)\n}\n\n"
+func buildHaystack(sizeTokens int, place NeedlePlacement, secret string, m tokenModel) string {
+	// Fixed-width identifiers, so a unit costs the same number of tokens
+	// wherever it lands. With `handler%d` the index widened as the haystack
+	// grew — handler7 against handler4096 — so density drifted with size and a
+	// ratio measured at one size was wrong at the next.
+	const unit = "func handler%06d(ctx context.Context, req *Request) (*Response, error) {\n" +
+		"\treturn service%02d.Process(ctx, req.Payload)\n}\n\n"
 	needle := fmt.Sprintf("// Operations note: the access code is %s. Do not share it.\n\n", secret)
 
-	if charsPerToken <= 0 {
-		charsPerToken = DefaultCharsPerToken
-	}
-	target := int(float64(sizeTokens) * charsPerToken)
-	if target < len(needle)*2 {
-		target = len(needle) * 2
+	unitLen := len(fmt.Sprintf(unit, 0, 0))
+	target := m.targetChars(sizeTokens)
+
+	// The needle is part of the packet, and the filler loop used to run until
+	// it passed the target rather than stopping at it. Together those put the
+	// haystack a unit and a needle over every time, which the calibration then
+	// read back as fixed overhead that is not fixed at all. Units are all the
+	// same width now, so the count is arithmetic: round to the nearest.
+	fillerTarget := target - len(needle)
+	units := (fillerTarget + unitLen/2) / unitLen
+	if units < 2 {
+		units = 2
 	}
 
-	// One filler stream, cut at the needle, rather than two streams either side
-	// of it. Generating different identifiers before and after made the
-	// packet's token density depend on where the needle sat: the first
-	// calibrated run asked for 8000 tokens and sent 8465 at depth 0%, because
-	// that depth put the entire haystack in the six-digit half. Placement has
-	// to move the needle and change nothing else, or the size axis and the
-	// depth axis are not independent and neither reading means what it says.
 	var filler strings.Builder
-	for i := 0; filler.Len() < target; i++ {
+	filler.Grow(units * unitLen)
+	for i := 0; i < units; i++ {
 		fmt.Fprintf(&filler, unit, i, i%50)
 	}
 	body := filler.String()
@@ -328,12 +401,8 @@ func buildHaystack(sizeTokens int, place NeedlePlacement, secret string, charsPe
 	at := int(float64(len(body)) * float64(place))
 	if at > 0 && at < len(body) {
 		// Cut on a declaration boundary, so the split never lands inside an
-		// identifier and changes the tokenisation of the text around it.
-		if j := strings.Index(body[at:], "\n\n"); j >= 0 {
-			at += j + 2
-		} else {
-			at = len(body)
-		}
+		// identifier and changes the tokenisation around it.
+		at -= at % unitLen
 	}
 	return body[:at] + needle + body[at:]
 }
@@ -344,8 +413,9 @@ func (r NeedleResult) Format() string {
 	fmt.Fprintf(&b, "needle test — %s\n\n", orUnknown(r.Model))
 
 	if r.CharsPerToken > 0 {
-		fmt.Fprintf(&b, "%.2f characters per token, measured against this model's own tokenizer\n\n",
-			r.CharsPerToken)
+		fmt.Fprintf(&b, "%.2f characters per token plus %d tokens of fixed prompt overhead,\n"+
+			"measured against this model's own tokenizer\n\n",
+			r.CharsPerToken, r.PromptOverhead)
 	}
 	if !r.TokensMeasured {
 		b.WriteString("This provider reported no token counts, so every size below is the size\n" +

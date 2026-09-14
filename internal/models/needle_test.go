@@ -167,7 +167,7 @@ func TestNeedleIsNotGuessable(t *testing.T) {
 	// Two sweeps must not use the same secret; the haystack builder is given a
 	// fresh one per probe.
 	for i := 0; i < 20; i++ {
-		body := buildHaystack(500, 0.5, "", 3.5)
+		body := buildHaystack(500, 0.5, "", tokenModel{CharsPerToken: 3.5})
 		code := extractCode(body)
 		if seen[code] && code != "" {
 			t.Fatal("the same needle was used twice")
@@ -179,7 +179,7 @@ func TestNeedleIsNotGuessable(t *testing.T) {
 // The haystack is code-shaped, because this measures recall over a packet of
 // retrieved source and recall over English is not evidence about that.
 func TestHaystackIsCodeShaped(t *testing.T) {
-	body := buildHaystack(2000, 0.5, "abc123", 3.5)
+	body := buildHaystack(2000, 0.5, "abc123", tokenModel{CharsPerToken: 3.5})
 	if !strings.Contains(body, "func handler") || !strings.Contains(body, "context.Context") {
 		t.Error("the filler is not code-shaped")
 	}
@@ -190,8 +190,8 @@ func TestHaystackIsCodeShaped(t *testing.T) {
 
 // Placement actually moves the needle, or every probe measures the same thing.
 func TestPlacementMovesTheNeedle(t *testing.T) {
-	early := strings.Index(buildHaystack(4000, 0.0, "needle", 3.5), "needle")
-	late := strings.Index(buildHaystack(4000, 1.0, "needle", 3.5), "needle")
+	early := strings.Index(buildHaystack(4000, 0.0, "needle", tokenModel{CharsPerToken: 3.5}), "needle")
+	late := strings.Index(buildHaystack(4000, 1.0, "needle", tokenModel{CharsPerToken: 3.5}), "needle")
 	if early >= late {
 		t.Errorf("placement did not move the needle: 0%% at %d, 100%% at %d", early, late)
 	}
@@ -207,7 +207,10 @@ type counting struct {
 	charsPerToken float64
 	// contextTokens refuses anything larger, the way llama-server does.
 	contextTokens int
-	sizesSent     []int
+	// overhead is the fixed cost a chat template adds, which a single-point
+	// ratio cannot tell apart from the per-character cost.
+	overhead  int
+	sizesSent []int
 }
 
 func (c *counting) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
@@ -215,7 +218,7 @@ func (c *counting) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatResp
 	for _, m := range req.Messages {
 		n += len(m.Content)
 	}
-	tokens := int(float64(n) / c.charsPerToken)
+	tokens := int(float64(n)/c.charsPerToken) + c.overhead
 	if c.contextTokens > 0 && tokens > c.contextTokens {
 		return nil, fmt.Errorf("HTTP 400: request (%d tokens) exceeds the available "+
 			"context size (%d)", tokens, c.contextTokens)
@@ -342,13 +345,97 @@ func TestPlacementDoesNotChangeTheHaystack(t *testing.T) {
 		j := strings.Index(body[i:], "\n\n")
 		return body[:i] + body[i+j+2:]
 	}
-	want := strip(buildHaystack(4000, 0.0, secret, 3.5))
+	want := strip(buildHaystack(4000, 0.0, secret, tokenModel{CharsPerToken: 3.5}))
 	for _, place := range DefaultPlacements() {
-		got := strip(buildHaystack(4000, place, secret, 3.5))
+		got := strip(buildHaystack(4000, place, secret, tokenModel{CharsPerToken: 3.5}))
 		if got != want {
 			t.Errorf("depth %.0f%%: the filler differs from depth 0%% "+
 				"(%d chars vs %d); placement is changing the packet, not just "+
 				"where the needle sits in it", float64(place)*100, len(got), len(want))
+		}
+	}
+}
+
+// A single measurement cannot separate the per-character cost from the fixed
+// cost of the template and the system prompt. Folding them together makes the
+// ratio correct only at the size it was taken at — which is how the sweep came
+// to ask for 8000 tokens and send 8245.
+func TestCalibrationSeparatesFixedOverheadFromTheRatio(t *testing.T) {
+	c := &counting{charsPerToken: 3.0, overhead: 250}
+	m, err := calibrate(context.Background(), c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.Measured {
+		t.Fatal("the provider reported counts and the model does not say so")
+	}
+	if math.Abs(m.CharsPerToken-3.0) > 0.05 {
+		t.Errorf("ratio = %.3f; the fixed overhead was folded into it (it should be 3.0)",
+			m.CharsPerToken)
+	}
+	// The fixed cost is the fake's own 250 plus the system prompt and the
+	// question, which the sweep pays on every probe and calibration therefore
+	// has to include. What matters is that it landed in the intercept and not
+	// in the slope: a single-point calibration against this provider reports
+	// 2.64 characters per token and undersizes a 30,000-token packet by 11%.
+	if m.Overhead < 250 {
+		t.Errorf("overhead = %d; the fixed cost was folded into the ratio", m.Overhead)
+	}
+
+	// And the model predicts, which is the only property anything downstream
+	// depends on.
+	for _, size := range []int{2000, 30000} {
+		body := buildHaystack(size, 0.5, "x", m)
+		var chars int
+		for _, msg := range needleMessages(body) {
+			chars += len(msg.Content)
+		}
+		got := int(float64(chars)/c.charsPerToken) + c.overhead
+		if off := math.Abs(float64(got-size)) / float64(size); off > 0.01 {
+			t.Errorf("a haystack built for %d tokens makes a prompt of %d (%.1f%% off)",
+				size, got, off*100)
+		}
+	}
+}
+
+// The point of the linear model: a size asked for is the size sent, at every
+// size rather than only at the one calibration used.
+func TestRequestedSizeMatchesWhatIsSent(t *testing.T) {
+	c := &counting{charsPerToken: 3.0, overhead: 250}
+	sizes := []int{4000, 12000, 30000}
+	if _, err := Needle(context.Background(), c, NeedleOptions{
+		Sizes: sizes, Placements: []NeedlePlacement{0.5},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// The sweep's own probes are the tail of what the provider saw; the first
+	// two requests were calibration.
+	sent := c.sizesSent[len(c.sizesSent)-len(sizes):]
+	for i, want := range sizes {
+		if off := math.Abs(float64(sent[i]-want)) / float64(want); off > 0.01 {
+			t.Errorf("asked for %d tokens and sent %d (%.1f%% off)", want, sent[i], off*100)
+		}
+	}
+}
+
+// Identifier width must not grow with the haystack, or a unit costs more
+// tokens at the end of a long packet than at the start and the density a
+// calibration measured is wrong at every other size.
+func TestFillerDensityDoesNotDriftWithSize(t *testing.T) {
+	m := tokenModel{CharsPerToken: 3.5}
+	small := buildHaystack(2000, 1.0, "x", m)
+	large := buildHaystack(30000, 1.0, "x", m)
+	if !strings.Contains(small, "func handler000001") {
+		t.Fatal("the filler does not use fixed-width identifiers")
+	}
+	for _, body := range []string{small, large} {
+		for _, line := range strings.Split(body, "\n") {
+			if !strings.HasPrefix(line, "func handler") {
+				continue
+			}
+			if len(line) != len("func handler000000(ctx context.Context, req *Request) (*Response, error) {") {
+				t.Fatalf("a declaration is a different width: %q", line)
+			}
 		}
 	}
 }
