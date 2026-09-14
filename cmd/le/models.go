@@ -234,6 +234,22 @@ func newModelsConformanceCmd() *cobra.Command {
 	return cmd
 }
 
+// capToWrite decides what `le models needle --write` puts in the profile.
+//
+// A packet has to leave room for the answer. The sweep measures recall with a
+// one-token completion, so the largest packet a model recalls from can be
+// larger than the largest packet this profile can actually send — and
+// Profile.Validate rejects that combination, which would fail the write after
+// a twenty-minute measurement rather than before it. Clamping loses nothing
+// real: a cap the profile cannot honour is not a cap.
+func capToWrite(measured, contextTokens, reservedOutput int) (value int, clamped bool) {
+	room := contextTokens - reservedOutput
+	if room > 0 && measured > room {
+		return room, true
+	}
+	return measured, false
+}
+
 // newModelsNeedleCmd measures where retrieval starts failing (§8.3).
 func newModelsNeedleCmd() *cobra.Command {
 	var (
@@ -313,19 +329,13 @@ func newModelsNeedleCmd() *cobra.Command {
 				return fmt.Errorf("no active profile to update; run `le models bench --write` first")
 			}
 			previous := profile.MaxPacketTokens
-			cap := res.RecommendedCap
 
-			// A packet has to leave room for the answer. The sweep measures
-			// recall with a small completion, so the largest packet it recalls
-			// from can be larger than the largest packet this profile can
-			// actually send — clamp rather than write a value the profile
-			// would reject after a twenty-minute measurement.
-			if room := profile.ContextTokens - profile.ReservedOutput; room > 0 && cap > room {
+			cap, clamped := capToWrite(res.RecommendedCap, profile.ContextTokens, profile.ReservedOutput)
+			if clamped {
 				fmt.Fprintf(cmd.OutOrStdout(),
 					"\nrecall held to %d tokens, but this profile serves %d context and\n"+
 						"reserves %d for output, leaving %d. Writing %d.\n",
-					cap, profile.ContextTokens, profile.ReservedOutput, room, room)
-				cap = room
+					res.RecommendedCap, profile.ContextTokens, profile.ReservedOutput, cap, cap)
 			}
 			profile.MaxPacketTokens = cap
 			if err := config.SaveProfile(profileDir(root), *profile); err != nil {
