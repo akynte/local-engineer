@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -38,6 +39,15 @@ func openWorkspace(ctx context.Context) (*workspace.Workspace, *store.Root, *sto
 	st, err := root.OpenWorkspace(ctx, ws.ID())
 	if err != nil {
 		return nil, nil, nil, err
+	}
+	// §2.2: slots are cleared on workspace switch, so neither cache contents
+	// nor cache timing leak between projects. This is the switch: a command has
+	// just bound to one workspace, and anything the previous one left behind is
+	// now sitting where this one's work will run.
+	if previous, err := root.SwitchTo(ctx, ws.ID()); err != nil {
+		return nil, nil, nil, err
+	} else if previous != "" {
+		slog.Debug("workspace switch: cleared saved slots", "previous", previous, "now", ws.ID())
 	}
 	if err := st.RecordWorkspace(ws); err != nil {
 		return nil, nil, nil, err

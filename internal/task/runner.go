@@ -259,6 +259,18 @@ func (r *Runner) cleanup(ctx context.Context, t *Task, wt *worktree.Worktree, ou
 	if committed {
 		r.logf("task %s: accepted; the change is on branch %s", t.ID, wt.Branch)
 	}
+
+	// §2.2: temporary files are "wiped on task end". They are the task's only
+	// visible temporary directory, so whatever it left there — a half-written
+	// artifact, a build's scratch output — is both useless to the next task and
+	// visible to it. A tmp that accumulates also quietly outlives the isolation
+	// it was scoped by.
+	//
+	// This runs only once the worktree is gone, so a task still waiting at a
+	// gate keeps everything a person might want to look at.
+	if err := r.store.ClearTmp(); err != nil {
+		r.logf("task %s: clearing the task temporary directory: %v", t.ID, err)
+	}
 }
 
 func (r *Runner) run(ctx context.Context, t *Task, wt *worktree.Worktree) (*Outcome, error) {

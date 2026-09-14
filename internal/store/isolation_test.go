@@ -435,3 +435,85 @@ func TestTwoDirectoriesDifferingAfterAHashDoNotShareADatabase(t *testing.T) {
 		t.Fatal("two data directories differing only after a '#' are sharing one database")
 	}
 }
+
+// §2.2 requires that saved slots are cleared on workspace switch, so that
+// "neither cache contents nor cache timing can leak between projects".
+//
+// Prompt-cache reuse needs an identical token prefix, so cross-workspace
+// *content* leakage was never possible. What the switch removes is the rest:
+// one project's slot files sitting where the next project's work runs, and
+// cache statistics that are an observable even when the contents are not.
+func TestWorkspaceSwitchClearsTheSlotsLeftBehind(t *testing.T) {
+	ctx := context.Background()
+	root, err := store.OpenRoot(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = root.CloseAll() })
+
+	first := workspace.DeriveID("/switch/a", "", "a")
+	second := workspace.DeriveID("/switch/b", "", "b")
+
+	a, err := root.OpenWorkspace(ctx, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := root.SwitchTo(ctx, first); err != nil {
+		t.Fatal(err)
+	}
+
+	// Something the inference server would have left behind.
+	slot := filepath.Join(a.SlotsDir(), "slot-0.bin")
+	if err := os.WriteFile(slot, []byte("cached prefix"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := root.OpenWorkspace(ctx, second); err != nil {
+		t.Fatal(err)
+	}
+	previous, err := root.SwitchTo(ctx, second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if previous != first {
+		t.Errorf("switch reported previous=%q, want %q", previous, first)
+	}
+	if _, err := os.Stat(slot); !os.IsNotExist(err) {
+		t.Errorf("the previous workspace's slot file survived the switch (%v); "+
+			"one project's cache is sitting where the next project's work runs", err)
+	}
+	if root.Active() != second {
+		t.Errorf("active workspace = %q, want %q", root.Active(), second)
+	}
+}
+
+// Switching to the workspace already active must not clear anything: a command
+// run twice in the same repository would otherwise throw away the prompt cache
+// it is meant to benefit from.
+func TestSwitchingToTheSameWorkspaceKeepsTheCache(t *testing.T) {
+	ctx := context.Background()
+	root, err := store.OpenRoot(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = root.CloseAll() })
+
+	id := workspace.DeriveID("/switch/same", "", "same")
+	st, err := root.OpenWorkspace(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := root.SwitchTo(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	slot := filepath.Join(st.SlotsDir(), "slot-0.bin")
+	if err := os.WriteFile(slot, []byte("cached prefix"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := root.SwitchTo(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(slot); err != nil {
+		t.Errorf("re-selecting the same workspace cleared its cache: %v", err)
+	}
+}

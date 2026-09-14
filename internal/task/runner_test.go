@@ -852,3 +852,50 @@ func TestOutcomeCarriesTheTokenTotal(t *testing.T) {
 			"the outcome", out.TokensUsed)
 	}
 }
+
+// §2.2: temporary files are "wiped on task end". They are the task's only
+// visible temporary directory, so whatever it leaves there is both useless to
+// the next task and visible to it — and a tmp that accumulates quietly outlives
+// the isolation it was scoped by.
+func TestTaskEndWipesTheTemporaryDirectory(t *testing.T) {
+	requireGo(t)
+	repo := gitRepo(t, map[string]string{
+		"go.mod": goodModule,
+		"a.go":   "package a\n\nfunc Add(x, y int) int { return x + y }\n",
+	})
+
+	r, st := newRunner(t, &writingEngine{
+		path: "a.go",
+		body: "package a\n\n// Add returns the sum.\nfunc Add(x, y int) int { return x + y }\n",
+	})
+	ctx := context.Background()
+
+	// Something a task would leave behind.
+	stray := filepath.Join(st.TmpDir(), "scratch.bin")
+	if err := os.MkdirAll(st.TmpDir(), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stray, []byte("half-written artifact"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	id := task.NewID("t")
+	if err := task.NewStore(st).Create(ctx, task.Task{
+		ID: id, Title: "document Add", Verification: recipe.Low,
+		Budget: task.Budget{MaxAttempts: 1, MaxWallTime: 5 * time.Minute},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	out, err := r.Run(ctx, id, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !out.Accepted {
+		t.Fatalf("expected acceptance: %v", out.Reasons)
+	}
+
+	if _, err := os.Stat(stray); !os.IsNotExist(err) {
+		t.Errorf("the task's temporary file survived the run (%v); the next task "+
+			"would see it", err)
+	}
+}

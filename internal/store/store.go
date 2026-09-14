@@ -22,6 +22,11 @@ type Root struct {
 
 	mu   sync.Mutex
 	open map[workspace.ID]*Store
+	// active is the workspace inference is currently serving. It lives on the
+	// Root rather than on a Store because switching is inherently a
+	// cross-workspace fact, and a Store reaching into another workspace's
+	// directory is exactly what §2.3 forbids.
+	active workspace.ID
 }
 
 // OpenRoot opens the data directory at dir (or $LE_DATA, or /data).
@@ -160,6 +165,10 @@ func (s *Store) RecordWorkspace(ws *workspace.Workspace) error {
 // ClearSlots removes llama-server saved slots. §2.2 requires this on every
 // workspace switch so that neither cache contents nor cache timing can leak
 // between projects.
+//
+// Call it through Root.SwitchTo rather than directly: the switch is what
+// creates the obligation, and a clear that only happens when someone remembers
+// to ask is not a guarantee.
 func (s *Store) ClearSlots() error {
 	return clearDir(s.SlotsDir())
 }
@@ -289,4 +298,46 @@ func (s *Store) Backup(ctx context.Context, dir string) error {
 		}
 	}
 	return nil
+}
+
+// SwitchTo records that inference is now serving a workspace, clearing the
+// previous one's saved slots.
+//
+// §2.2 requires this: "slots are cleared on workspace switch". Prompt-cache
+// reuse already needs an identical token prefix, so cross-workspace *content*
+// leakage is not possible — but the slot files and the cache statistics are
+// still one project's data sitting where the next project's work runs, and
+// timing is an observable. Clearing costs a few files and removes the question.
+//
+// It returns the workspace that was switched away from, if any, so a caller can
+// log what happened rather than having it be invisible.
+func (r *Root) SwitchTo(ctx context.Context, id workspace.ID) (previous workspace.ID, err error) {
+	r.mu.Lock()
+	previous = r.active
+	r.mu.Unlock()
+
+	if previous == id {
+		return previous, nil
+	}
+	if previous != "" {
+		// Reopening the previous workspace only to clear it would be worse than
+		// the leak: it would resurrect databases that were deliberately closed.
+		// The slot directory is a plain path the layout owns, so clear it
+		// directly.
+		if err := clearDir(r.layout.SlotsDir(previous)); err != nil {
+			return previous, fmt.Errorf("store: clearing %s slots on workspace switch: %w",
+				previous, err)
+		}
+	}
+	r.mu.Lock()
+	r.active = id
+	r.mu.Unlock()
+	return previous, nil
+}
+
+// Active reports which workspace inference is serving.
+func (r *Root) Active() workspace.ID {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.active
 }

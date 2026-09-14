@@ -4,10 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/akynte/local-engineer/internal/version"
 	"github.com/akynte/local-engineer/internal/workspace"
@@ -90,6 +94,19 @@ func (d *DB) migrate(ctx context.Context, ws workspace.ID) error {
 		return d.verifyWorkspaceStamp(ctx, ws)
 	}
 
+	// §4.4: "le runs forward-only schema migrations with a pre-migration backup
+	// of /data databases". The backup is what makes the forward-only rule
+	// survivable — downgrades are not supported, so without one a migration
+	// that goes wrong leaves nothing to go back to.
+	//
+	// It is taken only when there is something to lose: a database at version 0
+	// is being created, and copying an empty file would be ceremony.
+	if current > 0 {
+		if err := d.backupBeforeMigrating(ctx, current, target); err != nil {
+			return err
+		}
+	}
+
 	for _, step := range steps {
 		if step.version <= current {
 			continue
@@ -150,4 +167,55 @@ func (d *DB) verifyWorkspaceStamp(ctx context.Context, ws workspace.ID) error {
 		return fmt.Errorf("store: %s belongs to workspace %s but was opened as %s", d.path, got, ws)
 	}
 	return nil
+}
+
+// backupBeforeMigrating copies the database beside itself before any migration
+// runs.
+//
+// It lands in the workspace's own directory rather than the shared backups
+// directory, for two reasons: the store has no business writing outside the
+// workspace it was opened for, and a recovering operator looking at one
+// workspace should find its backup next to it rather than among every other
+// workspace's.
+//
+// A failure here fails the migration. Proceeding after a failed backup would
+// mean doing the irreversible thing having lost the only way back, which is the
+// opposite of what the backup is for.
+func (d *DB) backupBeforeMigrating(ctx context.Context, from, to int) error {
+	dir := filepath.Join(filepath.Dir(d.path), "pre-migration")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return fmt.Errorf("store: preparing the pre-migration backup directory: %w", err)
+	}
+	dst := filepath.Join(dir, fmt.Sprintf("%s.v%d-%s.db", d.name, from,
+		time.Now().UTC().Format("20060102T150405Z")))
+
+	// VACUUM INTO refuses to overwrite, which is the behaviour we want: a
+	// second attempt in the same second must not silently replace the first
+	// backup with one taken after a partial migration.
+	if err := d.Backup(ctx, dst); err != nil {
+		return fmt.Errorf("store: refusing to migrate %s from schema %d to %d without a "+
+			"backup: %w", d.name, from, to, err)
+	}
+	return nil
+}
+
+// PreMigrationBackups lists the backups taken for a database, newest first, so
+// `le doctor` can report them and an operator can find one to restore.
+func PreMigrationBackups(workspaceDir string) ([]string, error) {
+	dir := filepath.Join(workspaceDir, "pre-migration")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var out []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".db") {
+			out = append(out, filepath.Join(dir, e.Name()))
+		}
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(out)))
+	return out, nil
 }
