@@ -9,6 +9,8 @@ package models
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -21,6 +23,13 @@ import (
 	"github.com/akynte/local-engineer/internal/config"
 	"github.com/akynte/local-engineer/internal/llm"
 )
+
+// minPrefillSample is the fewest uncached prompt tokens an iteration must
+// prefill before its rate is believed. An iteration that the prompt cache
+// served almost entirely does no prefill work worth timing, and the per-request
+// overhead then dominates the ratio — which reads as a collapse in throughput
+// rather than as the cache hit it is.
+const minPrefillSample = 128
 
 // BenchOptions configures a measurement run.
 type BenchOptions struct {
@@ -50,7 +59,24 @@ type Result struct {
 	Host             string    `json:"host"`
 	GPU              string    `json:"gpu,omitempty"`
 	CPUThreads       int       `json:"cpu_threads"`
+	// TimingSource says whether the prefill and decode rates came from the
+	// provider's own per-phase timings or were apportioned from wall clock.
+	// A profile built from an estimate is not the same evidence as one built
+	// from a measurement, so the distinction is carried, not flattened.
+	TimingSource TimingSource `json:"timing_source,omitempty"`
 }
+
+// TimingSource names where the prefill/decode split came from.
+type TimingSource string
+
+const (
+	// TimingReported: the provider returned per-phase timings.
+	TimingReported TimingSource = "reported"
+	// TimingEstimated: wall clock apportioned by token count.
+	TimingEstimated TimingSource = "estimated"
+	// TimingMixed: some iterations reported, some did not.
+	TimingMixed TimingSource = "mixed"
+)
 
 // Bench measures a provider. It sends the same stable prefix on every
 // iteration so that prompt-cache reuse is observable: §8.2 treats cache-aware
@@ -87,11 +113,12 @@ func Bench(ctx context.Context, p llm.Provider, opts BenchOptions) (Result, erro
 
 	// A stable prefix, then a varying suffix: exactly the layout §8.2 requires
 	// of a packet, so the measurement reflects real traffic.
-	prefix := stableFiller(opts.PromptTokens)
+	prefix := stableFiller(opts.PromptTokens, runNonce())
 
 	var ttfts []float64
 	var prefillRates, decodeRates []float64
 	var cachedTotal, promptTotal int
+	var reported, estimated bool
 	temp := 0.0
 
 	for i := 0; i < opts.Iterations; i++ {
@@ -122,15 +149,37 @@ func Bench(ctx context.Context, p llm.Provider, opts BenchOptions) (Result, erro
 		promptTotal += resp.PromptTokens
 		cachedTotal += resp.CachedTokens
 
-		// Without token-level timings the split between prefill and decode is
-		// apportioned by token counts. This is stated in the profile rather
-		// than presented as a direct measurement.
-		total := resp.PromptTokens + resp.OutputTokens
-		if total > 0 && resp.OutputTokens > 0 {
-			decodeRates = append(decodeRates, float64(resp.OutputTokens)/elapsed)
-			uncached := resp.PromptTokens - resp.CachedTokens
-			if uncached > 0 {
-				prefillRates = append(prefillRates, float64(uncached)/elapsed)
+		// Prefill and decode are separate phases of one call, so each rate
+		// must be divided by its own phase's time. Dividing both by the total
+		// wall clock charges each phase for the other's work and understates
+		// both — by the ratio between them, which is exactly the thing being
+		// measured. Providers that report a token-level split are believed;
+		// for the rest the split is apportioned by token count, and
+		// res.TimingSource records which of the two produced the numbers.
+		uncached := resp.PromptTokens - resp.CachedTokens
+		if resp.PrefillMS > 0 || resp.DecodeMS > 0 {
+			reported = true
+			if uncached >= minPrefillSample && resp.PrefillMS > 0 {
+				prefillRates = append(prefillRates, float64(uncached)/(float64(resp.PrefillMS)/1000))
+			}
+			if resp.OutputTokens > 0 && resp.DecodeMS > 0 {
+				decodeRates = append(decodeRates, float64(resp.OutputTokens)/(float64(resp.DecodeMS)/1000))
+			}
+		} else if total := uncached + resp.OutputTokens; total > 0 {
+			// Split the wall clock between the phases in proportion to the
+			// tokens each handled. It is an estimate, and says so.
+			estimated = true
+			if uncached >= minPrefillSample {
+				share := elapsed * float64(uncached) / float64(total)
+				if share > 0 {
+					prefillRates = append(prefillRates, float64(uncached)/share)
+				}
+			}
+			if resp.OutputTokens > 0 {
+				share := elapsed * float64(resp.OutputTokens) / float64(total)
+				if share > 0 {
+					decodeRates = append(decodeRates, float64(resp.OutputTokens)/share)
+				}
 			}
 		}
 		ttfts = append(ttfts, float64(resp.DurationMS))
@@ -145,6 +194,14 @@ func Bench(ctx context.Context, p llm.Provider, opts BenchOptions) (Result, erro
 
 	res.PrefillTokensSec = mean(prefillRates)
 	res.DecodeTokensSec = mean(decodeRates)
+	switch {
+	case reported && estimated:
+		res.TimingSource = TimingMixed
+	case reported:
+		res.TimingSource = TimingReported
+	case estimated:
+		res.TimingSource = TimingEstimated
+	}
 	res.TTFTp50MS = percentile(ttfts, 0.50)
 	res.TTFTp95MS = percentile(ttfts, 0.95)
 	if promptTotal > 0 {
@@ -197,9 +254,9 @@ func ProfileFrom(r Result, name string, contextOverride int) config.Profile {
 	return config.Profile{
 		Name: name,
 		Description: fmt.Sprintf(
-			"Generated by `le models bench` on %s. Prefill %.0f tok/s, decode %.0f tok/s, cache reuse %.0f%%. "+
-				"Prefill and decode rates are apportioned from per-request totals, not token-level timings.",
-			r.MeasuredAt.Format("2006-01-02"), r.PrefillTokensSec, r.DecodeTokensSec, r.CacheReusePct),
+			"Generated by `le models bench` on %s. Prefill %.0f tok/s, decode %.0f tok/s, cache reuse %.0f%%. %s",
+			r.MeasuredAt.Format("2006-01-02"), r.PrefillTokensSec, r.DecodeTokensSec, r.CacheReusePct,
+			timingNote(r.TimingSource)),
 		Hardware: config.Hardware{
 			GPU: r.GPU, VRAMMB: r.TotalVRAMMB, RAMMB: r.TotalRAMMB, Threads: r.CPUThreads,
 		},
@@ -236,14 +293,31 @@ func deriveName(r Result) string {
 
 // stableFiller builds a deterministic prompt of roughly n tokens. It must be
 // byte-identical across iterations or prompt-cache reuse cannot be observed.
-func stableFiller(tokens int) string {
+// stableFiller builds the prompt prefix: stable across the iterations of one
+// run, so prompt-cache reuse is exercised the way §8.2 lays a real packet out,
+// and different between runs, so the first iteration is a cold prefill rather
+// than a cache hit left behind by the previous invocation. Without the nonce a
+// second `le models bench` against a warm server measures its own cache and
+// reports a prefill rate computed from a handful of tokens.
+func stableFiller(tokens int, nonce string) string {
 	const unit = "The supervisor retrieves only the slices the current step needs. "
 	var b strings.Builder
-	b.WriteString("You are a benchmark fixture. Answer briefly.\n\n")
+	fmt.Fprintf(&b, "You are a benchmark fixture (run %s). Answer briefly.\n\n", nonce)
 	for b.Len() < tokens*4 {
 		b.WriteString(unit)
 	}
 	return b.String()
+}
+
+// runNonce is unique per Bench call. It only has to defeat a prompt cache, so
+// a failure to read the system source falls back to the clock rather than
+// failing the benchmark.
+func runNonce() string {
+	var raw [8]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return strconv.FormatInt(time.Now().UnixNano(), 16)
+	}
+	return hex.EncodeToString(raw[:])
 }
 
 func mean(xs []float64) float64 {
@@ -333,4 +407,17 @@ func processRAMMB() int {
 		}
 	}
 	return 0
+}
+
+// timingNote states where the rates came from, so a reader of the profile can
+// tell a measurement from an apportionment without opening the code.
+func timingNote(src TimingSource) string {
+	switch src {
+	case TimingReported:
+		return "Rates are the provider's own per-phase timings."
+	case TimingMixed:
+		return "Some iterations reported per-phase timings; the rest were apportioned from per-request totals."
+	default:
+		return "Prefill and decode rates are apportioned from per-request totals, not token-level timings."
+	}
 }

@@ -153,6 +153,20 @@ type ChatResponse struct {
 	Model        string `json:"model"`
 	// DurationMS is wall-clock time for the call.
 	DurationMS int64 `json:"duration_ms"`
+	// PrefillMS and DecodeMS are the provider's own split of the call into
+	// prompt processing and generation. They are 0 when the provider does not
+	// report token-level timings; a caller computing a rate must check, because
+	// dividing either token count by DurationMS charges each phase for the
+	// other one's time.
+	PrefillMS int64 `json:"prefill_ms,omitempty"`
+	DecodeMS  int64 `json:"decode_ms,omitempty"`
+	// Reasoning is the thinking text a reasoning model emitted, when the
+	// provider returns it in its own field rather than inside Content. It is
+	// kept separate so that a response truncated mid-thought is visibly
+	// different from an empty answer: Content == "" with Reasoning != "" and
+	// FinishReason == "length" means the budget ran out before the model
+	// started answering.
+	Reasoning string `json:"reasoning,omitempty"`
 	// ToolCalls the model requested. FinishReason names the tool stop when
 	// this is non-empty.
 	ToolCalls []ToolCall `json:"tool_calls,omitempty"`

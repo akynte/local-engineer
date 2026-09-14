@@ -401,3 +401,149 @@ func TestProviderWithoutToolCallingIsRefused(t *testing.T) {
 		t.Fatal("expected a refusal")
 	}
 }
+
+// TestTruncatedThinkingIsNotAStop pins the difference between a model that
+// decided it was finished and one whose output budget ran out mid-thought.
+// Both arrive as a response with no tool calls, so before the distinction
+// existed a reasoning model that spent its whole budget thinking was recorded
+// as "the model stopped after 1 step(s) without calling a tool" — a harness
+// limit reported as a model verdict.
+func TestTruncatedThinkingIsNotAStop(t *testing.T) {
+	wt := worktree(t, map[string]string{"calc.go": "package calc\n"})
+	p := newScripted(&llm.ChatResponse{
+		FinishReason: "length",
+		Content:      "",
+		Reasoning:    strings.Repeat("let me consider the call sites. ", 200),
+	})
+	e := newEngine(t, p)
+
+	resp, err := e.Step(context.Background(), engine.Request{
+		TaskID: "t1", Objective: "fix Add", Worktree: wt, Attempt: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !resp.Truncated {
+		t.Fatal("a response cut off at the output budget was not reported as truncated")
+	}
+	if resp.ClaimsDone {
+		t.Error("a truncated response must not claim completion")
+	}
+	if !strings.Contains(resp.Summary, "output budget") {
+		t.Errorf("summary does not name the limit that was hit: %q", resp.Summary)
+	}
+	if !strings.Contains(resp.Summary, "reasoning") {
+		t.Errorf("summary does not say the budget went to reasoning, which is the "+
+			"actionable part: %q", resp.Summary)
+	}
+}
+
+// TestFinishedWithoutToolsIsStillAStop is the other side of the same boundary:
+// a model that answers in prose and stops is a genuine stop, not truncation.
+func TestFinishedWithoutToolsIsStillAStop(t *testing.T) {
+	wt := worktree(t, map[string]string{"calc.go": "package calc\n"})
+	p := newScripted(&llm.ChatResponse{FinishReason: "stop", Content: "Add is already correct."})
+	e := newEngine(t, p)
+
+	resp, err := e.Step(context.Background(), engine.Request{
+		TaskID: "t1", Objective: "fix Add", Worktree: wt, Attempt: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Truncated {
+		t.Error("a completed response was reported as truncated")
+	}
+	if resp.Summary != "Add is already correct." {
+		t.Errorf("summary = %q, want the model's own answer", resp.Summary)
+	}
+}
+
+// TestTruncatedWithPartialContentIsNotTruncation guards the narrow condition:
+// a response that hit the length limit but still produced usable text is the
+// model's answer, cut short. Only an empty one is budget exhaustion.
+func TestTruncatedWithPartialContentIsNotTruncation(t *testing.T) {
+	wt := worktree(t, map[string]string{"calc.go": "package calc\n"})
+	p := newScripted(&llm.ChatResponse{FinishReason: "length", Content: "I changed the sign in"})
+	e := newEngine(t, p)
+
+	resp, err := e.Step(context.Background(), engine.Request{
+		TaskID: "t1", Objective: "fix Add", Worktree: wt, Attempt: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Truncated {
+		t.Error("a response carrying partial content was treated as budget exhaustion")
+	}
+}
+
+// TestUnwiredToolsAreNotAdvertised is the fix for an ablation that leaked. The
+// baseline arm is built by leaving retrieval, the graph and verification
+// unwired — but the engine advertised those tools anyway, so the model spent
+// calls on them and had each one rejected. In one measured run 15 of 31 tool
+// calls went to tools that could not run, against a wall-clock budget. The
+// baseline was charged for the components it was supposed to be measured
+// without.
+func TestUnwiredToolsAreNotAdvertised(t *testing.T) {
+	wt := worktree(t, map[string]string{"calc.go": "package calc\n"})
+	p := newScripted(&llm.ChatResponse{FinishReason: "stop", Content: "done"})
+	e := newEngine(t, p) // no Retriever, no Graph, no Recipes
+
+	if _, err := e.Step(context.Background(), engine.Request{
+		TaskID: "t1", Objective: "fix Add", Worktree: wt, Attempt: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	offered := map[string]bool{}
+	for _, tool := range p.lastRequest(t).Tools {
+		offered[tool.Name] = true
+	}
+	for _, name := range []string{"search_code", "find_symbol", "impact_of", "run_verification"} {
+		if offered[name] {
+			t.Errorf("%s was advertised to a model that cannot run it", name)
+		}
+	}
+	// The tools that need nothing but the worktree must still be there, or the
+	// baseline is not a fair version of the model.
+	for _, name := range []string{"read_file", "edit_file", "list_files", "done"} {
+		if !offered[name] {
+			t.Errorf("%s was withheld from the baseline", name)
+		}
+	}
+}
+
+// TestSetRecipeRunnerAddsTheTool pins the other direction: the recipe runner is
+// injected after the engine is built, so the surface has to be recomputed or a
+// supervised run never learns it can verify.
+func TestSetRecipeRunnerAddsTheTool(t *testing.T) {
+	wt := worktree(t, map[string]string{"calc.go": "package calc\n"})
+	p := newScripted(&llm.ChatResponse{FinishReason: "stop", Content: "done"})
+	e := newEngine(t, p)
+
+	if names := toolNames(t, e, p, wt); names["run_verification"] {
+		t.Fatal("run_verification was advertised before a recipe runner was set")
+	}
+	e.SetRecipeRunner(&recipe.Runner{})
+	if names := toolNames(t, e, p, wt); !names["run_verification"] {
+		t.Error("run_verification was not advertised after a recipe runner was set")
+	}
+}
+
+func toolNames(t *testing.T, e *native.Engine, p *scripted, wt string) map[string]bool {
+	t.Helper()
+	p.mu.Lock()
+	p.responses = append(p.responses, &llm.ChatResponse{FinishReason: "stop", Content: "done"})
+	p.mu.Unlock()
+	if _, err := e.Step(context.Background(), engine.Request{
+		TaskID: "t1", Objective: "o", Worktree: wt, Attempt: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]bool{}
+	for _, tool := range p.lastRequest(t).Tools {
+		out[tool.Name] = true
+	}
+	return out
+}

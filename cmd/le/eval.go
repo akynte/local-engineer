@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/akynte/local-engineer/internal/eval"
+	"github.com/akynte/local-engineer/internal/index"
 	"github.com/akynte/local-engineer/internal/llm"
 	"github.com/akynte/local-engineer/internal/recipe"
 	"github.com/akynte/local-engineer/internal/sandbox"
@@ -97,6 +98,7 @@ func newEvalRunCmd() *cobra.Command {
 		only    []string
 		out     string
 		asJSON  bool
+		repeat  int
 	)
 	cmd := &cobra.Command{
 		Use:   "run",
@@ -155,7 +157,15 @@ func newEvalRunCmd() *cobra.Command {
 			}
 			profile := loadProfile(root, cfg)
 			solver := &eval.SystemSolver{
-				Store: st, Router: router, Sandbox: sb,
+				Root: root, Store: st, Router: router, Sandbox: sb,
+				// The same analyzers and index settings `le index` uses, so a
+				// task copy is indexed the way a real repository would be.
+				Analyzers: analyzers(cmd),
+				IndexOptions: index.Options{
+					MaxFileBytes: cfg.Index.MaxFileBytes,
+					Excludes:     cfg.Index.Excludes,
+					ChunkLines:   cfg.Index.ChunkLines,
+				},
 				SandboxSpec: sandbox.Spec{
 					ReadOnly: cfg.Sandbox.ReadOnlyPaths,
 					TmpDir:   dirs.Tmp,
@@ -175,23 +185,39 @@ func newEvalRunCmd() *cobra.Command {
 				Logf:    func(f string, a ...any) { fmt.Fprintf(cmd.ErrOrStderr(), f+"\n", a...) },
 			}
 
-			total := len(tasks) * len(arms)
-			fmt.Fprintf(cmd.ErrOrStderr(), "running %d task(s) across %d arm(s) = %d runs\n\n",
-				len(tasks), len(arms), total)
+			if repeat < 1 {
+				repeat = 1
+			}
+			total := len(tasks) * len(arms) * repeat
+			fmt.Fprintf(cmd.ErrOrStderr(), "running %d task(s) across %d arm(s)", len(tasks), len(arms))
+			if repeat > 1 {
+				fmt.Fprintf(cmd.ErrOrStderr(), ", %d times each", repeat)
+			}
+			fmt.Fprintf(cmd.ErrOrStderr(), " = %d runs\n\n", total)
 
 			var outcomes []eval.Outcome
 			done := 0
 			start := time.Now()
-			for _, arm := range arms {
-				for _, task := range tasks {
-					done++
-					fmt.Fprintf(cmd.ErrOrStderr(), "[%d/%d] %s / %s… ", done, total, arm.Name, task.ID)
-					o := runner.Run(ctx, task, arm, solver)
-					outcomes = append(outcomes, o)
-					fmt.Fprintf(cmd.ErrOrStderr(), "%s (%s)\n", verdict(o), o.Duration.Round(time.Second))
-					if ctx.Err() != nil {
-						fmt.Fprintf(cmd.ErrOrStderr(), "\ninterrupted after %d run(s)\n", done)
-						break
+			// Repetitions are the outer loop so that an interrupted run still
+			// covers every cell the same number of times, rather than leaving
+			// the last arm with fewer samples than the first.
+			for rep := 1; rep <= repeat; rep++ {
+				for _, arm := range arms {
+					for _, task := range tasks {
+						done++
+						fmt.Fprintf(cmd.ErrOrStderr(), "[%d/%d] %s / %s", done, total, arm.Name, task.ID)
+						if repeat > 1 {
+							fmt.Fprintf(cmd.ErrOrStderr(), " (pass %d/%d)", rep, repeat)
+						}
+						fmt.Fprint(cmd.ErrOrStderr(), "… ")
+						o := runner.Run(ctx, task, arm, solver)
+						o.Repetition = rep
+						outcomes = append(outcomes, o)
+						fmt.Fprintf(cmd.ErrOrStderr(), "%s (%s)\n", verdict(o), o.Duration.Round(time.Second))
+						if ctx.Err() != nil {
+							fmt.Fprintf(cmd.ErrOrStderr(), "\ninterrupted after %d run(s)\n", done)
+							break
+						}
 					}
 				}
 			}
@@ -216,6 +242,8 @@ func newEvalRunCmd() *cobra.Command {
 	cmd.Flags().StringSliceVar(&armList, "arms", []string{"unsupervised", "supervised"},
 		"configurations to compare; `le eval arms` describes them")
 	cmd.Flags().StringSliceVar(&only, "task", nil, "run only these task ids")
+	cmd.Flags().IntVar(&repeat, "repeat", 1,
+		"run the whole set this many times; one run of a cell is a sample, not a measurement")
 	cmd.Flags().StringVar(&out, "out", "", "write the report as JSON to this path")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON to stdout")
 	return cmd

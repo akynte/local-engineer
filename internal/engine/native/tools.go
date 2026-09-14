@@ -41,7 +41,44 @@ const (
 // picks the wrong one far more often than one given eight. Ordering is by
 // importance so that a cap drops the least useful tools rather than an
 // arbitrary subset.
-func Definitions(most int) []llm.ToolDef {
+// Wired reports which optional subsystems an engine actually has.
+//
+// It exists because advertising a tool the engine cannot run is not a neutral
+// mistake. The model spends a call discovering the tool fails, and under a
+// wall-clock budget those calls come out of the work. In an ablation it is
+// worse than that: an arm built by leaving retrieval or verification unwired
+// would still be offered the tools, so the baseline is charged for the
+// component it was supposed to be measured without, and the comparison
+// flatters whatever is being ablated.
+type Wired struct {
+	// Retrieval backs search_code.
+	Retrieval bool
+	// Graph backs find_symbol and impact_of.
+	Graph bool
+	// Recipes backs run_verification.
+	Recipes bool
+}
+
+// AllWired is every subsystem present, for callers that wire the full set.
+func AllWired() Wired { return Wired{Retrieval: true, Graph: true, Recipes: true} }
+
+// needs maps a tool to the subsystem it cannot run without.
+func (w Wired) has(name string) bool {
+	switch name {
+	case ToolSearch:
+		return w.Retrieval
+	case ToolFindSymbol, ToolImpact:
+		return w.Graph
+	case ToolRunRecipe:
+		return w.Recipes
+	}
+	// Reading, editing and listing need nothing but the worktree.
+	return true
+}
+
+// Definitions returns the tools an engine with these subsystems can execute,
+// ordered by importance and capped at most.
+func Definitions(most int, wired Wired) []llm.ToolDef {
 	all := []llm.ToolDef{
 		{
 			Name: ToolReadFile,
@@ -150,10 +187,19 @@ func Definitions(most int) []llm.ToolDef {
 				"additionalProperties":false}`),
 		},
 	}
-	if most > 0 && most < len(all) {
-		all = all[:most]
+	// Drop what this engine cannot run before applying the cap, so the cap
+	// spends its budget on tools that work rather than on ones that would be
+	// rejected on first use.
+	out := all[:0:0]
+	for _, t := range all {
+		if wired.has(t.Name) {
+			out = append(out, t)
+		}
 	}
-	return all
+	if most > 0 && most < len(out) {
+		out = out[:most]
+	}
+	return out
 }
 
 func schema(s string) json.RawMessage {

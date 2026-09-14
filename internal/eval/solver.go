@@ -12,12 +12,14 @@ import (
 	"github.com/akynte/local-engineer/internal/engine"
 	"github.com/akynte/local-engineer/internal/engine/native"
 	"github.com/akynte/local-engineer/internal/graph"
+	"github.com/akynte/local-engineer/internal/index"
 	"github.com/akynte/local-engineer/internal/llm"
 	"github.com/akynte/local-engineer/internal/recipe"
 	"github.com/akynte/local-engineer/internal/retrieval"
 	"github.com/akynte/local-engineer/internal/sandbox"
 	"github.com/akynte/local-engineer/internal/store"
 	"github.com/akynte/local-engineer/internal/task"
+	"github.com/akynte/local-engineer/internal/workspace"
 	"github.com/akynte/local-engineer/internal/worktree"
 )
 
@@ -29,6 +31,14 @@ import (
 // measures nothing, so the differences are structural — a different retriever,
 // a different recipe set — rather than a flag the pipeline might ignore.
 type SystemSolver struct {
+	// Root opens a fresh workspace per run. A supervised arm retrieves from an
+	// index, and the only index that can answer a question about the task copy
+	// is one built from the task copy: pointing retrieval at the operator's
+	// own workspace returns facts about a repository the model cannot see, and
+	// leaving it unindexed returns nothing at all. Either way the arms that
+	// exist to measure retrieval and the graph measure neither.
+	Root *store.Root
+	// Store is the operator's workspace, used only for what is not per-run.
 	Store   *store.Store
 	Router  *llm.Router
 	Sandbox sandbox.Runner
@@ -39,7 +49,14 @@ type SystemSolver struct {
 	MaxTokens   int
 	Temperature float64
 	Thinking    string
-	Logf        func(format string, args ...any)
+	// Analyzers are the language analyzers `le index` runs, so a task copy is
+	// indexed exactly the way a real repository would be. Without them the
+	// graph holds containment edges only, and the graph ablation compares two
+	// arms that both lack a graph.
+	Analyzers []index.Analyzer
+	// IndexOptions mirror the operator's index configuration.
+	IndexOptions index.Options
+	Logf         func(format string, args ...any)
 }
 
 func (s *SystemSolver) logf(format string, args ...any) {
@@ -50,6 +67,16 @@ func (s *SystemSolver) logf(format string, args ...any) {
 
 // Solve runs one attempt under one arm.
 func (s *SystemSolver) Solve(ctx context.Context, req SolveRequest) (SolveResult, error) {
+	// Check the configuration before anything else. A supervised arm with
+	// nowhere to build an index would otherwise run to completion and report a
+	// failure to solve the task, when what actually happened is that the
+	// harness handed the pipeline an empty index.
+	if req.Arm.Supervised && s.Root == nil {
+		return SolveResult{}, fmt.Errorf(
+			"eval: arm %q is supervised but no store root was configured; the task copy "+
+				"cannot be indexed and retrieval would answer from an empty index", req.Arm.Name)
+	}
+
 	provider, err := s.Router.For(llm.Role(roleOf(req.Arm)))
 	if err != nil {
 		return SolveResult{}, err
@@ -62,7 +89,20 @@ func (s *SystemSolver) Solve(ctx context.Context, req SolveRequest) (SolveResult
 		return SolveResult{}, fmt.Errorf("preparing the task repository: %w", err)
 	}
 
-	eng, err := s.engineFor(req.Arm, provider)
+	// The unsupervised arm has no retrieval and no graph, so it needs no
+	// index: building one would cost wall clock the arm is judged on and
+	// change nothing it can see.
+	st := s.Store
+	if req.Arm.Supervised {
+		indexed, release, err := s.indexCopy(ctx, req)
+		if err != nil {
+			return SolveResult{}, err
+		}
+		defer release()
+		st = indexed
+	}
+
+	eng, err := s.engineFor(req.Arm, provider, st)
 	if err != nil {
 		return SolveResult{}, err
 	}
@@ -71,7 +111,63 @@ func (s *SystemSolver) Solve(ctx context.Context, req SolveRequest) (SolveResult
 	if !req.Arm.Supervised {
 		return s.solveUnsupervised(ctx, req, eng)
 	}
-	return s.solveSupervised(ctx, req, eng)
+	return s.solveSupervised(ctx, req, eng, st)
+}
+
+// indexCopy gives the run its own workspace and indexes the task copy into it.
+//
+// The copy is a throwaway directory unique to this run, so it gets a workspace
+// id of its own: one run's index can then never answer another run's query,
+// and nothing the operator has indexed leaks into a measurement.
+func (s *SystemSolver) indexCopy(ctx context.Context, req SolveRequest) (*store.Store, func(), error) {
+	if s.Root == nil {
+		return nil, nil, fmt.Errorf("eval: the supervised arm needs a store root to index the task copy into")
+	}
+	id := workspace.DeriveID(req.Worktree, "", "eval-"+req.Task.ID+"-"+req.Arm.Name)
+	st, err := s.Root.OpenWorkspace(ctx, id)
+	if err != nil {
+		return nil, nil, fmt.Errorf("eval: opening the run workspace: %w", err)
+	}
+	dir := st.Dir()
+	release := func() {
+		if err := st.Close(); err != nil {
+			s.logf("eval: closing the run workspace: %v", err)
+		}
+		if err := os.RemoveAll(dir); err != nil {
+			s.logf("eval: removing the run workspace: %v", err)
+		}
+	}
+
+	opts := s.IndexOptions
+	opts.Analyzers = s.Analyzers
+	ix := index.New(st, opts)
+
+	repo := workspace.Repository{
+		ID:            workspace.DeriveRepositoryID(id, ".", ""),
+		Name:          req.Task.ID,
+		Path:          ".",
+		DefaultBranch: "main",
+	}
+	if err := ix.RegisterRepository(ctx, repo); err != nil {
+		release()
+		return nil, nil, fmt.Errorf("eval: registering the task repository: %w", err)
+	}
+	stats, err := ix.Repository(ctx, repo.ID, req.Worktree)
+	if err != nil {
+		release()
+		return nil, nil, fmt.Errorf("eval: indexing the task copy: %w", err)
+	}
+	// An empty index is not a usable one, and a supervised arm running against
+	// it would be scored as the pipeline failing rather than as the harness
+	// handing it nothing.
+	if stats.Files == 0 {
+		release()
+		return nil, nil, fmt.Errorf("eval: indexing %s produced no files; the supervised arm "+
+			"would retrieve from an empty index", req.Worktree)
+	}
+	s.logf("  indexed %d files, %d chunks, %d nodes, %d edges",
+		stats.Files, stats.Chunks, stats.Nodes, stats.Edges)
+	return st, release, nil
 }
 
 // solveUnsupervised gives the model the objective and the worktree and nothing
@@ -109,14 +205,22 @@ func (s *SystemSolver) solveUnsupervised(ctx context.Context, req SolveRequest, 
 			return SolveResult{Claimed: true, Attempts: attempt, Tokens: total,
 				Reasons: []string{"the model reported completion; no verification was run"}}, nil
 		}
+		if resp.Truncated {
+			// The model never got to an answer because the output budget ran
+			// out. Retrying under the same budget would truncate again, so the
+			// run stops and says which limit it hit — a result that reads as
+			// "the model failed" would be wrong about what was measured.
+			return SolveResult{Attempts: attempt, Tokens: total,
+				Reasons: []string{resp.Summary}}, nil
+		}
 	}
 	return SolveResult{Attempts: req.Task.Budget.MaxAttempts, Tokens: total,
 		Reasons: []string{"the attempt budget was exhausted"}}, nil
 }
 
 // solveSupervised runs the full pipeline, minus whatever the arm ablates.
-func (s *SystemSolver) solveSupervised(ctx context.Context, req SolveRequest, eng engine.Engine) (SolveResult, error) {
-	runner, err := task.NewRunner(s.Store, eng, s.Sandbox, "eval")
+func (s *SystemSolver) solveSupervised(ctx context.Context, req SolveRequest, eng engine.Engine, st *store.Store) (SolveResult, error) {
+	runner, err := task.NewRunner(st, eng, s.Sandbox, "eval")
 	if err != nil {
 		return SolveResult{}, err
 	}
@@ -138,7 +242,7 @@ func (s *SystemSolver) solveSupervised(ctx context.Context, req SolveRequest, en
 	}
 
 	id := task.NewID("eval")
-	if err := task.NewStore(s.Store).Create(ctx, task.Task{
+	if err := task.NewStore(st).Create(ctx, task.Task{
 		ID: id, Title: req.Task.Objective, Verification: level,
 		Budget: task.Budget{
 			MaxAttempts: req.Task.Budget.MaxAttempts,
@@ -165,24 +269,25 @@ func (s *SystemSolver) solveSupervised(ctx context.Context, req SolveRequest, en
 	}
 	return SolveResult{
 		Claimed: out.Accepted, Attempts: out.Attempts, Reasons: out.Reasons,
+		Tokens: out.TokensUsed,
 	}, nil
 }
 
 // engineFor builds the editing engine, with retrieval wired according to the
 // arm.
-func (s *SystemSolver) engineFor(arm Arm, provider llm.Provider) (engine.Engine, error) {
+func (s *SystemSolver) engineFor(arm Arm, provider llm.Provider, st *store.Store) (engine.Engine, error) {
 	opts := native.Options{
 		Provider: provider, Logf: s.Logf,
 		MaxTools: s.MaxTools, MaxTokens: s.MaxTokens,
 		Temperature: s.Temperature, Thinking: s.Thinking,
 	}
 	if arm.Supervised {
-		opts.Retriever = retrieval.New(s.Store)
+		opts.Retriever = retrieval.New(st)
 		if arm.Graph {
 			// The graph is what the ablation removes: with it off the engine
 			// keeps lexical search and loses symbol lookup, graph expansion
 			// and impact analysis.
-			opts.Graph = graph.New(s.Store)
+			opts.Graph = graph.New(st)
 		}
 	}
 	return native.New(opts)

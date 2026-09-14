@@ -42,6 +42,14 @@ type Outcome struct {
 	Tampered     bool     `json:"tampered"`
 	TamperedWith []string `json:"tampered_with,omitempty"`
 
+	// Repetition is which pass over the task set produced this outcome, when
+	// the set was run more than once.
+	//
+	// It exists because a single run of a cell is not a measurement of it: the
+	// same task, arm, model and budget can come out solved on one pass and a
+	// false accept on the next. Recording the pass makes that spread visible
+	// instead of letting one sample stand in for the cell.
+	Repetition   int           `json:"repetition,omitempty"`
 	Attempts     int           `json:"attempts"`
 	Duration     time.Duration `json:"duration"`
 	TokensUsed   int           `json:"tokens_used,omitempty"`
@@ -132,6 +140,15 @@ func (r *Runner) Run(ctx context.Context, task Task, arm Arm, solver Solver) Out
 		}
 	}()
 
+	// Commit the untouched fixture as the base. The runner does this rather
+	// than the solver because the diff is the runner's own record of what the
+	// run changed: a solver that did not happen to make a repository would
+	// leave that record empty.
+	if err := initRepo(ctx, work); err != nil {
+		out.Err = fmt.Sprintf("preparing the task repository: %v", err)
+		return out
+	}
+
 	before, err := snapshot(work)
 	if err != nil {
 		out.Err = fmt.Sprintf("snapshotting the fixture: %v", err)
@@ -170,6 +187,15 @@ func (r *Runner) Run(ctx context.Context, task Task, arm Arm, solver Solver) Out
 	}
 	changed := changedFiles(before, after)
 	out.FilesTouched = len(changed)
+
+	// Capture the diff before the acceptance file is written, or the hidden
+	// test would be counted as part of the solution. The fixture is the base
+	// commit, so this is exactly what the model changed and nothing else.
+	if d, err := diffOf(ctx, work); err != nil {
+		r.logf("eval: capturing the diff for %s/%s: %v", task.ID, arm.Name, err)
+	} else {
+		out.Diff, out.DiffBytes = d, len(d)
+	}
 
 	// A solution that changed something it was told to leave alone has not
 	// solved the task, whatever the acceptance command then says.
@@ -325,4 +351,26 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "\n… (output truncated)"
+}
+
+// diffOf returns the change the run made to the task copy. The copy was made a
+// git repository with the untouched fixture as its only commit, so staging
+// everything and diffing against that commit captures edits and new files
+// alike.
+//
+// It is called for its byte count, which the report publishes beside
+// files_touched. Leaving DiffBytes unset published a zero next to a non-zero
+// file count on every solved run — a reader would take that as a solution that
+// changed nothing.
+func diffOf(ctx context.Context, dir string) (string, error) {
+	//nolint:gosec // fixed arguments; dir is passed via -C
+	if err := exec.CommandContext(ctx, "git", "-C", dir, "add", "-A").Run(); err != nil {
+		return "", fmt.Errorf("staging: %w", err)
+	}
+	//nolint:gosec // fixed arguments; dir is passed via -C
+	out, err := exec.CommandContext(ctx, "git", "-C", dir, "diff", "--cached", "--no-color").Output()
+	if err != nil {
+		return "", fmt.Errorf("diffing: %w", err)
+	}
+	return string(out), nil
 }

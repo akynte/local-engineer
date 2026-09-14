@@ -137,6 +137,21 @@ func TestASolvedTaskIsRecognised(t *testing.T) {
 	if out.FalseAccept || out.MissedSuccess {
 		t.Errorf("claimed and solved agree, so neither flag should be set: %+v", out)
 	}
+	// DiffBytes is published beside FilesTouched. It was never assigned, so
+	// every result file carried diff_bytes: 0 next to a non-zero file count —
+	// a solution that changed nothing, according to its own record.
+	if out.DiffBytes == 0 {
+		t.Errorf("diff_bytes = 0 for a run that touched %d file(s) and solved the task",
+			out.FilesTouched)
+	}
+	if !strings.Contains(out.Diff, "return x + y") {
+		t.Errorf("the captured diff does not contain the edit that was made:\n%s", out.Diff)
+	}
+	// The hidden acceptance file is written after the diff is taken; if it
+	// leaked in, the diff would credit the harness's own test to the model.
+	if strings.Contains(out.Diff, "hidden_acceptance_test.go") {
+		t.Error("the hidden acceptance test was captured as part of the solution diff")
+	}
 	if out.FilesTouched != 1 {
 		t.Errorf("files touched = %d, want 1", out.FilesTouched)
 	}

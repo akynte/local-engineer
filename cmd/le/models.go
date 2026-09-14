@@ -96,6 +96,7 @@ func newModelsBenchCmd() *cobra.Command {
 			fmt.Fprintf(out, "prompt cache reuse %.1f%%\n", result.CacheReusePct)
 			fmt.Fprintf(out, "peak VRAM          %d MB of %d MB\n", result.PeakVRAMMB, result.TotalVRAMMB)
 			fmt.Fprintf(out, "peak RAM           %d MB of %d MB\n", result.PeakRAMMB, result.TotalRAMMB)
+			fmt.Fprintf(out, "rate source        %s\n", result.TimingSource)
 			fmt.Fprintf(out, "%s\n", strings.Repeat("─", 56))
 
 			profile := models.ProfileFrom(result, profileName, contextSize)

@@ -62,6 +62,17 @@ type Response struct {
 	// telemetry and for spotting an engine that claims completion without
 	// having written anything.
 	Edited bool
+	// Truncated reports that the model hit its output budget before it
+	// produced an answer or a tool call.
+	//
+	// This is kept apart from a model that chose to stop because the two are
+	// indistinguishable at the call site — both arrive as a response with no
+	// tool calls — and they mean opposite things. One is a result; the other
+	// is the engine running out of room, which a reasoning model does by
+	// spending the whole budget thinking. Folding them together reports a
+	// harness limit as a model verdict, and an evaluation built on that
+	// measures the budget rather than the system.
+	Truncated bool
 }
 
 // Engine produces edits in a worktree.

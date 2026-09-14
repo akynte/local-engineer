@@ -210,3 +210,54 @@ func tasksFor(n int) []eval.Task {
 	}
 	return out
 }
+
+// TestUnstableCellsAreReported pins the caveat that governs every other number
+// in a report. A cell that comes out solved on one pass and unsolved on the
+// next has not been measured, and a confidence interval computed over it
+// assumes a stability the data contradicts. Two consecutive runs of the same
+// task set produced exactly this, so it is reported rather than left for a
+// reader to notice.
+func TestUnstableCellsAreReported(t *testing.T) {
+	tasks := []eval.Task{{ID: "t1", LeakRisk: eval.LeakNone}}
+	outcomes := []eval.Outcome{
+		{TaskID: "t1", Arm: "a", Repetition: 1, Solved: true, Claimed: true},
+		{TaskID: "t1", Arm: "a", Repetition: 2, Solved: false, Claimed: true, FalseAccept: true},
+	}
+	rep := eval.Aggregate(outcomes, tasks)
+
+	joined := strings.Join(rep.Caveats, " ")
+	if !strings.Contains(joined, "changed verdict between passes") {
+		t.Errorf("a cell that flipped verdict between passes was not reported:\n%v", rep.Caveats)
+	}
+	if !strings.Contains(joined, "1 of 1") {
+		t.Errorf("the unstable-cell count is wrong:\n%v", rep.Caveats)
+	}
+}
+
+// TestSingleRunSaysSo is the other half: a report from one pass must say that
+// its cells are single samples, so the absence of an instability warning is
+// never read as evidence of stability.
+func TestSingleRunSaysSo(t *testing.T) {
+	tasks := []eval.Task{{ID: "t1", LeakRisk: eval.LeakNone}}
+	rep := eval.Aggregate([]eval.Outcome{
+		{TaskID: "t1", Arm: "a", Solved: true, Claimed: true},
+	}, tasks)
+
+	if !strings.Contains(strings.Join(rep.Caveats, " "), "single run of a cell is one sample") {
+		t.Errorf("a one-pass report does not say its cells are single samples:\n%v", rep.Caveats)
+	}
+}
+
+// TestStableCellsAreNotFlagged keeps the warning meaningful: a set that agreed
+// with itself across passes must not carry an instability caveat.
+func TestStableCellsAreNotFlagged(t *testing.T) {
+	tasks := []eval.Task{{ID: "t1", LeakRisk: eval.LeakNone}}
+	rep := eval.Aggregate([]eval.Outcome{
+		{TaskID: "t1", Arm: "a", Repetition: 1, Solved: true, Claimed: true},
+		{TaskID: "t1", Arm: "a", Repetition: 2, Solved: true, Claimed: true},
+	}, tasks)
+
+	if strings.Contains(strings.Join(rep.Caveats, " "), "changed verdict between passes") {
+		t.Errorf("a stable set was flagged as unstable:\n%v", rep.Caveats)
+	}
+}

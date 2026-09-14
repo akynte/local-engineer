@@ -248,6 +248,22 @@ func verdictFor(c ComparisonResult) string {
 func caveats(rep Report) []string {
 	var out []string
 
+	// Instability is reported before anything else, because it governs how
+	// much weight every other number can carry. A cell that comes out solved
+	// on one pass and a false accept on the next has not been measured, and a
+	// confidence interval computed over it assumes a stability the data
+	// contradicts.
+	if passes, unstable, cells := stability(rep.Outcomes); passes > 1 && unstable > 0 {
+		out = append(out, fmt.Sprintf(
+			"%d of %d task/arm cells changed verdict between passes. The set was run %d times; "+
+				"a cell that disagrees with itself is not evidence about an arm, and comparisons "+
+				"drawn across arms are weaker than the intervals alone suggest.",
+			unstable, cells, passes))
+	} else if passes == 1 {
+		out = append(out, "The set was run once. A single run of a cell is one sample, not a "+
+			"measurement of it: re-running can change a verdict. Pass --repeat to see the spread.")
+	}
+
 	if rep.TaskCount < 30 {
 		out = append(out, fmt.Sprintf(
 			"The task set has %d tasks. Confidence intervals at this size are wide enough that "+
@@ -410,4 +426,34 @@ func LoadReport(path string) (Report, error) {
 	}
 	var r Report
 	return r, json.Unmarshal(body, &r)
+}
+
+// stability reports how many task/arm cells did not agree with themselves
+// across passes, and how many passes there were.
+func stability(outcomes []Outcome) (passes, unstable, cells int) {
+	type cell struct{ task, arm string }
+	seen := map[cell]map[bool]int{}
+	for _, o := range outcomes {
+		if o.Errored() {
+			continue
+		}
+		if o.Repetition > passes {
+			passes = o.Repetition
+		}
+		c := cell{o.TaskID, o.Arm}
+		if seen[c] == nil {
+			seen[c] = map[bool]int{}
+		}
+		seen[c][o.Solved]++
+	}
+	if passes == 0 {
+		passes = 1
+	}
+	for _, verdicts := range seen {
+		cells++
+		if len(verdicts) > 1 {
+			unstable++
+		}
+	}
+	return passes, unstable, cells
 }

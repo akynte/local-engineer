@@ -153,9 +153,14 @@ func (p *OpenAICompatible) chat(ctx context.Context, req ChatRequest, schema jso
 		Model   string `json:"model"`
 		Choices []struct {
 			Message struct {
-				Role      string `json:"role"`
-				Content   string `json:"content"`
-				ToolCalls []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+				// Reasoning models served by llama.cpp return their thinking
+				// here rather than in Content. Dropping it makes a response
+				// that was truncated mid-thought indistinguishable from an
+				// empty answer.
+				ReasoningContent string `json:"reasoning_content"`
+				ToolCalls        []struct {
 					ID       string `json:"id"`
 					Type     string `json:"type"`
 					Function struct {
@@ -175,6 +180,14 @@ func (p *OpenAICompatible) chat(ctx context.Context, req ChatRequest, schema jso
 		} `json:"usage"`
 		// llama.cpp reports cache reuse here.
 		TimingsCacheN int `json:"tokens_cached"`
+		// llama.cpp reports the prefill/decode split per request. Without it
+		// the two phases can only be charged the same wall clock, which
+		// understates both.
+		Timings struct {
+			CacheN      int     `json:"cache_n"`
+			PromptMS    float64 `json:"prompt_ms"`
+			PredictedMS float64 `json:"predicted_ms"`
+		} `json:"timings"`
 	}
 	if err := p.post(ctx, "/v1/chat/completions", body, &out); err != nil {
 		return nil, err
@@ -186,10 +199,16 @@ func (p *OpenAICompatible) chat(ctx context.Context, req ChatRequest, schema jso
 	if cached == 0 {
 		cached = out.TimingsCacheN
 	}
+	if cached == 0 {
+		cached = out.Timings.CacheN
+	}
 	resp := &ChatResponse{
 		Content: out.Choices[0].Message.Content, FinishReason: out.Choices[0].FinishReason,
+		Reasoning:    out.Choices[0].Message.ReasoningContent,
 		PromptTokens: out.Usage.PromptTokens, OutputTokens: out.Usage.CompletionTokens,
 		CachedTokens: cached, Model: out.Model, DurationMS: time.Since(start).Milliseconds(),
+		PrefillMS: int64(out.Timings.PromptMS),
+		DecodeMS:  int64(out.Timings.PredictedMS),
 	}
 	for _, tc := range out.Choices[0].Message.ToolCalls {
 		args := tc.Function.Arguments

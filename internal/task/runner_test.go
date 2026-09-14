@@ -394,6 +394,9 @@ func TestASecondRunnerCannotTakeALiveLease(t *testing.T) {
 type writingEngine struct {
 	path string
 	body string
+	// tokens is reported on every Step, so a test can check that the runner
+	// sums them across attempts rather than discarding them.
+	tokens int
 }
 
 func (e *writingEngine) Name() string                 { return "writing-test-engine" }
@@ -408,7 +411,9 @@ func (e *writingEngine) Step(_ context.Context, req engine.Request) (*engine.Res
 	if err := os.WriteFile(p, []byte(e.body), 0o644); err != nil {
 		return nil, err
 	}
-	return &engine.Response{Summary: "wrote " + e.path, ClaimsDone: true}, nil
+	return &engine.Response{
+		Summary: "wrote " + e.path, ClaimsDone: true, TokensUsed: e.tokens,
+	}, nil
 }
 
 // A worktree is created from a commit, so without an explicit sync a
@@ -806,5 +811,44 @@ func assertBranchHasChange(t *testing.T, repo, branch, want string) {
 	}
 	if !strings.Contains(string(out), want) {
 		t.Errorf("branch %s does not carry the change:\n%s", branch, out)
+	}
+}
+
+// TestOutcomeCarriesTheTokenTotal pins a number the evaluation publishes.
+//
+// The engine reports what each attempt spent and the journal records it, but
+// nothing summed it into the outcome — so every supervised row in a published
+// result carried tokens_used: 0. Read beside a baseline that reported real
+// numbers, that says the pipeline costs nothing, which is the opposite of what
+// an arm comparison exists to establish.
+func TestOutcomeCarriesTheTokenTotal(t *testing.T) {
+	requireGo(t)
+	repo := gitRepo(t, map[string]string{
+		"go.mod": goodModule,
+		"a.go":   "package a\n\nfunc Add(x, y int) int { return x + y }\n",
+	})
+
+	r, st := newRunner(t, &writingEngine{
+		path:   "a.go",
+		body:   "package a\n\n// Add returns the sum of x and y.\nfunc Add(x, y int) int { return x + y }\n",
+		tokens: 1234,
+	})
+	ctx := context.Background()
+
+	id := task.NewID("t")
+	if err := task.NewStore(st).Create(ctx, task.Task{
+		ID: id, Title: "document Add", Verification: recipe.Low,
+		Budget: task.Budget{MaxAttempts: 1, MaxWallTime: 5 * time.Minute},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := r.Run(ctx, id, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.TokensUsed != 1234 {
+		t.Errorf("tokens used = %d, want 1234; the engine's count is not reaching "+
+			"the outcome", out.TokensUsed)
 	}
 }

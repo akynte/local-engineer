@@ -94,6 +94,12 @@ type Outcome struct {
 	Results []recipe.Result `json:"results"`
 	// Attempts is how many engine steps were taken.
 	Attempts int `json:"attempts"`
+	// TokensUsed is the total the engine spent across every attempt.
+	//
+	// The per-attempt count is journalled, but a caller comparing the cost of
+	// two configurations needs the sum, and a zero here reads as "this
+	// pipeline used no tokens" rather than "nobody added them up".
+	TokensUsed int `json:"tokens_used"`
 	// Candidate is the worktree content hash the verdict describes.
 	Candidate string `json:"candidate"`
 	// OutOfScope lists files changed outside the declared scope.
@@ -271,9 +277,11 @@ func (r *Runner) run(ctx context.Context, t *Task, wt *worktree.Worktree) (*Outc
 			return nil, err
 		}
 
-		if err := r.step(ctx, t, wt, attempt, before, feedback); err != nil {
+		used, err := r.step(ctx, t, wt, attempt, before, feedback)
+		if err != nil {
 			return nil, err
 		}
+		out.TokensUsed += used
 
 		after, err := wt.Candidate()
 		if err != nil {
@@ -354,19 +362,19 @@ func (r *Runner) run(ctx context.Context, t *Task, wt *worktree.Worktree) (*Outc
 
 // step runs one engine attempt, journalled intent-first.
 func (r *Runner) step(ctx context.Context, t *Task, wt *worktree.Worktree,
-	attempt int, before string, feedback []recipe.Result) error {
+	attempt int, before string, feedback []recipe.Result) (int, error) {
 
 	pkt, err := r.Retriever.Build(ctx, retrieval.Request{
 		Query:       t.Title,
 		ExpandDepth: 1,
 	})
 	if err != nil {
-		return fmt.Errorf("task %s: retrieval: %w", t.ID, err)
+		return 0, fmt.Errorf("task %s: retrieval: %w", t.ID, err)
 	}
 	// A packet carrying a foreign slice is an isolation incident, not a
 	// degraded result: refuse rather than proceed (§2.3).
 	if len(pkt.Rejected) > 0 {
-		return fmt.Errorf("task %s: retrieval returned slices from another workspace: %s",
+		return 0, fmt.Errorf("task %s: retrieval returned slices from another workspace: %s",
 			t.ID, strings.Join(pkt.Rejected, "; "))
 	}
 
@@ -375,7 +383,7 @@ func (r *Runner) step(ctx context.Context, t *Task, wt *worktree.Worktree,
 		"objective": t.Title, "worktree": wt.ID, "packet_tokens": pkt.Tokens,
 	}, before)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	// The engine's own verification tool runs in the same sandbox as the
@@ -395,19 +403,25 @@ func (r *Runner) step(ctx context.Context, t *Task, wt *worktree.Worktree,
 	if stepErr != nil {
 		// A recorded failure is definite: recovery does not need to inspect.
 		if err := h.Fail(ctx, stepErr); err != nil {
-			return err
+			return 0, err
 		}
-		return fmt.Errorf("task %s: engine step: %w", t.ID, stepErr)
+		return 0, fmt.Errorf("task %s: engine step: %w", t.ID, stepErr)
 	}
 
 	after, err := wt.Candidate()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	changed, _ := wt.ChangedFiles(ctx)
-	return h.Complete(ctx, map[string]any{
+	return resp.TokensUsed, h.Complete(ctx, map[string]any{
 		"summary": resp.Summary, "claims_done": resp.ClaimsDone,
 		"changed_files": changed, "tokens": resp.TokensUsed,
+		// An attempt that produced nothing because the output budget ran out
+		// looks exactly like one that produced nothing because the model had
+		// nothing to say. The journal is where that difference has to survive:
+		// without it the history shows an unproductive attempt and no reason,
+		// and the operator tunes the wrong knob.
+		"truncated": resp.Truncated,
 	}, after, "")
 }
 

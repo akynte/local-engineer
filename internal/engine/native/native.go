@@ -84,8 +84,19 @@ func New(o Options) (*Engine, error) {
 	if e.MaxSteps <= 0 {
 		e.MaxSteps = DefaultMaxSteps
 	}
-	e.tools = Definitions(e.MaxTools)
+	e.refreshTools()
 	return e, nil
+}
+
+// refreshTools recomputes the advertised surface from what is currently wired.
+// It must run after anything that changes that, because the model is told the
+// tool list once per call and will use whatever it is offered.
+func (e *Engine) refreshTools() {
+	e.tools = Definitions(e.MaxTools, Wired{
+		Retrieval: e.Retriever != nil,
+		Graph:     e.Graph != nil,
+		Recipes:   e.Recipes != nil,
+	})
 }
 
 func (e *Engine) Name() string { return "native/" + e.Provider.Name() }
@@ -131,6 +142,22 @@ func (e *Engine) Step(ctx context.Context, req engine.Request) (*engine.Response
 		resp.TokensUsed += out.PromptTokens + out.OutputTokens
 
 		if !out.WantsTools() {
+			// A response cut off at the output budget is not a decision to
+			// stop. A reasoning model reaches this by spending the whole
+			// budget thinking: FinishReason is "length", Content is empty and
+			// the thinking is in Reasoning. Reporting that as "the model
+			// stopped" would attribute a harness limit to the model.
+			if out.FinishReason == "length" && strings.TrimSpace(out.Content) == "" {
+				resp.Truncated = true
+				resp.Summary = fmt.Sprintf(
+					"the output budget of %d tokens ran out on step %d before the model "+
+						"produced an answer or a tool call", e.MaxTokens, step)
+				if n := len(strings.TrimSpace(out.Reasoning)); n > 0 {
+					resp.Summary += fmt.Sprintf("; it was spent on %d characters of reasoning, "+
+						"so the budget is too small for this model's thinking", n)
+				}
+				return resp, nil
+			}
 			// No tool call means the model has nothing further to do. §10.1
 			// rejects reflection without new evidence, so prodding it to
 			// continue would be spending tokens on nothing.
@@ -254,4 +281,10 @@ func indent(s, prefix string) string {
 // depends on which worktree the task got. Sharing the runner matters: a model
 // checking its own work must see exactly what the contract will see, or it
 // will declare victory against a different set of checks.
-func (e *Engine) SetRecipeRunner(r *recipe.Runner) { e.Recipes = r }
+func (e *Engine) SetRecipeRunner(r *recipe.Runner) {
+	e.Recipes = r
+	// The recipe runner arrives after construction, so the tool surface has to
+	// be recomputed: without this the engine either hides run_verification
+	// from a run that has it, or keeps offering it to one that does not.
+	e.refreshTools()
+}
