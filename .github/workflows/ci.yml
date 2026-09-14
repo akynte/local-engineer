@@ -135,6 +135,12 @@ jobs:
       - name: Every shipped profile parses and validates
         run: go test -run TestShippedProfiles ./internal/config/...
 
+      # §1.2: "all JSON Schemas compile". The third of these also checks the
+      # schemas against the loader, so the two cannot drift apart and start
+      # disagreeing about what a valid file is.
+      - name: JSON Schemas compile and agree with the loader
+        run: go test -run 'TestSchemas|TestSchemaAndLoaderAgree|TestShippedTasksValidate|TestDefaultConfigValidates|TestDefaultProvidersValidate|TestShippedProfilesValidateAgainstSchema' ./internal/config/...
+
       - name: Compose files are valid
         run: |
           docker compose -f deploy/docker-compose.yml config -q

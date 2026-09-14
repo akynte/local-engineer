@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/akynte/local-engineer/schemas/profile.schema.json",
+  "title": "Hardware profile",
+  "description": "A profile under profiles/ (design v3 §9.2). §9.3 forbids hardcoding any of these: context limits, memory budgets, thread counts, offload layers, sampling defaults, thinking policy, tool-surface size and packet sizes all live here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "description", "context_tokens"],
+  "properties": {
+    "name": { "type": "string", "minLength": 1 },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "description": "A profile with no measurement must say 'unmeasured' here; the profile test enforces it, because a starting point presented as a measurement is the one way this file can mislead."
+    },
+    "hardware": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "gpu": { "type": "string" },
+        "vram_mb": { "type": "integer", "minimum": 0 },
+        "ram_mb": { "type": "integer", "minimum": 0 },
+        "threads": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "context_tokens": { "type": "integer", "minimum": 1 },
+    "max_packet_tokens": { "type": "integer", "minimum": 1 },
+    "reserved_output_tokens": { "type": "integer", "minimum": 1 },
+    "max_tools_exposed": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "A small model given twenty tools picks the wrong one far more often than one given eight."
+    },
+    "measured_peak_vram_mb": { "type": "integer", "minimum": 0 },
+    "measured_peak_ram_mb": { "type": "integer", "minimum": 0 },
+    "max_concurrent_tasks": { "type": "integer", "minimum": 1 },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "threads": { "type": "integer", "minimum": 0 },
+        "threads_batch": { "type": "integer", "minimum": 0 },
+        "gpu_layers": { "type": "integer", "minimum": 0 },
+        "batch_size": { "type": "integer", "minimum": 0 },
+        "ubatch_size": { "type": "integer", "minimum": 0 },
+        "flash_attn": { "type": "boolean" },
+        "cache_type_k": { "type": "string" },
+        "cache_type_v": { "type": "string" },
+        "slots": { "type": "integer", "minimum": 0 },
+        "extra_args": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "sampling": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "temperature": { "type": "number", "minimum": 0 },
+        "top_p": { "type": "number", "minimum": 0, "maximum": 1 },
+        "top_k": { "type": "integer", "minimum": 0 },
+        "min_p": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "thinking_policy": { "enum": ["off", "auto", "always"] },
+    "measured": {
+      "type": "object",
+      "description": "Present only when `le models bench` wrote this profile. Its absence is what makes a profile a starting point.",
+      "additionalProperties": true
+    }
+  }
+}

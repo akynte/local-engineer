@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/akynte/local-engineer/schemas/le.schema.json",
+  "title": "local-engineer configuration",
+  "description": "/data/config/le.yaml. Per-hardware tuning belongs in the active profile, not here (design v3 \u00a79.2).",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "api": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "addr": {
+          "type": "string",
+          "description": "Bind address. \u00a74.1 publishes 127.0.0.1:7777; the container image sets 0.0.0.0 because Docker cannot reach a loopback bind inside a container, and publishes as -p 127.0.0.1:7777:7777 instead.",
+          "examples": [
+            "127.0.0.1:7777",
+            "0.0.0.0:7777"
+          ]
+        },
+        "shutdown_grace_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "\u00a74.4 documents 30 seconds."
+        },
+        "acp_addr": {
+          "type": "string",
+          "description": "Binds the ACP-over-TCP bridge (\u00a74.3). Empty leaves it off."
+        },
+        "acp_command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "description": "The ACP agent to run per connection, argv style. Required when acp_addr is set: a bridge with no agent accepts connections it cannot serve."
+        }
+      },
+      "dependentRequired": {
+        "acp_addr": [
+          "acp_command"
+        ]
+      }
+    },
+    "inference": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "embedded",
+            "external",
+            "none"
+          ],
+          "description": "embedded starts llama-server as a supervised child; external talks to one the operator runs; none disables inference for indexing-only use."
+        },
+        "base_url": {
+          "type": "string",
+          "description": "Required when mode is external."
+        },
+        "binary": {
+          "type": "string"
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "start_timeout_seconds": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "external"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "required": [
+              "base_url"
+            ],
+            "$comment": "External inference with nowhere to send it is a misconfiguration the loader already rejects; the schema has to agree or a user is told a file is fine and then has it refused."
+          }
+        }
+      ]
+    },
+    "sandbox": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "auto",
+            "landlock",
+            "bwrap",
+            "none"
+          ]
+        },
+        "read_only_paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "allowed_tcp_connect": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "index": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_file_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "excludes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "chunk_lines": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "watch_enabled": {
+          "type": "boolean",
+          "description": "The \u00a73.4 file watcher. Marks index scopes dirty as files change; le doctor reports the count as index drift."
+        }
+      }
+    },
+    "gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "breaking": {
+          "type": "boolean"
+        },
+        "out_of_scope": {
+          "type": "boolean"
+        },
+        "apply": {
+          "type": "boolean"
+        },
+        "plan": {
+          "type": "boolean"
+        },
+        "timeout_minutes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "offline": {
+      "type": "boolean",
+      "description": "Refuses to route any role to a non-local provider, at startup rather than at call time."
+    },
+    "profile": {
+      "type": "string",
+      "description": "Names a profile in profiles/ (\u00a79.2)."
+    },
+    "data_dir": {
+      "type": "string"
+    }
+  }
+}

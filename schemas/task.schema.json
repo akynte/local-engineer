@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/akynte/local-engineer/schemas/task.schema.json",
+  "title": "Evaluation task",
+  "description": "A task under evals/tasks/ (design v3 §10.2). Two properties make the numbers mean anything: the acceptance files are never in the worktree while the task runs, and the system's own verdict is recorded separately from the ground truth.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "category", "objective", "fixture", "leak_risk", "acceptance", "budget"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "category": {
+      "enum": ["bug_fix", "feature", "refactor", "schema_change", "api_change", "test_gap"],
+      "description": "Results are reported per category."
+    },
+    "objective": {
+      "type": "string",
+      "minLength": 1,
+      "description": "What the system is asked to do, in the words a user would use. It must not name the fix: an objective that says what to change measures typing, not engineering."
+    },
+    "fixture": { "type": "string", "minLength": 1, "description": "Directory relative to the task file." },
+    "scope": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Paths a solution may change, as a real task would restrict them."
+    },
+    "verification": { "enum": ["low", "standard", "high"] },
+    "leak_risk": {
+      "enum": ["none", "public", "unknown"],
+      "description": "Provenance is disclosed per task, never assumed. Results over public tasks are an upper bound and the report says so."
+    },
+    "notes": {
+      "type": "string",
+      "description": "What a reader of the results needs to interpret them: why the task is hard, and what a wrong-but-passing solution looks like."
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_attempts", "max_wall_seconds"],
+      "properties": {
+        "max_attempts": { "type": "integer", "minimum": 1 },
+        "max_wall_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "A result without a fixed budget is not comparable."
+        },
+        "max_tokens": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "acceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["argv", "files"],
+      "properties": {
+        "argv": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" },
+          "description": "Decides the task. A non-zero exit means it was not solved."
+        },
+        "timeout_seconds": { "type": "integer", "minimum": 1 },
+        "must_not_change": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "A task 'passed' by deleting the failing test has not been solved."
+        },
+        "files": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "type": "string" },
+          "description": "Written into the worktree copy AFTER the run. If the test is already in the fixture the model can read it, and satisfying a test you can see is not solving the problem."
+        }
+      }
+    }
+  }
+}

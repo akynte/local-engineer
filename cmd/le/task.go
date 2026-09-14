@@ -17,11 +17,13 @@ import (
 	"github.com/akynte/local-engineer/internal/engine/native"
 	"github.com/akynte/local-engineer/internal/ledger"
 	"github.com/akynte/local-engineer/internal/llm"
+	"github.com/akynte/local-engineer/internal/policy"
 	"github.com/akynte/local-engineer/internal/recipe"
 	"github.com/akynte/local-engineer/internal/retrieval"
 	"github.com/akynte/local-engineer/internal/sandbox"
 	"github.com/akynte/local-engineer/internal/store"
 	"github.com/akynte/local-engineer/internal/task"
+	"github.com/akynte/local-engineer/internal/workspace"
 )
 
 func newTaskCmd() *cobra.Command {
@@ -116,6 +118,19 @@ func runnerFor(cmd *cobra.Command, root *store.Root, st *store.Store, eng engine
 		fmt.Fprintf(cmd.ErrOrStderr(), format+"\n", args...)
 	}
 	r.Broker = broker.New(st, policyFrom(cfg.Gates))
+
+	// Repository-wide rules (§6.2). Loaded from the workspace being worked on,
+	// not from the data directory: they travel with the repository, and a rule
+	// about what may not be changed belongs beside the thing it protects.
+	policies, err := loadRepoPolicies()
+	if err != nil {
+		return nil, fmt.Errorf("the repository's policies are invalid: %w", err)
+	}
+	if len(policies.Policies) > 0 {
+		fmt.Fprintf(cmd.ErrOrStderr(), "policies: %d rule(s) protecting %d path pattern(s)\n",
+			len(policies.Policies), len(policies.Paths()))
+	}
+	r.Policies = policies
 
 	tmp := st.TmpDir()
 	r.SandboxSpec = sandbox.Spec{
@@ -503,4 +518,20 @@ func short(hash string) string {
 		return "(none)"
 	}
 	return hash
+}
+
+// loadRepoPolicies reads the repository's own rules. They live beside the code
+// they protect rather than in the data directory: a rule about what may not be
+// changed travels with the thing it protects, and a clone carries it.
+func loadRepoPolicies() (policy.Set, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return policy.Set{}, err
+	}
+	ws, err := workspace.Open(cwd)
+	if err != nil {
+		// Outside a workspace there is no repository to have policies.
+		return policy.Set{}, nil
+	}
+	return policy.Load(filepath.Join(ws.Root, "policies"))
 }

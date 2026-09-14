@@ -12,6 +12,7 @@ import (
 	"github.com/akynte/local-engineer/internal/broker"
 	"github.com/akynte/local-engineer/internal/engine"
 	"github.com/akynte/local-engineer/internal/ledger"
+	"github.com/akynte/local-engineer/internal/policy"
 	"github.com/akynte/local-engineer/internal/recipe"
 	"github.com/akynte/local-engineer/internal/retrieval"
 	"github.com/akynte/local-engineer/internal/sandbox"
@@ -49,6 +50,10 @@ type Runner struct {
 	Broker *broker.Broker
 	// Holder identifies this supervisor instance in worktree leases.
 	Holder string
+	// Policies are the repository-wide rules of §6.2: what no task may change,
+	// whatever it was asked to do. Empty means none are installed, which is the
+	// ordinary case for a fresh checkout.
+	Policies policy.Set
 	// Logf reports progress. Nil discards it.
 	Logf func(format string, args ...any)
 
@@ -104,6 +109,11 @@ type Outcome struct {
 	Candidate string `json:"candidate"`
 	// OutOfScope lists files changed outside the declared scope.
 	OutOfScope []string `json:"out_of_scope,omitempty"`
+	// PolicyViolations lists changes a repository policy protects, each with
+	// the reason the operator reads at the gate. They are counted as
+	// out-of-scope too, so acceptance already refuses them — this field keeps
+	// *why* alongside the fact.
+	PolicyViolations []policy.Violation `json:"policy_violations,omitempty"`
 	// Diff is the change the task produced.
 	Diff string `json:"diff,omitempty"`
 	// Verified says which state the verdict describes. A verdict that does not
@@ -299,6 +309,19 @@ func (r *Runner) run(ctx context.Context, t *Task, wt *worktree.Worktree) (*Outc
 		scope, err := wt.OutOfScope(ctx, budget.Scope)
 		if err != nil {
 			return nil, err
+		}
+		// Repository policy is checked independently of the declared scope. A
+		// task that declares none is unrestricted by scope, and that is exactly
+		// when a rule about what nothing may touch matters most.
+		changed, err := wt.ChangedFiles(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, v := range r.Policies.Check(changed) {
+			out.PolicyViolations = append(out.PolicyViolations, v)
+			if !contains(scope, v.Path) {
+				scope = append(scope, v.Path)
+			}
 		}
 		out.OutOfScope = scope
 
@@ -716,3 +739,12 @@ func shortHash(h string) string {
 
 // Elapsed is a helper for reporting.
 func Elapsed(start time.Time) string { return time.Since(start).Round(time.Millisecond).String() }
+
+func contains(list []string, want string) bool {
+	for _, s := range list {
+		if s == want {
+			return true
+		}
+	}
+	return false
+}

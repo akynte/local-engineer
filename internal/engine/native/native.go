@@ -11,6 +11,7 @@ import (
 	"github.com/akynte/local-engineer/internal/llm"
 	"github.com/akynte/local-engineer/internal/recipe"
 	"github.com/akynte/local-engineer/internal/retrieval"
+	"github.com/akynte/local-engineer/prompts"
 )
 
 // llmToolCall is an alias kept local so exec.go reads without the package
@@ -206,29 +207,10 @@ func failMark(r Result) string {
 // objective with the retrieved packet and any feedback from the last attempt.
 func (e *Engine) seed(req engine.Request) []llm.Message {
 	return []llm.Message{
-		{Role: "system", Content: systemPrompt},
+		{Role: "system", Content: prompts.EngineSystem()},
 		{Role: "user", Content: e.brief(req)},
 	}
 }
-
-// systemPrompt is deliberately short and concrete. A long prompt of
-// exhortations costs prefill on every step and does not make a small model
-// more careful; naming the loop and the stopping condition does.
-const systemPrompt = `You are editing one repository to meet one objective.
-
-How to work:
-- Read before you edit. edit_file requires the exact existing text.
-- Before changing a signature, call impact_of to see what depends on it.
-- After every edit, call run_verification. The compiler and the tests are the
-  only reliable signal about whether your change is right.
-- When verification passes, call done with a short summary.
-
-What not to do:
-- Do not change files unrelated to the objective. Out-of-scope changes are
-  detected and will cause the task to be rejected.
-- Do not call done before verification passes. The supervisor checks the
-  evidence itself, so claiming completion early only wastes the attempt.
-- Do not re-read a file you have already read unless it changed.`
 
 func (e *Engine) brief(req engine.Request) string {
 	var b strings.Builder

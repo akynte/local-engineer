@@ -1,0 +1,30 @@
+# The shipped policy. An operator can edit or remove it; what it must not be is
+# absent by accident, which is why it ships rather than being documented as a
+# suggestion.
+name: shipped-protected-paths
+protected:
+  - path: .github/workflows/**
+    reason: >-
+      These decide whether a change is accepted. A task that can edit them can
+      approve its own work, which makes every other check advisory.
+
+  - path: policies/**
+    reason: >-
+      A task that can edit the policy can remove the rule stopping it. The
+      restriction has to be outside what it restricts.
+
+  - path: .le/workspace.yaml
+    reason: >-
+      The workspace identity pin. Changing it re-points every piece of stored
+      state at a different workspace, which reads as data loss rather than as
+      an edit.
+
+  - path: semgrep/**
+    reason: >-
+      Project-invariant rules. A task that can delete the rule it violates has
+      not satisfied it.
+
+  - path: schemas/**
+    reason: >-
+      These are what the configuration is validated against. Loosening one is a
+      decision about the contract, not part of a task.

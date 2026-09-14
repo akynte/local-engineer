@@ -84,7 +84,7 @@ isolation: ## The workspace isolation tests, and proof they can fail
 
 .PHONY: schemas
 schemas: ## Migrations apply, profiles validate, compose files parse
-	$(GO) test -run 'TestMigrations|TestShippedProfiles' ./internal/... 
+	$(GO) test -run 'TestMigrations|TestShippedProfiles|TestSchemas|TestSchemaAndLoaderAgree|TestShippedTasksValidate|TestDefaultConfigValidates|TestDefaultProvidersValidate' ./internal/... 
 	docker compose -f deploy/docker-compose.yml config -q
 	LE_MODEL=placeholder.gguf docker compose -f deploy/docker-compose.split.yml config -q
 	$(MAKE) --no-print-directory benchmarks-check

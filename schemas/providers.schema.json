@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/akynte/local-engineer/schemas/providers.schema.json",
+  "title": "Provider and role routing",
+  "description": "/data/config/providers.yaml (design v3 §9.1). The shipped state maps every role to one local model; multi-model routing is off by default and turned on per role only with evidence that it helps.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["providers"],
+  "properties": {
+    "default": { "type": "string", "description": "The provider every unrouted role uses." },
+    "providers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "kind"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "kind": {
+            "enum": ["llamacpp", "openai_compatible", "anthropic", "openai"],
+            "description": "The four provider kinds at 1.0 (§9.1)."
+          },
+          "base_url": { "type": "string" },
+          "model": { "type": "string" },
+          "api_key_env": {
+            "type": "string",
+            "description": "Names an environment variable rather than holding a secret, so this file stays safe to commit and to attach to a bug report."
+          },
+          "capabilities": {
+            "type": "object",
+            "description": "DR-4 makes these a promise callers rely on: the engine refuses a provider that cannot call tools, and ChatStructured refuses rather than degrading. Declare only what this server actually does — `le models conformance` checks.",
+            "additionalProperties": false,
+            "properties": {
+              "kind": { "type": "string" },
+              "tool_calling": { "type": "boolean" },
+              "structured_output": { "type": "boolean" },
+              "grammar": { "type": "boolean" },
+              "infill": { "type": "boolean", "description": "llama.cpp needs a model with fill-in-the-middle tokens; not a property of the server." },
+              "embeddings": { "type": "boolean", "description": "llama-server needs --embeddings; not a property of the server." },
+              "vision": { "type": "boolean" },
+              "thinking_control": { "type": "boolean" },
+              "max_context": { "type": "integer", "minimum": 0 },
+              "local": { "type": "boolean" },
+              "cost_per_mtok_in": { "type": "number", "minimum": 0 },
+              "cost_per_mtok_out": { "type": "number", "minimum": 0 }
+            }
+          }
+        }
+      }
+    },
+    "roles": {
+      "type": "object",
+      "description": "Overrides the default per role. Empty is the shipped state.",
+      "additionalProperties": { "type": "string" },
+      "propertyNames": {
+        "enum": ["orchestration", "planning", "coding", "repository_search", "summarization",
+                 "review", "classification", "reranking", "verification", "embedding"]
+      }
+    }
+  }
+}
