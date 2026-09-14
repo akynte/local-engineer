@@ -486,3 +486,46 @@ func TestMessagesWithoutImagesKeepTheStringForm(t *testing.T) {
 		t.Errorf("a message with no images did not keep the string content form: %v", msgs[0])
 	}
 }
+
+// llama.cpp implements embeddings and infill, but neither is a property of the
+// server: embeddings need it started with `--embeddings`, and infill needs a
+// model carrying fill-in-the-middle tokens. Declaring them by default promised
+// something an ordinary llama-server answers with HTTP 501.
+//
+// DR-4 makes a declaration something callers rely on, so it has to describe
+// this server rather than the software in general.
+func TestLlamaCPPDoesNotDeclareConditionalCapabilities(t *testing.T) {
+	caps := llm.NewLlamaCPP(llm.Options{Name: "local", BaseURL: "http://127.0.0.1:8080"}).Capabilities()
+
+	if caps.Embeddings {
+		t.Error("embeddings are declared by default, but they require --embeddings")
+	}
+	if caps.Infill {
+		t.Error("infill is declared by default, but it requires a model with FIM tokens")
+	}
+	// What the server does have regardless of how it was started stays declared.
+	for name, got := range map[string]bool{
+		"tool calling":      caps.ToolCalling,
+		"structured output": caps.StructuredOutput,
+		"grammar":           caps.Grammar,
+		"thinking control":  caps.ThinkingControl,
+		"local":             caps.Local,
+	} {
+		if !got {
+			t.Errorf("%s is no longer declared for llama.cpp", name)
+		}
+	}
+}
+
+// An operator who did start it with --embeddings says so explicitly, and that
+// declaration must be honoured.
+func TestExplicitCapabilitiesOverrideTheDefaults(t *testing.T) {
+	caps := llm.NewLlamaCPP(llm.Options{
+		Name: "local", BaseURL: "http://127.0.0.1:8080",
+		Caps: llm.Capabilities{Kind: llm.KindLlamaCPP, Embeddings: true, Local: true},
+	}).Capabilities()
+
+	if !caps.Embeddings {
+		t.Error("an explicit embeddings declaration was discarded")
+	}
+}

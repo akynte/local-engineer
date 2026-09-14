@@ -63,8 +63,21 @@ func NewLlamaCPP(o Options) *OpenAICompatible {
 	if o.Caps.Kind == "" {
 		o.Caps = Capabilities{
 			Kind: KindLlamaCPP, ToolCalling: true, StructuredOutput: true, Grammar: true,
-			Infill: true, Embeddings: true, ThinkingControl: true, Local: true,
+			ThinkingControl: true, Local: true,
 			MaxContext: o.Caps.MaxContext,
+
+			// Embeddings and infill are deliberately NOT declared here, even
+			// though llama.cpp implements both. Neither is a property of the
+			// server: embeddings need it started with `--embeddings`, and
+			// infill needs a model with fill-in-the-middle tokens. Declaring
+			// them by default made `le models conformance` fail against a
+			// perfectly ordinary llama-server with HTTP 501, which is the
+			// right answer to the wrong promise.
+			//
+			// DR-4 makes a declaration something callers rely on, so it has to
+			// describe this server rather than the software in general. An
+			// operator who did start it that way says so with an explicit
+			// `capabilities:` block in providers.yaml.
 		}
 	}
 	return NewOpenAICompatible(o)
