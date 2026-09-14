@@ -23,7 +23,7 @@ func newModelsCmd() *cobra.Command {
 			"`le models bench` measures this machine and writes a profile from what it saw,\n" +
 			"so the numbers the supervisor admits tasks against are measured rather than guessed.",
 	}
-	cmd.AddCommand(newModelsBenchCmd(), newModelsHealthCmd())
+	cmd.AddCommand(newModelsBenchCmd(), newModelsHealthCmd(), newModelsConformanceCmd())
 	return cmd
 }
 
@@ -164,4 +164,71 @@ func newModelsHealthCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+// newModelsConformanceCmd checks a provider against its own declarations.
+func newModelsConformanceCmd() *cobra.Command {
+	var (
+		role    string
+		asJSON  bool
+		timeout int
+	)
+	cmd := &cobra.Command{
+		Use:   "conformance",
+		Short: "Check that a provider does what providers.yaml says it does",
+		Long: "DR-4 puts every backend behind one API and accepts that feature gaps are\n" +
+			"hidden behind it, so Capabilities is a promise callers are allowed to rely\n" +
+			"on: the engine refuses a provider that cannot call tools, and ChatStructured\n" +
+			"refuses rather than degrading.\n\n" +
+			"Nothing checked whether a declaration was true. A providers.yaml entry that\n" +
+			"claims tool calling for a model that cannot do it produces malformed calls\n" +
+			"inside a task, where the failure looks like the model being bad at its job.\n" +
+			"This runs each declared capability against the provider and reports what it\n" +
+			"actually did.\n\n" +
+			"A capability that is not declared is skipped, never failed: a provider is\n" +
+			"allowed to be limited, it is not allowed to be wrong about itself.",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			root, err := openRoot()
+			if err != nil {
+				return err
+			}
+			defer closeRoot(cmd, root)
+
+			cfg, _ := loadConfig(root)
+			f, err := llm.LoadProvidersFile(root.Layout().ConfigDir())
+			if err != nil {
+				return fmt.Errorf("no providers.yaml: run `le config init` first (%w)", err)
+			}
+			router, err := llm.NewRouter(f, cfg.Offline)
+			if err != nil {
+				return err
+			}
+			defer router.Close()
+
+			p, err := router.For(llm.Role(role))
+			if err != nil {
+				return err
+			}
+
+			res := models.CheckConformance(cmd.Context(), p, models.ConformanceOptions{
+				Timeout:  time.Duration(timeout) * time.Second,
+				Progress: func(msg string) { fmt.Fprintf(cmd.ErrOrStderr(), "  %s\n", msg) },
+			})
+			if asJSON {
+				if err := emitJSON(res); err != nil {
+					return err
+				}
+			} else {
+				fmt.Fprint(cmd.OutOrStdout(), "\n"+res.Format())
+			}
+			if !res.Passed {
+				return fmt.Errorf("provider %s does not match its declared capabilities", p.Name())
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&role, "role", string(llm.RoleCoding), "which role's provider to check")
+	cmd.Flags().IntVar(&timeout, "timeout", 180, "seconds allowed for each check")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON")
+	return cmd
 }

@@ -190,6 +190,9 @@ evaluation results looks like one whose results mean something.
 
 ## Phase 6 — Breadth ⬜ **next**
 
+- [x] `le models conformance`: checks a provider against what providers.yaml
+      declares about it, because DR-4 makes those declarations something
+      callers rely on and nothing verified them
 - [ ] Provider implementations beyond the current four
 - [ ] Profiles for other hardware classes
 - [x] Split compose variant exercised in CI — brought up against a stub
@@ -202,6 +205,21 @@ evaluation results looks like one whose results mean something.
 - [ ] Everything above
 - [ ] The acceptance matrix passing end to end
 - [ ] Signed release with SBOM, provenance and a published benchmark snapshot
+
+**The acceptance matrix has no specification here.** v3 defers it to "the v2.0
+Section 18 matrix", and v2.0 is not in this repository — v3 is the only source
+of truth available. The same is true of "Stage A", which v3 names in the Phase 6
+exit condition and in the model-report issue form without ever defining it.
+
+Two things follow, and both are recorded rather than papered over:
+
+- What v3 *does* state per phase is a table of exit conditions (§14), and those
+  are testable. Phase 6's is "a second provider passes Stage A; a CPU-only
+  profile runs the tutorial end to end".
+- `le models conformance` is what Stage A appears to be from how v3 uses it — a
+  per-model capability report an operator can paste into an issue. It was built
+  from that description, not from the v2.0 definition, and it is named for what
+  it does rather than for a stage nobody here can read.
 
 Versioning stays at `0.y.z` until then.
 
