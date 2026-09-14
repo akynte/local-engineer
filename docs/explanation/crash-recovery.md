@@ -118,7 +118,27 @@ All of these produce the same journal state, and are handled the same way:
 | Context restart | Checkpoint plus handoff, no uncertainty |
 
 The uniformity is the point. There is no separate code path per failure mode,
-so there is no rarely-exercised path to get wrong.
+so there is no rarely-exercised path to get wrong. The Stage D suite in
+`internal/ledger/staged_test.go` tests exactly that: every class crossed with
+every worktree condition, asserting the verdict comes from the worktree and
+never from how the process stopped. The two that cannot be simulated — `kill -9`
+and `SIGTERM` — re-execute the test binary and kill a real child, because what
+makes them interesting is that no deferred cleanup runs and SQLite has to
+recover its own write-ahead log.
+
+## A recorded error is not an outcome
+
+There is one distinction the table depends on. `Fail` records a *definite*
+failure: the side effect is known not to have taken hold, so recovery does not
+inspect. `Interrupted` records a cause and leaves the operation uncertain.
+
+Most things that go wrong are the second kind. An engine step reads files,
+writes edits and runs verification before it can return an error, so an error
+from the middle of one leaves a worktree nobody has looked at. Recording that as
+a definite failure marks the operation certain — and recovery skips inspection
+for certain operations, so a half-applied set of edits would never be examined.
+That is why a model failure appears in the table as "intent with no outcome,
+plus a recorded error": the error explains, it does not decide.
 
 ## Seeing it
 

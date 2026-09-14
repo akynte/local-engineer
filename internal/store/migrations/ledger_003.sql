@@ -1,0 +1,11 @@
+-- ledger.db, schema 3. The cause of an interrupted operation.
+--
+-- `outcome IS NULL` means uncertain, and that is what recovery inspects for.
+-- An operation that was interrupted after its side effect may have taken hold,
+-- so it must stay uncertain — but the reason it stopped is worth keeping, and
+-- writing it into `outcome` would claim a certainty nobody has.
+--
+-- docs/explanation/crash-recovery.md describes exactly this state for a model
+-- failure: "intent with no outcome, plus a recorded error if it was caught".
+-- This column is where that error goes.
+ALTER TABLE operations ADD COLUMN error TEXT;

@@ -276,8 +276,18 @@ func nextAction(st WorkingState) string {
 }
 
 // inspect implements the classification of §7.2 step 1.
-func inspect(op Operation, worktree string) Reconciliation {
-	r := Reconciliation{Operation: op, Applied: AppliedUnknown}
+// inspect classifies one uncertain operation by looking at the worktree.
+//
+// The result is named so the deferred prefix below actually reaches the caller:
+// with an unnamed result `return r` copies the value before any deferred
+// mutation runs, and the cause would be silently dropped.
+func inspect(op Operation, worktree string) (r Reconciliation) {
+	r = Reconciliation{Operation: op, Applied: AppliedUnknown}
+	// A recorded cause explains why the operation stopped. It never decides
+	// whether the side effect took hold: that is settled by looking, below.
+	if op.Error != "" {
+		defer func() { r.Detail = strings.TrimSpace("interrupted: " + op.Error + ". " + r.Detail) }()
+	}
 	switch op.Kind {
 	case KindEdit:
 	case KindRecipeRun:

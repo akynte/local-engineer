@@ -401,8 +401,13 @@ func (r *Runner) step(ctx context.Context, t *Task, wt *worktree.Worktree,
 		Budget: engine.Budget{MaxTokens: t.Budget.MaxTokens},
 	})
 	if stepErr != nil {
-		// A recorded failure is definite: recovery does not need to inspect.
-		if err := h.Fail(ctx, stepErr); err != nil {
+		// The step is not definite. By the time it returns an error the engine
+		// may have read files, written edits and run verification, so the
+		// worktree is in a state nobody has looked at. Recording a definite
+		// failure would mark the operation certain, and recovery skips
+		// inspection for certain operations — so half-applied edits would never
+		// be examined. The cause is kept and the operation stays uncertain.
+		if err := h.Interrupted(ctx, stepErr); err != nil {
 			return 0, err
 		}
 		return 0, fmt.Errorf("task %s: engine step: %w", t.ID, stepErr)

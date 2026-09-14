@@ -24,7 +24,7 @@ decides acceptance from evidence alone — then opens a human gate carrying the
 diff and the findings before anything is applied.
 
 **Not implemented**: a TypeScript type checker (the analyzer is lexical; see
-Phase 4), and the Stage D interruption suite.
+Phase 4).
 
 The evaluation harness has been run against a local model — 3 tasks × 4 arms ×
 5 passes, 60 runs, published in `docs/benchmarks/results/`. It settled nothing:
@@ -62,7 +62,7 @@ executes every marked command block and fails the build on stale documentation.
 - [x] The engine's file operations are confined to the worktree, tested against
       traversal and symlink escapes, on top of the sandbox
 
-## Phase 2 — Crash safety ✅ (core)
+## Phase 2 — Crash safety ✅
 
 - [x] Execution journal: intent before the side effect, outcome after
 - [x] Recovery: reconcile, classify uncertain operations by inspection,
@@ -70,7 +70,10 @@ executes every marked command block and fails the build on stale documentation.
 - [x] Worktree leases with expiry
 - [x] `le backup` and `le restore`, round-trip verified
 - [x] Every task attempt journalled intent-first, with a checkpoint on finish
-- [ ] Full Stage D interruption-class suite driving long-running model tasks
+- [x] Full Stage D interruption-class suite: all eight classes, each crossed
+      with the three worktree conditions, asserting the recovery verdict comes
+      from the worktree and never from how the process stopped. `kill -9` and
+      `SIGTERM` kill a real child process rather than simulating one
 
 ## Phase 3 — Task execution ✅
 
