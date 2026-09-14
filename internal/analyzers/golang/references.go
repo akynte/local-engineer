@@ -121,13 +121,13 @@ func (b *builder) emitImplements(p *packages.Package, idx *typeIndex) {
 		}
 		ifaceFQN := objectFQN(tn)
 		for _, impl := range idx.implementers[ifaceFQN] {
-			// Direction: the implementation is a consumer of the interface, so
-			// changing the interface reaches the implementation on a reverse
-			// walk. That is what makes "add a method" report every type that
-			// must grow one.
+			// The implementation points at the interface, following the
+			// direction invariant in internal/graph: impact analysis walks
+			// backwards, so "add a method to this interface" must reach every
+			// type that has to grow one.
 			b.addEdge(index.PendingEdge{
-				SrcKind: graph.KindInterface, SrcFQN: ifaceFQN,
-				DstKind: graph.KindType, DstFQN: objectFQN(impl),
+				SrcKind: graph.KindType, SrcFQN: objectFQN(impl),
+				DstKind: graph.KindInterface, DstFQN: ifaceFQN,
 				Kind: graph.EdgeImplements, Evidence: graph.Resolved,
 			})
 		}
@@ -229,6 +229,10 @@ func (b *builder) emitCall(p *packages.Package, callerFQN string, ck graph.NodeK
 
 	// A configuration read is a call to os.Getenv with a literal key.
 	if b.emitConfigRead(p, callerFQN, ck, fn, call) {
+		return
+	}
+	// A database call, whose query names the schema objects it touches.
+	if b.emitSQLRef(&pkgInfo{pkg: p}, callerFQN, ck, fn, call) {
 		return
 	}
 	// A route registration is a call to an HTTP mux with a literal pattern.

@@ -114,11 +114,14 @@ reports what is *actually* in effect, not what the design hopes for:
   success rate. When `docs/benchmarks/results/` has numbers, the claims will
   come from there and the methodology and scripts will be public so anyone can
   reproduce or dispute them. (Storage and graph numbers *are* published.)
-- **Only Go has a language analyzer.** TypeScript, schema, build and
-  infrastructure edges are declared in the schema but not yet produced; the
+- **TypeScript has no analyzer yet.** Go, SQL schemas, Dockerfiles, Makefiles,
+  compose, Kubernetes and Terraform do. The
   [graph schema reference](docs/reference/graph-schema.md) marks the state per
-  language, because a schema describing edges the code does not emit would
+  relationship, because a schema describing edges the code does not emit would
   make impact reports look better than they are.
+- **Helm templates are recorded, not parsed.** Rendering a chart needs values
+  the analyzer does not have, and a half-rendered template read as YAML
+  produces confident nonsense.
 
 ## Documentation
 

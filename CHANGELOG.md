@@ -93,9 +93,47 @@ Released sections are generated from Conventional Commits at release time.
   lost one. Which decisions gate is configuration; a budget increase always is.
 - `le plan`, `le gate list/show/approve/reject`.
 
+- **Schema analyzer**: a pure-Go PostgreSQL DDL parser over migrations,
+  applied in file order so the result is the schema as it ends up. Statements
+  outside the subset are counted and reported rather than skipped silently.
+- **Schema to application code**: type-checked database call sites, so a table
+  change finds the queries that read it. A literal query is `resolved`; a
+  wrapper driver matched by method name is `inferred`; a query assembled at
+  runtime names no table at all.
+- **Deployment and build analyzers**: compose services and their environment,
+  Kubernetes workloads and ConfigMaps, Dockerfile stages and `COPY` sources,
+  Makefile targets. Helm templates are recorded as present but not parsed,
+  because rendering needs chart values.
+- **Terraform analyzer**: resources, modules, variables and the references
+  between them, plus the environment variables they set.
+- An impact report now crosses analyzer boundaries: changing a configuration
+  key finds the Go code, the compose service, the Dockerfile stage and the
+  Terraform resource in one traversal.
+
+### Fixed
+
+- **Edge directions that made consumers invisible.** Impact analysis is a
+  reverse traversal, so an edge pointing the wrong way is not wrong in any
+  visible way — the report simply comes back short. `implements` pointed
+  interface → type, so adding a method to an interface reported **zero**
+  implementations; `reads_config` pointed key → reader in the Go analyzer but
+  reader → key everywhere else, so a config change found the manifests that
+  set a variable but not the code that read it. Both corrected, the invariant
+  is stated where edge kinds are defined, and a cross-analyzer test guards it.
+- **`#` or `?` in a data-directory path silently opened the wrong database.**
+  The SQLite DSN concatenated the path into a `file:` URI, where `#` starts a
+  fragment and `?` starts a query — so the path was truncated, and two
+  workspaces differing only after that character resolved to the *same file*.
+  Both opened successfully, so nothing downstream could detect it. The path is
+  now escaped into the URI.
+- **Analyzer output order was load-bearing.** Edges were resolved per analyzer,
+  so a cross-analyzer edge was dropped unless its target happened to be written
+  first. The indexer now runs every analyzer, writes every node, then resolves
+  every edge.
+
 ### Known gaps
 
-- Language analyzers beyond Go and commit history.
+- TypeScript has no analyzer. It needs a Node sidecar for the TS compiler API.
 - The evaluation harness. No task-success numbers are published.
 - [The graph schema reference](docs/reference/graph-schema.md) marks the state
   per language.

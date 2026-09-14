@@ -353,3 +353,85 @@ func TestGuardRejectsForeignSlices(t *testing.T) {
 		t.Errorf("the rejection must name both workspaces, got %+v", fse)
 	}
 }
+
+// A workspace path containing a URI metacharacter must open its own database.
+//
+// This is not hypothetical tidiness. "#" starts a fragment and "?" starts a
+// query in a URI, so a concatenated path was silently truncated at either —
+// and two workspaces whose paths differed only after that character resolved
+// to the *same file*. Both opened successfully, so nothing downstream could
+// detect it.
+func TestPathsWithURIMetacharactersGetTheirOwnDatabase(t *testing.T) {
+	ctx := context.Background()
+
+	for _, name := range []string{"plain", "with#hash", "with?query", "with space", "with%percent"} {
+		t.Run(name, func(t *testing.T) {
+			base := filepath.Join(t.TempDir(), name)
+			if err := os.MkdirAll(base, 0o750); err != nil {
+				t.Fatal(err)
+			}
+			root, err := store.OpenRoot(base)
+			if err != nil {
+				t.Fatalf("opening a data directory under %q: %v", name, err)
+			}
+			defer root.CloseAll()
+
+			id := workspace.DeriveID("/uri/"+name, "", name)
+			st, err := root.OpenWorkspace(ctx, id)
+			if err != nil {
+				t.Fatalf("opening a workspace under %q: %v", name, err)
+			}
+			// The database must be the file the layout named, not one the URI
+			// parser invented.
+			if _, err := os.Stat(root.Layout().IndexDB(id)); err != nil {
+				t.Fatalf("the index database was not created where the layout says: %v", err)
+			}
+			if _, err := st.Index().SQL().ExecContext(ctx,
+				`INSERT INTO repositories (repository_id, workspace_id, name, rel_path)
+				 VALUES ('r', ?, 'r', '.')`, id.String()); err != nil {
+				t.Fatalf("writing to the database: %v", err)
+			}
+		})
+	}
+}
+
+// Two data directories differing only after a "#" must not share storage.
+func TestTwoDirectoriesDifferingAfterAHashDoNotShareADatabase(t *testing.T) {
+	ctx := context.Background()
+	parent := t.TempDir()
+
+	open := func(name string) *store.Store {
+		t.Helper()
+		base := filepath.Join(parent, name)
+		if err := os.MkdirAll(base, 0o750); err != nil {
+			t.Fatal(err)
+		}
+		root, err := store.OpenRoot(base)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { root.CloseAll() })
+		st, err := root.OpenWorkspace(ctx, workspace.DeriveID("/uri/"+name, "", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return st
+	}
+
+	a := open("data#one")
+	b := open("data#two")
+
+	if _, err := a.Index().SQL().ExecContext(ctx,
+		`INSERT INTO repositories (repository_id, workspace_id, name, rel_path)
+		 VALUES ('only-in-a', ?, 'a', '.')`, a.ID().String()); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := b.Index().SQL().QueryRowContext(ctx,
+		`SELECT count(*) FROM repositories WHERE repository_id = 'only-in-a'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatal("two data directories differing only after a '#' are sharing one database")
+	}
+}

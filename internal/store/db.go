@@ -49,6 +49,13 @@ func (d *DB) SQL() *sql.DB { return d.sql }
 // dsn builds the connection string. §5.4: WAL mode, busy timeout, foreign keys
 // on, and BEGIN IMMEDIATE for write transactions so that two writers fail fast
 // instead of deadlocking.
+//
+// The path is escaped into the URI rather than concatenated. A concatenated
+// path breaks on the two characters that mean something in a URI: "#" starts a
+// fragment and "?" starts a query, so a workspace under a directory containing
+// either would be silently truncated — and two different workspaces could
+// resolve to the same file. That is a breach of the isolation contract that
+// nothing downstream could detect, because both would open successfully.
 func dsn(path string, dur Durability) string {
 	q := url.Values{}
 	q.Set("_journal", "WAL")
@@ -58,7 +65,9 @@ func dsn(path string, dur Durability) string {
 	q.Set("_txlock", "immediate")
 	q.Add("_pragma", "busy_timeout(5000)")
 	q.Add("_pragma", "wal_autocheckpoint(512)")
-	return "file:" + path + "?" + q.Encode()
+
+	u := url.URL{Scheme: "file", Path: path, RawQuery: q.Encode()}
+	return u.String()
 }
 
 func openDB(ctx context.Context, ws workspace.ID, name, path string, dur Durability) (*DB, error) {

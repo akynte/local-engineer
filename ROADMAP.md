@@ -93,20 +93,37 @@ implementation of `engine.Engine` — the contract was designed for exactly that
 — and the decision record should be superseded rather than quietly ignored if
 the native engine turns out to be the permanent answer.
 
-## Phase 4 — Language analyzers and the full graph 🟡 (Go done)
+## Phase 4 — Language analyzers and the full graph ✅ (except TypeScript)
 
 - [x] Go: modules, packages, imports, call graph, interface satisfaction,
       type usage, signatures, struct fields, tests, configuration keys, routes
+- [x] Schema: a pure-Go DDL parser over migrations, with migrations applied in
+      order so the result is the schema as it ends up
+- [x] Schema to application code: type-checked database call sites, so a table
+      change finds the queries that read it
+- [x] Build: Dockerfile stages and `COPY` sources, Makefile targets
+- [x] Deployment: compose and Kubernetes; Helm templates recorded but not
+      parsed, because rendering needs chart values
+- [x] Infrastructure: Terraform HCL, with resource references and the
+      environment variables they set
 - [x] Commit history as a first-class relation
 - [x] Storage and graph benchmarks published
-- [ ] TypeScript: program module graph, call sites, references
-- [ ] Schema edges: `pg_query_go` over migrations, sqlc, proto
-- [ ] Build, deployment and infrastructure edges: Dockerfile, Makefile,
-      compose, Helm, Terraform
+- [ ] **TypeScript**: program module graph, call sites, references
 
-Every Go relationship from the design's coverage table is implemented and
-tested against a real type-checked fixture. The per-language state is in
-[the graph schema reference](docs/reference/graph-schema.md).
+An impact report now crosses analyzer boundaries: changing a table finds the Go
+queries that read it, and changing a configuration key finds the code, the
+compose service, the Dockerfile stage and the Terraform resource in one
+traversal.
+
+Two things are recorded as deviations rather than done quietly:
+
+- **The schema parser is not `pg_query_go`.** That is cgo, and the CGO-free
+  build is load-bearing for DR-1's static multi-arch binary. The DDL subset is
+  narrow and *reports* what it could not parse. See
+  [the graph schema reference](docs/reference/graph-schema.md).
+- **TypeScript needs a Node sidecar**, because real type checking means the TS
+  compiler API. The design anticipates this — `sidecars/` is in the repository
+  layout — but it is not built.
 
 ## Phase 5 — Evaluation ⬜ **next**
 

@@ -173,6 +173,20 @@ func (ix *Indexer) Repository(ctx context.Context, repositoryID, absRoot string)
 	}
 	st.Chunks = chunks
 
+	// Every analyzer runs first, then every node is written, then every edge.
+	//
+	// The three phases are what make analyzers independent of each other. An
+	// edge is dropped when an endpoint does not exist, so resolving edges per
+	// analyzer would silently lose every cross-analyzer relationship whose
+	// target had not been written yet — the Go analyzer's reads_schema edges
+	// would vanish unless the SQL analyzer happened to run first. Order then
+	// becomes load-bearing in a way nothing declares.
+	type analyzed struct {
+		name   string
+		result Result
+	}
+	var outputs []analyzed
+
 	for _, a := range ix.opts.Analyzers {
 		var accepted []File
 		for _, f := range files {
@@ -187,11 +201,21 @@ func (ix *Indexer) Repository(ctx context.Context, repositoryID, absRoot string)
 		if err != nil {
 			return st, fmt.Errorf("index: analyzer %s: %w", a.Name(), err)
 		}
-		n, e, err := ix.writeResult(ctx, repositoryID, a.Name(), res)
+		outputs = append(outputs, analyzed{name: a.Name(), result: res})
+	}
+
+	for _, out := range outputs {
+		n, err := ix.writeNodes(ctx, repositoryID, out.result.Nodes)
 		if err != nil {
-			return st, err
+			return st, fmt.Errorf("index: analyzer %s: %w", out.name, err)
 		}
 		st.Nodes += n
+	}
+	for _, out := range outputs {
+		e, err := ix.writeEdges(ctx, repositoryID, out.name, out.result.Edges)
+		if err != nil {
+			return st, fmt.Errorf("index: analyzer %s: %w", out.name, err)
+		}
 		st.Edges += e
 	}
 
@@ -512,34 +536,71 @@ func chunkFile(path string, lines int) ([]window, error) {
 	return out, nil
 }
 
-func (ix *Indexer) writeResult(ctx context.Context, repositoryID, source string, res Result) (int, int, error) {
-	for i := range res.Nodes {
-		res.Nodes[i].RepositoryID = repositoryID
+// writeNodes persists an analyzer's nodes.
+func (ix *Indexer) writeNodes(ctx context.Context, repositoryID string, nodes []graph.Node) (int, error) {
+	if len(nodes) == 0 {
+		return 0, nil
 	}
-	if _, err := ix.g.UpsertNodes(ctx, res.Nodes); err != nil {
-		return 0, 0, err
+	for i := range nodes {
+		nodes[i].RepositoryID = repositoryID
 	}
-	var edges []graph.Edge
-	for _, pe := range res.Edges {
-		src, err := ix.g.NodeByFQN(ctx, repositoryID, pe.SrcKind, pe.SrcFQN)
-		if err != nil {
-			continue // an edge whose endpoint was not indexed is "not discovered", not an error
+	if _, err := ix.g.UpsertNodes(ctx, nodes); err != nil {
+		return 0, err
+	}
+	return len(nodes), nil
+}
+
+// writeEdges resolves an analyzer's edges against every node written so far.
+//
+// An edge whose endpoint does not exist is dropped, not an error: a missing
+// edge means "not discovered", which is exactly the right answer for a COPY
+// glob, a foreign key to a table defined elsewhere, or a call into a
+// dependency.
+func (ix *Indexer) writeEdges(ctx context.Context, repositoryID, source string, pending []PendingEdge) (int, error) {
+	if len(pending) == 0 {
+		return 0, nil
+	}
+	// One lookup per distinct endpoint rather than per edge: a large analyzer
+	// output repeats the same endpoints many times.
+	type key struct {
+		kind graph.NodeKind
+		fqn  string
+	}
+	ids := make(map[key]int64, len(pending)*2)
+	lookup := func(k key) (int64, bool) {
+		if id, seen := ids[k]; seen {
+			return id, id != 0
 		}
-		dst, err := ix.g.NodeByFQN(ctx, repositoryID, pe.DstKind, pe.DstFQN)
+		n, err := ix.g.NodeByFQN(ctx, repositoryID, k.kind, k.fqn)
 		if err != nil {
+			ids[k] = 0
+			return 0, false
+		}
+		ids[k] = n.ID
+		return n.ID, true
+	}
+
+	var edges []graph.Edge
+	for _, pe := range pending {
+		src, ok := lookup(key{pe.SrcKind, pe.SrcFQN})
+		if !ok {
+			continue
+		}
+		dst, ok := lookup(key{pe.DstKind, pe.DstFQN})
+		if !ok {
 			continue
 		}
 		ev := pe.Evidence
 		if ev == "" {
 			ev = graph.Unknown
 		}
-		edges = append(edges, graph.Edge{Src: src.ID, Dst: dst.ID, Kind: pe.Kind,
+		edges = append(edges, graph.Edge{Src: src, Dst: dst, Kind: pe.Kind,
 			Evidence: ev, Source: source, Attrs: pe.Attrs})
 	}
 	if err := ix.g.UpsertEdges(ctx, edges); err != nil {
-		return 0, 0, err
+		return 0, err
 	}
-	return len(res.Nodes), len(edges), nil
+	return len(edges), nil
 }
 
 // recordIndexKey stores the content manifest for the repository so that §3.4's

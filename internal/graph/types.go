@@ -85,19 +85,40 @@ const (
 )
 
 // EdgeKind enumerates the relationships of the coverage table in §3.2.
+//
+// # Direction invariant
+//
+// Every edge points from the consumer to the thing consumed: A -> B means
+// "A depends on B, so a change to B may affect A".
+//
+// This is not a stylistic convention. Impact analysis is a *reverse*
+// traversal: from the changed node it follows edges backwards to find what
+// depends on it. An edge pointing the wrong way is therefore invisible to
+// impact analysis, and the report is silently incomplete rather than wrong in
+// any way a reader could notice.
+//
+// Two edges were originally written backwards and the consequence was exactly
+// that: adding a method to an interface reported zero implementations, and a
+// configuration key reported the manifests that set it but not the code that
+// read it. TestEdgeDirectionInvariant guards against a third.
 type EdgeKind string
 
 const (
-	EdgeContains     EdgeKind = "contains"      // directory/file/package containment
-	EdgeImports      EdgeKind = "imports"       // import to dependency
-	EdgeDependsOn    EdgeKind = "depends_on"    // module to module, package to package
-	EdgeCalls        EdgeKind = "calls"         // function to function
-	EdgeImplements   EdgeKind = "implements"    // interface to implementation
-	EdgeUsesType     EdgeKind = "uses_type"     // type to usage
-	EdgeReferences   EdgeKind = "references"    // API to consumer
-	EdgeRoutesTo     EdgeKind = "routes_to"     // route to handler
-	EdgeHandles      EdgeKind = "handles"       // handler to service
-	EdgeReadsConfig  EdgeKind = "reads_config"  // configuration to consumer
+	EdgeContains  EdgeKind = "contains"   // directory/file/package containment
+	EdgeImports   EdgeKind = "imports"    // import to dependency
+	EdgeDependsOn EdgeKind = "depends_on" // module to module, package to package
+	EdgeCalls     EdgeKind = "calls"      // function to function
+	// EdgeImplements points from an implementation to the interface it
+	// satisfies, so a change to the interface finds every type that must grow
+	// a method.
+	EdgeImplements EdgeKind = "implements"
+	EdgeUsesType   EdgeKind = "uses_type"  // type to usage
+	EdgeReferences EdgeKind = "references" // API to consumer
+	EdgeRoutesTo   EdgeKind = "routes_to"  // route to handler
+	EdgeHandles    EdgeKind = "handles"    // handler to service
+	// EdgeReadsConfig points from whatever reads or sets a key to the key
+	// itself, so a change to the key finds the code and the manifests alike.
+	EdgeReadsConfig  EdgeKind = "reads_config"
 	EdgeWritesSchema EdgeKind = "writes_schema" // migration to table
 	EdgeReadsSchema  EdgeKind = "reads_schema"  // schema to application code
 	EdgeTests        EdgeKind = "tests"         // test to implementation

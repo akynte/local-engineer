@@ -7,7 +7,11 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/akynte/local-engineer/internal/analyzers/deploy"
+	"github.com/akynte/local-engineer/internal/analyzers/gitlog"
 	"github.com/akynte/local-engineer/internal/analyzers/golang"
+	sqlan "github.com/akynte/local-engineer/internal/analyzers/sql"
+	"github.com/akynte/local-engineer/internal/analyzers/terraform"
 	"github.com/akynte/local-engineer/internal/index"
 	"github.com/akynte/local-engineer/internal/retrieval"
 )
@@ -66,15 +70,37 @@ func newIndexCmd() *cobra.Command {
 	return cmd
 }
 
-// analyzers returns the language analyzers `le index` runs after the
-// filesystem layer. Each reports its own non-fatal problems: a module that
-// will not type-check must not lose the rest of the index.
+// analyzers returns the analyzers `le index` runs after the filesystem layer.
+//
+// Each reports its own non-fatal problems and none of them can fail the run:
+// a module that will not type-check, a malformed manifest or a migration using
+// a statement the parser does not cover must all lose only their own edges,
+// never the rest of the index.
+//
+// Order matters only for readability of the warnings; the analyzers do not
+// depend on each other. They meet in the graph, where the SQL analyzer's table
+// nodes are what the Go analyzer's reads_schema edges point at.
 func analyzers(cmd *cobra.Command) []index.Analyzer {
-	goa := golang.New()
-	goa.Warnf = func(format string, args ...any) {
+	warn := func(format string, args ...any) {
 		fmt.Fprintf(cmd.ErrOrStderr(), format+"\n", args...)
 	}
-	return []index.Analyzer{goa}
+
+	goa := golang.New()
+	goa.Warnf = warn
+
+	sqla := sqlan.New()
+	sqla.Warnf = warn
+
+	dep := deploy.New()
+	dep.Warnf = warn
+
+	tf := terraform.New()
+	tf.Warnf = warn
+
+	gitl := gitlog.New()
+	gitl.Warnf = warn
+
+	return []index.Analyzer{goa, sqla, dep, tf, gitl}
 }
 
 func newGraphCmd() *cobra.Command {

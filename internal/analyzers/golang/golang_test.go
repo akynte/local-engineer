@@ -231,8 +231,11 @@ func TestImportsAreResolved(t *testing.T) {
 func TestInterfaceSatisfactionUsesTheTypeChecker(t *testing.T) {
 	a := analyze(t)
 
+	// The implementation points at the interface: impact analysis walks
+	// backwards, so "add a method to this interface" must reach every type
+	// that has to grow one.
 	for _, impl := range []string{postgres, memory} {
-		e := a.edge(t, graph.EdgeImplements, loader, impl)
+		e := a.edge(t, graph.EdgeImplements, impl, loader)
 		if e.Evidence != graph.Resolved {
 			t.Errorf("%s implements %s must be resolved, got %s", impl, loader, e.Evidence)
 		}
@@ -240,7 +243,7 @@ func TestInterfaceSatisfactionUsesTheTypeChecker(t *testing.T) {
 	// The decisive case: a type with a same-named method but a different
 	// signature does NOT satisfy the interface. A name-matching heuristic
 	// would report it; the type checker does not.
-	if a.has(graph.EdgeImplements, loader, notLoader) {
+	if a.has(graph.EdgeImplements, notLoader, loader) {
 		t.Error("NotALoader has a Load method with a different signature and must not be reported as an implementation")
 	}
 }
@@ -286,7 +289,8 @@ func TestLiteralConfigKeysOnly(t *testing.T) {
 	if _, ok := a.nodes["env:DATABASE_URL"]; !ok {
 		t.Fatal("a literal os.Getenv key must produce a config_key node")
 	}
-	e := a.edge(t, graph.EdgeReadsConfig, "env:DATABASE_URL", svcConfig)
+	// The reader points at the key, matching the deployment analyzers.
+	e := a.edge(t, graph.EdgeReadsConfig, svcConfig, "env:DATABASE_URL")
 	if e.Evidence != graph.Resolved {
 		t.Errorf("a literal config read must be resolved, got %s", e.Evidence)
 	}
@@ -449,4 +453,136 @@ func keys(m map[string]graph.Node, prefix string) []string {
 		}
 	}
 	return out
+}
+
+// §3.2: "schema to application code | … embedded SQL | resolved for parsed
+// SQL, inferred for dynamic SQL". This is the half that makes the schema row
+// useful: the sql analyzer finds what the schema is, this finds who touches it.
+func TestEmbeddedSQLReferencesTables(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "go.mod", "module example.test/db\n\ngo 1.26\n")
+	write(t, dir, "store.go", `package db
+
+import (
+	"context"
+	"database/sql"
+)
+
+type Store struct{ db *sql.DB }
+
+// Literal query against database/sql: the call is type-checked and the string
+// is a constant, so both halves are known.
+func (s *Store) Load(ctx context.Context, id string) error {
+	_, err := s.db.QueryContext(ctx, "SELECT id, amount FROM payments WHERE id = $1", id)
+	return err
+}
+
+// A join names two tables.
+func (s *Store) Report(ctx context.Context) error {
+	_, err := s.db.QueryContext(ctx,
+		"SELECT p.id FROM payments p JOIN customers c ON c.id = p.customer_id")
+	return err
+}
+
+// A query built at runtime: recognised as a database call, but no table is
+// named, because naming one would mean guessing.
+func (s *Store) Dynamic(ctx context.Context, table string) error {
+	_, err := s.db.QueryContext(ctx, "SELECT * FROM "+table)
+	return err
+}
+
+// Not a query at all.
+func (s *Store) NotSQL(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, "VACUUM")
+	return err
+}
+`)
+
+	a := golang.New()
+	a.Warnf = func(f string, args ...any) { t.Logf("go: "+f, args...) }
+	res, err := a.Analyze(context.Background(), dir, []index.File{
+		{Path: "go.mod", Lang: "gomod"}, {Path: "store.go", Lang: "go"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	type ref struct{ src, table string }
+	got := map[ref]graph.Evidence{}
+	for _, e := range res.Edges {
+		if e.Kind == graph.EdgeReadsSchema {
+			got[ref{e.SrcFQN, e.DstFQN}] = e.Evidence
+		}
+	}
+
+	load := "example.test/db.Store.Load"
+	if ev, ok := got[ref{load, "table:payments"}]; !ok {
+		t.Errorf("no schema reference from Load; got %v", got)
+	} else if ev != graph.Resolved {
+		t.Errorf("a literal query through database/sql is resolved, got %s", ev)
+	}
+
+	report := "example.test/db.Store.Report"
+	for _, table := range []string{"table:payments", "table:customers"} {
+		if _, ok := got[ref{report, table}]; !ok {
+			t.Errorf("a join must name both tables; missing %s", table)
+		}
+	}
+
+	// A runtime-assembled query names nothing: a wrong schema edge makes an
+	// impact report confidently incomplete.
+	for r := range got {
+		if strings.HasSuffix(r.src, ".Dynamic") {
+			t.Errorf("a runtime-built query produced a table reference: %v", r)
+		}
+		if strings.HasSuffix(r.src, ".NotSQL") {
+			t.Errorf("a non-query statement produced a table reference: %v", r)
+		}
+	}
+}
+
+// A driver that wraps database/sql is matched by method name, which is a
+// heuristic — so those edges are inferred and record the assumption.
+func TestWrapperDriversAreInferred(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "go.mod", "module example.test/wrap\n\ngo 1.26\n")
+	write(t, dir, "wrap.go", `package wrap
+
+import "context"
+
+// Pool stands in for pgxpool or sqlx: same method shape, different type.
+type Pool struct{}
+
+func (p *Pool) QueryContext(ctx context.Context, q string, args ...any) error { return nil }
+
+type Repo struct{ pool *Pool }
+
+func (r *Repo) List(ctx context.Context) error {
+	return r.pool.QueryContext(ctx, "SELECT id FROM orders")
+}
+`)
+
+	a := golang.New()
+	res, err := a.Analyze(context.Background(), dir, []index.File{
+		{Path: "go.mod", Lang: "gomod"}, {Path: "wrap.go", Lang: "go"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, e := range res.Edges {
+		if e.Kind != graph.EdgeReadsSchema || e.DstFQN != "table:orders" {
+			continue
+		}
+		found = true
+		if e.Evidence != graph.Inferred {
+			t.Errorf("a method-name match is a heuristic; evidence = %s", e.Evidence)
+		}
+		if !strings.Contains(e.Attrs, "assumption") {
+			t.Errorf("the assumption must be recorded: %s", e.Attrs)
+		}
+	}
+	if !found {
+		t.Error("no schema reference from a wrapper driver")
+	}
 }

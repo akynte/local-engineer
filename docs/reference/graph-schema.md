@@ -52,29 +52,58 @@ report carries that sentence.
 
 ## Coverage and sources of truth
 
-| Relationship | Source | Evidence | Go | TypeScript |
-|---|---|---|---|---|
-| File, directory containment | Filesystem, git tree | `resolved` | **yes** | **yes** |
-| Module and package graph | `go list` via `go/packages` | `resolved` | **yes** | not yet |
-| Import to dependency | The compiler | `resolved` | **yes** | not yet |
-| Caller to callee (static) | Type-checked call sites | `resolved` | **yes** | not yet |
-| Caller to callee (interface dispatch) | CHA over `types.Implements` | `inferred` | **yes** | not yet |
-| Interface to implementation | `types.Implements` | `resolved` | **yes** | not yet |
-| Type to usage | `types.Info.Uses` | `resolved` | **yes** | not yet |
-| Signature to type (accepts, returns) | The type checker | `resolved` | **yes** | not yet |
-| Struct to field, embedding | The type checker | `resolved` | **yes** | not yet |
-| Test to implementation | Call graph from `_test.go` | `resolved` | **yes** | not yet |
-| Configuration to consumer | `os.Getenv` with a literal key | `resolved` | **yes** | not yet |
-| Route to handler | Router-registration call sites | `inferred` | **yes** | not yet |
-| Commit to file | `git log`, blame | `observed` | **yes** | **yes** |
-| API to consumer | Route inventory plus literal client prefixes | `inferred` / `declared` | not yet | not yet |
-| Schema to application code | `pg_query_go`, sqlc names, proto | `resolved` / `inferred` | not yet | not yet |
-| Build target to dependency | `go list -deps`, Dockerfile, Makefile | `resolved` + `inferred` | not yet | not yet |
-| Deployment to service | Compose, Swarm, Helm, Kubernetes | `declared` | not yet | not yet |
-| Infrastructure to component | Terraform HCL, manifests | `declared` + `inferred` | not yet | not yet |
+| Relationship | Source | Evidence | State |
+|---|---|---|---|
+| File, directory containment | Filesystem, git tree | `resolved` | **done** |
+| Module and package graph | `go list` via `go/packages` | `resolved` | **Go** |
+| Import to dependency | The compiler | `resolved` | **Go** |
+| Caller to callee (static) | Type-checked call sites | `resolved` | **Go** |
+| Caller to callee (interface dispatch) | CHA over `types.Implements` | `inferred` | **Go** |
+| Interface to implementation | `types.Implements` | `resolved` | **Go** |
+| Type to usage | `types.Info.Uses` | `resolved` | **Go** |
+| Signature to type (accepts, returns) | The type checker | `resolved` | **Go** |
+| Struct to field, embedding | The type checker | `resolved` | **Go** |
+| Test to implementation | Call graph from `_test.go` | `resolved` | **Go** |
+| Route to handler | Router-registration call sites | `inferred` | **Go** |
+| Configuration to consumer | `os.Getenv`; compose, Dockerfile, Kubernetes, Terraform | `resolved` + `declared` + `inferred` | **done** |
+| Schema definition | DDL in migrations | `resolved` | **done** |
+| Schema to application code | Type-checked database call sites | `resolved` / `inferred` | **done** |
+| Build target to dependency | Dockerfile `COPY`/`FROM`, Makefile targets | `resolved` + `inferred` | **done** |
+| Deployment to service | Compose, Kubernetes manifests | `declared` | **done** |
+| Infrastructure to component | Terraform HCL | `declared` + `inferred` | **done** |
+| TypeScript: modules, call sites, references | TS compiler API | `resolved` | not yet |
+| API to consumer | Route inventory plus literal client prefixes | `inferred` / `declared` | not yet |
 
-The per-language columns are deliberate. A schema that described relationships
-the code does not produce would make impact reports look better than they are.
+The state column is deliberate. A schema that described relationships the code
+does not produce would make impact reports look better than they are.
+
+## The direction invariant
+
+**Every edge points from the consumer to the thing consumed.** `A → B` means
+"A depends on B, so a change to B may affect A".
+
+This is not a convention about style. Impact analysis is a *reverse* traversal:
+from the changed node it walks edges backwards to find what depends on it. An
+edge pointing the wrong way is therefore invisible to impact analysis, and the
+report comes back silently short rather than wrong in any way a reader could
+notice.
+
+Two edges were originally written backwards, and the consequences were exactly
+that:
+
+- `implements` pointed interface → type, so **adding a method to an interface
+  reported zero implementations** — the most common breaking interface change,
+  reported as compatible.
+- `reads_config` pointed key → reader in the Go analyzer but reader → key in
+  the deployment analyzers, so a configuration change found the manifests that
+  set a variable but not the code that read it.
+
+`internal/analyzers/direction_test.go` indexes a fixture spanning every
+analyzer and asserts that a change to an interface, a config key and a table
+each reaches its consumers. It exists so a third analyzer cannot reintroduce
+the same class of silent incompleteness.
+
+## Why interface dispatch is `inferred`
 
 ## Why interface dispatch is `inferred`
 
@@ -100,11 +129,31 @@ Satisfaction itself comes from `types.Implements`, not from name matching: a
 type with a `Load` method of a different signature is **not** reported as an
 implementation, and there is a test that asserts exactly that.
 
+## Why the schema parser is not `pg_query_go`
+
+The design names `pg_query_go`, which embeds PostgreSQL's own parser through
+cgo. That would give complete fidelity — and it would end the CGO-free build,
+which is load-bearing: DR-1 ships one static binary, and the images are built
+for amd64 and arm64 from a single runner.
+
+What is here instead is a focused DDL parser covering the statements that
+define a schema: `CREATE TABLE`, `ALTER TABLE`, `CREATE INDEX`, `CREATE VIEW`
+and their `DROP`s, with migrations applied in file order so the result is the
+schema as it ends up rather than a pile of statements.
+
+What it cannot parse it **reports** as unparsed, with a count, rather than
+skipping silently. If that fraction ever turns out to matter, `pg_query_go`
+behind a build tag is the replacement path and the CGO-free default stays.
+
 ## Why some things produce nothing
 
 A configuration key read as `os.Getenv(key)` where `key` is a variable
-produces no edge. A route registered with a computed path produces no route.
-Both are real relationships the analyzer cannot name.
+produces no edge. A route registered with a computed path produces no route. A
+query assembled at runtime names no table. A `COPY *.go` in a Dockerfile
+resolves to no file. A Helm template is recorded as present but not parsed,
+because rendering it needs chart values the analyzer does not have.
+
+All of these are real relationships the analyzer cannot name.
 
 Naming them would mean guessing, and a wrong `config_key` node makes an impact
 report confidently incomplete — worse than an obviously missing one. The

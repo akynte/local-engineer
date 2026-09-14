@@ -32,7 +32,7 @@ var configReaders = map[string]int{
 func (b *builder) emitConfigRead(p *packages.Package, callerFQN string, ck graph.NodeKind,
 	fn *types.Func, call *ast.CallExpr) bool {
 
-	name := qualifiedName(fn)
+	name := qualifiedPath(fn)
 	argIdx, ok := configReaders[name]
 	if !ok {
 		return false
@@ -49,9 +49,12 @@ func (b *builder) emitConfigRead(p *packages.Package, callerFQN string, ck graph
 		Kind: graph.KindConfigKey, Name: key, FQN: configFQN(key),
 		Attrs: attrsJSON(map[string]string{"source": "environment"}),
 	})
+	// The reader points at the key, matching the deployment and infrastructure
+	// analyzers, so a change to the key finds the code and the manifests in
+	// one traversal.
 	b.addEdge(index.PendingEdge{
-		SrcKind: graph.KindConfigKey, SrcFQN: configFQN(key),
-		DstKind: ck, DstFQN: callerFQN,
+		SrcKind: ck, SrcFQN: callerFQN,
+		DstKind: graph.KindConfigKey, DstFQN: configFQN(key),
 		Kind: graph.EdgeReadsConfig, Evidence: graph.Resolved,
 		Attrs: attrsJSON(map[string]string{"via": name}),
 	})
@@ -168,16 +171,21 @@ func handlerOf(p *packages.Package, args []ast.Expr) *types.Func {
 	return nil
 }
 
-// qualifiedName renders a function as "pkg.Func" or "(*pkg.T).Method".
-func qualifiedName(fn *types.Func) string {
+// qualifiedPath renders a function as "path.Func" or "(*path.T).Method" using
+// the full import path.
+//
+// The path, not the package name: names collide freely, and a lookup table
+// keyed on "sql.DB" would match anybody's package called sql — which is how a
+// method on an unrelated type gets mistaken for a database call.
+func qualifiedPath(fn *types.Func) string {
 	if fn.Pkg() == nil {
 		return fn.Name()
 	}
-	pkg := fn.Pkg().Name()
+	q := func(p *types.Package) string { return p.Path() }
 	if recv := fn.Signature().Recv(); recv != nil {
-		return "(" + types.TypeString(recv.Type(), func(*types.Package) string { return pkg }) + ")." + fn.Name()
+		return "(" + types.TypeString(recv.Type(), q) + ")." + fn.Name()
 	}
-	return pkg + "." + fn.Name()
+	return fn.Pkg().Path() + "." + fn.Name()
 }
 
 // literalString evaluates an expression to a constant string, following
