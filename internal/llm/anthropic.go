@@ -121,17 +121,53 @@ func (p *Anthropic) messages(ctx context.Context, req ChatRequest, schema json.R
 		maxTokens = DefaultAnthropicMaxTokens
 	}
 
+	if len(req.Tools) > 0 && !p.caps.ToolCalling {
+		return nil, &UnsupportedError{Provider: p.name, Capability: "tool calling"}
+	}
+
 	// The system prompt is a top-level field here, not a message. Splitting it
 	// out is required, not stylistic: a "system" role inside messages is
 	// rejected.
 	var system []string
 	turns := make([]map[string]any, 0, len(req.Messages))
 	for _, m := range req.Messages {
-		if m.Role == "system" {
+		switch {
+		case m.Role == "system":
 			system = append(system, m.Content)
-			continue
+		case m.Role == "tool":
+			// A tool result is a user turn carrying a tool_result block, not a
+			// role of its own. Consecutive results are merged into one turn,
+			// because the API expects every result for a turn together.
+			block := map[string]any{
+				"type": "tool_result", "tool_use_id": m.ToolCallID, "content": m.Content,
+			}
+			if n := len(turns); n > 0 && turns[n-1]["role"] == "user" {
+				if blocks, ok := turns[n-1]["content"].([]map[string]any); ok {
+					turns[n-1]["content"] = append(blocks, block)
+					continue
+				}
+			}
+			turns = append(turns, map[string]any{
+				"role": "user", "content": []map[string]any{block},
+			})
+		case len(m.ToolCalls) > 0:
+			blocks := make([]map[string]any, 0, len(m.ToolCalls)+1)
+			if m.Content != "" {
+				blocks = append(blocks, map[string]any{"type": "text", "text": m.Content})
+			}
+			for _, tc := range m.ToolCalls {
+				input := json.RawMessage("{}")
+				if len(tc.Arguments) > 0 {
+					input = tc.Arguments
+				}
+				blocks = append(blocks, map[string]any{
+					"type": "tool_use", "id": tc.ID, "name": tc.Name, "input": input,
+				})
+			}
+			turns = append(turns, map[string]any{"role": m.Role, "content": blocks})
+		default:
+			turns = append(turns, map[string]any{"role": m.Role, "content": m.Content})
 		}
-		turns = append(turns, map[string]any{"role": m.Role, "content": m.Content})
 	}
 	if len(turns) == 0 {
 		return nil, fmt.Errorf("llm: %s: no user turns in request", p.name)
@@ -144,6 +180,21 @@ func (p *Anthropic) messages(ctx context.Context, req ChatRequest, schema json.R
 	}
 
 	body := map[string]any{"model": model, "max_tokens": maxTokens, "messages": turns}
+	if len(req.Tools) > 0 {
+		tools := make([]map[string]any, len(req.Tools))
+		for i, t := range req.Tools {
+			// input_schema, not "parameters": this API names it differently
+			// from the OpenAI-compatible surface.
+			tools[i] = map[string]any{
+				"name": t.Name, "description": t.Description, "input_schema": t.Schema,
+			}
+		}
+		body["tools"] = tools
+		// Forced tool choice is not sent: several current models reject it.
+		if req.ToolChoice == "none" {
+			body["tool_choice"] = map[string]any{"type": "none"}
+		}
+	}
 	if len(system) > 0 {
 		body["system"] = strings.Join(system, "\n\n")
 	}
@@ -174,8 +225,11 @@ func (p *Anthropic) messages(ctx context.Context, req ChatRequest, schema json.R
 	var out struct {
 		Model   string `json:"model"`
 		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
+			Type  string          `json:"type"`
+			Text  string          `json:"text"`
+			ID    string          `json:"id"`
+			Name  string          `json:"name"`
+			Input json.RawMessage `json:"input"`
 		} `json:"content"`
 		StopReason  string `json:"stop_reason"`
 		StopDetails *struct {
@@ -203,13 +257,21 @@ func (p *Anthropic) messages(ctx context.Context, req ChatRequest, schema json.R
 
 	// Only text blocks carry the answer; thinking blocks are not the response.
 	var sb strings.Builder
+	var calls []ToolCall
 	for _, c := range out.Content {
-		if c.Type == "text" {
+		switch c.Type {
+		case "text":
 			sb.WriteString(c.Text)
+		case "tool_use":
+			input := c.Input
+			if len(input) == 0 {
+				input = json.RawMessage("{}")
+			}
+			calls = append(calls, ToolCall{ID: c.ID, Name: c.Name, Arguments: input})
 		}
 	}
 	return &ChatResponse{
-		Content: sb.String(), FinishReason: out.StopReason,
+		Content: sb.String(), FinishReason: out.StopReason, ToolCalls: calls,
 		PromptTokens: out.Usage.InputTokens + out.Usage.CacheReadTokens + out.Usage.CacheCreationTokens,
 		OutputTokens: out.Usage.OutputTokens, CachedTokens: out.Usage.CacheReadTokens,
 		Model: out.Model, DurationMS: time.Since(start).Milliseconds(),

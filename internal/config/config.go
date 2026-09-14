@@ -45,6 +45,27 @@ type Config struct {
 
 	// Profile names the active hardware profile in profiles/ (§9.2).
 	Profile string `yaml:"profile"`
+
+	// Gates configures the human gates of §3.3.
+	Gates GateConfig `yaml:"gates"`
+}
+
+// GateConfig selects which decisions need a person.
+//
+// The shipped default is not "approve everything": a system that never asks is
+// one whose gates are decoration. It is also not "ask about everything", which
+// trains people to approve without reading.
+type GateConfig struct {
+	// Breaking gates a change whose impact report names breaking consumers.
+	Breaking bool `yaml:"breaking"`
+	// OutOfScope gates a change outside the task's declared scope.
+	OutOfScope bool `yaml:"out_of_scope"`
+	// Apply gates applying a completed task's change.
+	Apply bool `yaml:"apply"`
+	// Plan gates a decomposition before it runs.
+	Plan bool `yaml:"plan"`
+	// TimeoutMinutes expires an unanswered gate. Zero waits indefinitely.
+	TimeoutMinutes int `yaml:"timeout_minutes"`
 }
 
 // APIConfig configures `le api` (§4.3 child 3).
@@ -119,6 +140,7 @@ func Default() Config {
 				"/opt/le/toolchain", "/usr/local/go",
 			},
 		},
+		Gates: GateConfig{Breaking: true, OutOfScope: true, Apply: true, Plan: false},
 		Index: IndexConfig{
 			MaxFileBytes: 1 << 20, ChunkLines: 60, WatchEnabled: true,
 			// Carried explicitly so the generated le.yaml holds them. Leaving

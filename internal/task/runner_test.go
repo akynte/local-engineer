@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/akynte/local-engineer/internal/broker"
 	"github.com/akynte/local-engineer/internal/engine"
 	"github.com/akynte/local-engineer/internal/ledger"
 	"github.com/akynte/local-engineer/internal/recipe"
@@ -501,5 +502,309 @@ func TestSyncCarriesUntrackedFiles(t *testing.T) {
 	// The source repository must be untouched by the sync.
 	if _, err := os.Stat(filepath.Join(repo, "new_test.go")); err != nil {
 		t.Errorf("the source repository was disturbed: %v", err)
+	}
+}
+
+// A task that changes nothing has nothing to apply, and gating it anyway would
+// train people to approve without reading — which is how a gate stops being a
+// gate. A task that does change something must be gated.
+func TestOnlyARealChangeOpensTheApplyGate(t *testing.T) {
+	requireGo(t)
+
+	t.Run("no change, no gate", func(t *testing.T) {
+		repo := gitRepo(t, map[string]string{
+			"go.mod": goodModule,
+			"a.go":   "package a\n\nfunc A() {}\n",
+		})
+		out := runGated(t, repo, engine.Verify{}, recipe.Low, nil)
+		if !out.Accepted {
+			t.Fatalf("expected acceptance: %v", out.Reasons)
+		}
+		if out.Gate != nil {
+			t.Fatalf("a task that changed nothing must not open a gate: %+v", out.Gate)
+		}
+		if out.Task.State != task.StateAccepted {
+			t.Errorf("state = %s", out.Task.State)
+		}
+	})
+
+	t.Run("a real change opens a gate", func(t *testing.T) {
+		repo := gitRepo(t, map[string]string{
+			"go.mod": goodModule,
+			"a.go":   "package a\n\nfunc A() {}\n",
+		})
+		out := runGated(t, repo, &writingEngine{
+			path: "a.go", body: "package a\n\n// A does nothing.\nfunc A() {}\n",
+		}, recipe.Low, nil)
+
+		if out.Gate == nil {
+			t.Fatal("a task that changed a file must be gated before it is applied")
+		}
+		if out.Task.State != task.StateReview {
+			t.Errorf("a gated task waits in review, got %s", out.Task.State)
+		}
+		ev, err := out.Gate.Decoded()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// The gate must carry the deterministic evidence, not a summary.
+		if !strings.Contains(ev.Diff, "A does nothing") {
+			t.Errorf("the gate must carry the diff:\n%s", ev.Diff)
+		}
+		if len(ev.Findings) == 0 {
+			t.Error("the gate must carry the verification findings")
+		}
+	})
+}
+
+// The task's diff is the task's own work. After syncing the operator's
+// uncommitted state in, that state is the baseline — otherwise a gate would
+// present files the task never touched.
+func TestTheDiffExcludesTheOperatorsOwnChanges(t *testing.T) {
+	requireGo(t)
+	repo := gitRepo(t, map[string]string{
+		"go.mod": goodModule,
+		"a.go":   "package a\n\nfunc A() {}\n",
+	})
+	// The operator has their own uncommitted work in a different file.
+	if err := os.WriteFile(filepath.Join(repo, "operator.go"),
+		[]byte("package a\n\nfunc OperatorWasHere() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	r, st := newRunner(t, &writingEngine{
+		path: "a.go", body: "package a\n\n// A does nothing.\nfunc A() {}\n",
+	})
+	r.SyncUncommitted = true
+	r.Broker = broker.New(st, broker.DefaultPolicy())
+
+	id := task.NewID("t")
+	if err := task.NewStore(st).Create(context.Background(), task.Task{
+		ID: id, Title: "document A", Verification: recipe.Low,
+		Budget: task.Budget{MaxAttempts: 1, MaxWallTime: 5 * time.Minute},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	out, err := r.Run(context.Background(), id, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(out.Diff, "A does nothing") {
+		t.Errorf("the task's own change is missing from the diff:\n%s", out.Diff)
+	}
+	// The operator's file was synced in as the baseline, so it is not part of
+	// what this task changed.
+	if strings.Contains(out.Diff, "OperatorWasHere") {
+		t.Errorf("the diff includes the operator's own uncommitted work:\n%s", out.Diff)
+	}
+}
+
+// A rejected gate fails the task and says so.
+func TestARejectedGateFailsTheTask(t *testing.T) {
+	requireGo(t)
+	repo := gitRepo(t, map[string]string{
+		"go.mod": goodModule,
+		"a.go":   "package a\n\nfunc A() {}\n",
+	})
+
+	r, st := newRunner(t, &writingEngine{
+		path: "a.go", body: "package a\n\n// changed\nfunc A() {}\n",
+	})
+	b := broker.New(st, broker.DefaultPolicy())
+	r.Broker = b
+
+	ctx := context.Background()
+	id := task.NewID("t")
+	if err := task.NewStore(st).Create(ctx, task.Task{
+		ID: id, Title: "change A", Verification: recipe.Low,
+		Budget: task.Budget{MaxAttempts: 1, MaxWallTime: 5 * time.Minute},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	out, err := r.Run(ctx, id, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Gate == nil {
+		t.Fatal("expected a gate")
+	}
+	if _, err := b.Decide(ctx, out.Gate.ID, broker.Rejected, "ali", "not the right approach"); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := b.Get(ctx, out.Gate.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Decision != broker.Rejected || !strings.Contains(loaded.Note, "right approach") {
+		t.Errorf("gate = %+v", loaded)
+	}
+}
+
+// runGated runs a task with the default gate policy and returns the outcome.
+func runGated(t *testing.T, repo string, eng engine.Engine, level recipe.Level, scope []string) *task.Outcome {
+	t.Helper()
+	r, st := newRunner(t, eng)
+	r.Broker = broker.New(st, broker.DefaultPolicy())
+
+	ctx := context.Background()
+	id := task.NewID("t")
+	if err := task.NewStore(st).Create(ctx, task.Task{
+		ID: id, Title: "gated task", Verification: level,
+		Budget: task.Budget{MaxAttempts: 1, MaxWallTime: 5 * time.Minute, Scope: scope},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	out, err := r.Run(ctx, id, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// A step whose dependency has not been accepted would run against code that
+// does not exist yet, and its findings would be about the wrong thing.
+func TestABlockedTaskDoesNotRun(t *testing.T) {
+	requireGo(t)
+	repo := gitRepo(t, map[string]string{"go.mod": goodModule, "a.go": "package a\n"})
+
+	r, st := newRunner(t, engine.Verify{})
+	store := task.NewStore(st)
+	ctx := context.Background()
+
+	first := task.Task{ID: task.NewID("first"), Title: "first", Verification: recipe.Low,
+		Budget: task.Budget{MaxAttempts: 1, MaxWallTime: time.Minute}}
+	second := task.Task{ID: task.NewID("second"), Title: "second", Verification: recipe.Low,
+		Budget: task.Budget{MaxAttempts: 1, MaxWallTime: time.Minute}}
+	for _, tk := range []task.Task{first, second} {
+		if err := store.Create(ctx, tk); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.AddDependency(ctx, second.ID, first.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := r.Run(ctx, second.ID, repo); err == nil {
+		t.Fatal("a task with an unfinished dependency must not run")
+	} else if !strings.Contains(err.Error(), "blocked on") {
+		t.Errorf("the error must name the blocker: %v", err)
+	}
+	loaded, err := store.Get(ctx, second.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.State != task.StateBlocked {
+		t.Errorf("state = %s, want blocked", loaded.State)
+	}
+
+	// Once the dependency is accepted the task runs.
+	if err := store.SetState(ctx, first.ID, task.StateAccepted); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetState(ctx, second.ID, task.StatePending); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Run(ctx, second.ID, repo); err != nil {
+		t.Fatalf("an unblocked task should run: %v", err)
+	}
+}
+
+// The branch is the only place a task's work exists. Deleting it with the
+// worktree destroys the change — including the one a pending gate is asking
+// about, which would make approving that gate do nothing.
+func TestTheBranchHoldingTheWorkSurvives(t *testing.T) {
+	requireGo(t)
+
+	t.Run("waiting at a gate keeps both", func(t *testing.T) {
+		repo := gitRepo(t, map[string]string{
+			"go.mod": goodModule, "a.go": "package a\n\nfunc A() {}\n",
+		})
+		out := runGated(t, repo, &writingEngine{
+			path: "a.go", body: "package a\n\n// changed\nfunc A() {}\n",
+		}, recipe.Low, nil)
+
+		if out.Gate == nil || !out.Gate.Open() {
+			t.Fatal("expected an open gate")
+		}
+		// The checkout must still exist: a person deciding may want to look at
+		// more than the diff.
+		if _, err := os.Stat(out.Worktree); err != nil {
+			t.Errorf("the checkout was removed while a gate is open: %v", err)
+		}
+		assertBranchHasChange(t, repo, out.Branch, "changed")
+	})
+
+	t.Run("accepted keeps the branch and removes the checkout", func(t *testing.T) {
+		repo := gitRepo(t, map[string]string{
+			"go.mod": goodModule, "a.go": "package a\n\nfunc A() {}\n",
+		})
+		r, st := newRunner(t, &writingEngine{
+			path: "a.go", body: "package a\n\n// documented\nfunc A() {}\n",
+		})
+		// No broker: the task is accepted outright.
+		ctx := context.Background()
+		id := task.NewID("t")
+		if err := task.NewStore(st).Create(ctx, task.Task{
+			ID: id, Title: "document A", Verification: recipe.Low,
+			Budget: task.Budget{MaxAttempts: 1, MaxWallTime: 5 * time.Minute},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		out, err := r.Run(ctx, id, repo)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !out.Accepted {
+			t.Fatalf("expected acceptance: %v", out.Reasons)
+		}
+		// The checkout is gone, but the work is not.
+		if _, err := os.Stat(out.Worktree); !os.IsNotExist(err) {
+			t.Errorf("the checkout should be removed once the task is done: %v", err)
+		}
+		assertBranchHasChange(t, repo, out.Branch, "documented")
+	})
+
+	t.Run("failed keeps everything", func(t *testing.T) {
+		repo := gitRepo(t, map[string]string{
+			"go.mod": goodModule,
+			"a.go":   "package a\n\nfunc A() int { return 1 }\n",
+		})
+		r, st := newRunner(t, &writingEngine{
+			path: "a.go", body: "package a\n\nfunc A() int { return undefinedThing() }\n",
+		})
+		ctx := context.Background()
+		id := task.NewID("t")
+		if err := task.NewStore(st).Create(ctx, task.Task{
+			ID: id, Title: "break it", Verification: recipe.Low,
+			Budget: task.Budget{MaxAttempts: 1, MaxWallTime: 5 * time.Minute},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		out, err := r.Run(ctx, id, repo)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out.Accepted {
+			t.Fatal("code that does not compile must not be accepted")
+		}
+		// A failed checkout is worth far more than the disk it uses.
+		if _, err := os.Stat(out.Worktree); err != nil {
+			t.Errorf("a failed task's checkout must be kept for inspection: %v", err)
+		}
+	})
+}
+
+func assertBranchHasChange(t *testing.T, repo, branch, want string) {
+	t.Helper()
+	if branch == "" {
+		t.Fatal("the outcome must name the branch holding the work")
+	}
+	out, err := exec.Command("git", "-C", repo, "show", branch+":a.go").CombinedOutput()
+	if err != nil {
+		t.Fatalf("the branch holding the work is gone (%s): %v\n%s", branch, err, out)
+	}
+	if !strings.Contains(string(out), want) {
+		t.Errorf("branch %s does not carry the change:\n%s", branch, out)
 	}
 }

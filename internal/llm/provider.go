@@ -86,6 +86,33 @@ type Message struct {
 	Name    string `json:"name,omitempty"`
 	// ToolCallID links a tool result to the call that produced it.
 	ToolCallID string `json:"tool_call_id,omitempty"`
+	// ToolCalls are the calls an assistant turn requested. They must be
+	// replayed verbatim on the next request: a provider that receives a tool
+	// result without the call that produced it rejects the conversation.
+	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
+}
+
+// ToolDef declares a tool the model may call.
+type ToolDef struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	// Schema is the JSON Schema of the tool's parameters. A tool whose schema
+	// does not constrain its arguments produces malformed calls from a small
+	// model far more often than from a large one, so every tool here declares
+	// required fields and forbids extras.
+	Schema json.RawMessage `json:"schema"`
+}
+
+// ToolCall is one requested invocation.
+type ToolCall struct {
+	// ID correlates the call with its result. Providers generate it.
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// Arguments is the raw JSON the model produced. It is deliberately not
+	// decoded here: the caller validates it against the tool's own schema and
+	// reports a violation back to the model as a tool result, which is a
+	// correction the model can act on.
+	Arguments json.RawMessage `json:"arguments"`
 }
 
 // ChatRequest is a completion request.
@@ -104,6 +131,13 @@ type ChatRequest struct {
 	// CachePrefixHint marks how many leading messages form the stable prefix,
 	// so a cache-aware layout can be preserved (§8.2: stable prefix first).
 	CachePrefixHint int `json:"-"`
+	// Tools the model may call. Providers that do not declare ToolCalling
+	// reject a request carrying them rather than silently dropping them.
+	Tools []ToolDef `json:"-"`
+	// ToolChoice is "auto" or "none". Forced tool choice is deliberately not
+	// offered: several current models reject it, and an instruction in the
+	// prompt achieves the same thing portably.
+	ToolChoice string `json:"-"`
 }
 
 // ChatResponse is a completion result plus the accounting the telemetry and
@@ -119,7 +153,13 @@ type ChatResponse struct {
 	Model        string `json:"model"`
 	// DurationMS is wall-clock time for the call.
 	DurationMS int64 `json:"duration_ms"`
+	// ToolCalls the model requested. FinishReason names the tool stop when
+	// this is non-empty.
+	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
 }
+
+// WantsTools reports whether the model asked to call something.
+func (r *ChatResponse) WantsTools() bool { return r != nil && len(r.ToolCalls) > 0 }
 
 // EmbedRequest asks for embeddings.
 type EmbedRequest struct {

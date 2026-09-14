@@ -4,16 +4,14 @@ A supervised local coding engineer: a deterministic harness around a local
 model, with strict per-project isolation, an intent-first execution journal,
 and evidence-backed verification.
 
-> **Status: pre-1.0, under active development.** The isolation contract, the
-> storage layout, the code graph with a full Go analyzer, the execution
-> journal, the sandbox layering, and the verification pipeline with its
-> completion contract are implemented and tested — `le task verify` runs a
-> change through build, vet and test inside a Landlock sandbox and decides
-> acceptance from the evidence.
+> **Status: pre-1.0, under active development.** The full task pipeline works:
+> retrieval, a bounded tool loop that edits a confined worktree, verification
+> inside a Landlock sandbox, a completion contract decided from evidence, and
+> a human gate carrying the diff before anything is applied.
 >
-> What is **not** implemented is the engine adapter that turns a retrieved
-> packet into edits. The machinery that judges a change is done; the part that
-> writes one with a model is not. See [ROADMAP.md](ROADMAP.md).
+> What is **not** done: language analyzers beyond Go, and the evaluation
+> harness. No task-success numbers are published, so this README claims none.
+> See [ROADMAP.md](ROADMAP.md).
 
 ## What it is
 
@@ -35,6 +33,12 @@ both from outside the model.
   intent *before* the side effect and its outcome *after*. A crash leaves
   uncertainty, and recovery resolves it by inspecting the worktree rather than
   assuming success or failure.
+- **A model's claim of success decides nothing.** A task is accepted only when
+  every check its level requires has a passing result *against the current
+  state of the code*. A skip, an error, or a pass against an older state
+  satisfies nothing. Then a human gate carries the diff and the findings, so
+  approving means reading what the supervisor computed rather than trusting a
+  summary.
 - **Claims are backed by evidence, not by the model's opinion.** Compatibility
   verdicts come from a deterministic table over the change kind and the edge
   kind. A missing edge means "not discovered", never "does not exist", and the
@@ -68,6 +72,7 @@ docker exec -it local-engineer le doctor          # what is actually in effect
 docker exec -it local-engineer bash -c 'cd /work/my-project && le workspace init && le index'
 docker exec -it local-engineer bash -c 'cd /work/my-project && le graph impact MyFunc --change signature'
 docker exec -it local-engineer bash -c 'cd /work/my-project && le task verify'
+docker exec -it local-engineer bash -c 'cd /work/my-project && le plan "add retries to the payment client"'
 ```
 
 `docker compose -f deploy/docker-compose.yml up -d` wraps the same thing.

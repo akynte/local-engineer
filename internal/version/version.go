@@ -19,7 +19,7 @@ var (
 // (see DR-1: downgrades across schema versions are not supported).
 var SchemaVersions = map[string]int{
 	"index":     1,
-	"ledger":    1,
+	"ledger":    2,
 	"telemetry": 1,
 }
 

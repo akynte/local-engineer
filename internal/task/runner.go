@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/akynte/local-engineer/internal/artifacts"
+	"github.com/akynte/local-engineer/internal/broker"
 	"github.com/akynte/local-engineer/internal/engine"
 	"github.com/akynte/local-engineer/internal/ledger"
 	"github.com/akynte/local-engineer/internal/recipe"
@@ -42,6 +43,10 @@ type Runner struct {
 	// It is off for engine-driven tasks, which should start from a clean
 	// committed base.
 	SyncUncommitted bool
+	// Broker opens the human gates of §3.3. Nil means no gates: every
+	// decision is automatic, which `le doctor` reports, because a system
+	// running without gates should never be a surprise.
+	Broker *broker.Broker
 	// Holder identifies this supervisor instance in worktree leases.
 	Holder string
 	// Logf reports progress. Nil discards it.
@@ -98,6 +103,14 @@ type Outcome struct {
 	// Verified says which state the verdict describes. A verdict that does not
 	// say what it examined is not usable evidence.
 	Verified string `json:"verified"`
+	// Gate is the human gate the task is waiting at, when it is waiting.
+	Gate *broker.Gate `json:"gate,omitempty"`
+	// Branch names where the change lives once the task is done with it. The
+	// worktree is a checkout; the branch is the work.
+	Branch string `json:"branch,omitempty"`
+	// Worktree is the checkout path, kept while a task is unfinished or
+	// waiting at a gate so a person can look at it.
+	Worktree string `json:"worktree,omitempty"`
 }
 
 // Run executes a task against a repository.
@@ -111,6 +124,24 @@ func (r *Runner) Run(ctx context.Context, taskID, repoPath string) (*Outcome, er
 	}
 	if r.Engine == nil {
 		return nil, engine.ErrNoEngine
+	}
+
+	// A step whose dependency has not been accepted would run against code
+	// that does not exist yet, and its verification findings would be about
+	// the wrong thing.
+	blockers, err := r.Store.Blockers(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if len(blockers) > 0 {
+		names := make([]string, len(blockers))
+		for i, b := range blockers {
+			names[i] = fmt.Sprintf("%s (%s)", b.ID, b.State)
+		}
+		if err := r.Store.SetState(ctx, taskID, StateBlocked); err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("task %s is blocked on %s", taskID, strings.Join(names, ", "))
 	}
 
 	wt, err := r.Worktrees.Create(ctx, repoPath, t.ID)
@@ -141,6 +172,11 @@ func (r *Runner) Run(ctx context.Context, taskID, repoPath string) (*Outcome, er
 		}
 		verified = rep.Describe()
 		r.logf("task %s: %s", t.ID, verified)
+		// The synced state becomes the baseline, so the task's diff is the
+		// task's own work rather than the operator's uncommitted changes.
+		if err := wt.Rebase(ctx); err != nil {
+			return nil, fmt.Errorf("task %s: baseline the synced state: %w", t.ID, err)
+		}
 	}
 
 	if err := r.Store.SetWorktree(ctx, t.ID, wt.ID); err != nil {
@@ -153,16 +189,60 @@ func (r *Runner) Run(ctx context.Context, taskID, repoPath string) (*Outcome, er
 	out, runErr := r.run(ctx, &t, wt)
 	if out != nil {
 		out.Verified = verified
+		out.Branch = wt.Branch
+		out.Worktree = wt.Path
 	}
 
-	// The worktree is kept when the task did not succeed: a checkout that
-	// shows what went wrong is worth more than the disk it uses.
-	if out != nil && out.Accepted {
-		if err := r.Worktrees.Remove(ctx, wt, false); err != nil {
-			r.logf("task %s: removing worktree: %v", t.ID, err)
-		}
-	}
+	r.cleanup(ctx, &t, wt, out)
 	return out, runErr
+}
+
+// cleanup decides what to keep after a run.
+//
+// The branch is ALWAYS kept when the task changed something. It is the only
+// place the work exists: the worktree is a checkout, and deleting the branch
+// with it destroys the change — including the one a pending gate is asking
+// about. An earlier version did exactly that, so a gate would show a diff of
+// something that no longer existed anywhere.
+//
+// The checkout directory is removed only when the task is finished and
+// nobody needs to look at it: a failed task's checkout is worth far more than
+// the disk it uses.
+func (r *Runner) cleanup(ctx context.Context, t *Task, wt *worktree.Worktree, out *Outcome) {
+	if out == nil {
+		return
+	}
+	// Commit first, whatever the outcome. Until this runs the work exists only
+	// in the checkout directory, so a gate would be asking about a change that
+	// vanishes when the directory does, and a failed task would leave nothing
+	// to inspect after cleanup.
+	committed, err := wt.Commit(ctx, commitMessage(t, out))
+	if err != nil {
+		r.logf("task %s: committing the change to %s: %v", t.ID, wt.Branch, err)
+	}
+	if !committed {
+		out.Branch = ""
+	}
+	// A task waiting at a gate keeps everything: the person deciding may want
+	// to look at the checkout, not just the diff.
+	if out.Gate != nil && out.Gate.Open() {
+		r.logf("task %s: waiting at a gate; the checkout is at %s", t.ID, wt.Path)
+		return
+	}
+	if !out.Accepted {
+		r.logf("task %s: not accepted; the checkout is at %s (branch %s)", t.ID, wt.Path, wt.Branch)
+		return
+	}
+
+	// keepBranch mirrors whether there is anything on it worth keeping.
+	if err := r.Worktrees.Remove(ctx, wt, committed); err != nil {
+		r.logf("task %s: removing worktree: %v", t.ID, err)
+		return
+	}
+	out.Worktree = ""
+	if committed {
+		r.logf("task %s: accepted; the change is on branch %s", t.ID, wt.Branch)
+	}
 }
 
 func (r *Runner) run(ctx context.Context, t *Task, wt *worktree.Worktree) (*Outcome, error) {
@@ -221,7 +301,43 @@ func (r *Runner) run(ctx context.Context, t *Task, wt *worktree.Worktree) (*Outc
 			if diff, err := wt.Diff(ctx); err == nil {
 				out.Diff = diff
 			}
+			// A gate before the work is applied, carrying the diff and the
+			// findings — the deterministic evidence, not a summary of it.
+			gate, gateErr := r.gate(ctx, t, out)
+			if gateErr != nil {
+				return nil, gateErr
+			}
+			switch {
+			case gate.Decision == broker.Rejected:
+				out.Accepted = false
+				out.Reasons = append(out.Reasons, "rejected at the human gate: "+gate.Note)
+				return r.finish(ctx, t, wt, out, StateFailed)
+			case gate.Open():
+				out.Gate = &gate
+				out.Reasons = append(out.Reasons,
+					"waiting at a human gate: "+gate.Question)
+				return r.finish(ctx, t, wt, out, StateReview)
+			}
 			return r.finish(ctx, t, wt, out, StateAccepted)
+		}
+
+		// A change outside the declared scope is a decision, not automatically
+		// a failure: sometimes the right fix genuinely touches another file.
+		if len(scope) > 0 && r.Broker != nil {
+			gate, err := r.Broker.Ask(ctx, t.ID, broker.KindOutOfScope,
+				"This task changed files outside its declared scope. Allow it?",
+				broker.Evidence{
+					Summary:    fmt.Sprintf("%d file(s) outside scope %v", len(scope), budget.Scope),
+					OutOfScope: scope,
+					Diff:       out.Diff,
+				})
+			if err != nil {
+				return nil, err
+			}
+			if gate.Open() {
+				out.Gate = &gate
+				return r.finish(ctx, t, wt, out, StateReview)
+			}
 		}
 		r.logf("task %s attempt %d/%d not accepted: %s",
 			t.ID, attempt, budget.MaxAttempts, strings.Join(reasons, "; "))
@@ -260,6 +376,15 @@ func (r *Runner) step(ctx context.Context, t *Task, wt *worktree.Worktree,
 	}, before)
 	if err != nil {
 		return err
+	}
+
+	// The engine's own verification tool runs in the same sandbox as the
+	// supervisor's, so a model checking its work sees exactly what the
+	// completion contract will see.
+	if setter, ok := r.Engine.(interface{ SetRecipeRunner(*recipe.Runner) }); ok {
+		setter.SetRecipeRunner(&recipe.Runner{
+			Sandbox: r.Sandbox, Spec: r.specFor(wt), Store: r.Artifacts,
+		})
 	}
 
 	resp, stepErr := r.Engine.Step(ctx, engine.Request{
@@ -405,6 +530,48 @@ func (r *Runner) finish(ctx context.Context, t *Task, wt *worktree.Worktree,
 	return out, nil
 }
 
+// gate asks the broker whether a completed task may be applied, carrying the
+// impact of what it changed.
+//
+// A task that changed nothing is not gated: there is nothing to apply, and
+// asking anyway would train people to approve without reading — which is how a
+// gate stops being a gate.
+func (r *Runner) gate(ctx context.Context, t *Task, out *Outcome) (broker.Gate, error) {
+	if r.Broker == nil {
+		return broker.Gate{Decision: broker.Approved, Note: "no broker configured"}, nil
+	}
+	if strings.TrimSpace(out.Diff) == "" {
+		return broker.Gate{Decision: broker.Approved, Note: "the task changed nothing; there is nothing to apply"}, nil
+	}
+	ev := broker.Evidence{
+		Summary: fmt.Sprintf("%s: %d attempt(s), every required check passed", t.Title, out.Attempts),
+		Diff:    out.Diff,
+	}
+	for _, res := range out.Results {
+		ev.Findings = append(ev.Findings,
+			fmt.Sprintf("%s: %s — %s", res.Recipe, res.Status, res.Summary.Headline))
+	}
+	return r.Broker.Ask(ctx, t.ID, broker.KindApply,
+		"This task met the completion contract. Apply its change?", ev)
+}
+
+// commitMessage describes what the task did, so `git log` on the branch reads
+// as a record rather than as noise.
+func commitMessage(t *Task, out *Outcome) string {
+	verdict := "not accepted"
+	if out.Accepted {
+		verdict = "accepted"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s\n\n", t.Title)
+	fmt.Fprintf(&b, "task: %s\nverification: %s (%s)\nattempts: %d\n",
+		t.ID, t.Verification, verdict, out.Attempts)
+	for _, res := range out.Results {
+		fmt.Fprintf(&b, "  %s: %s — %s\n", res.Recipe, res.Status, res.Summary.Headline)
+	}
+	return b.String()
+}
+
 func nextAfter(state State) string {
 	switch state {
 	case StateAccepted:
@@ -413,6 +580,8 @@ func nextAfter(state State) string {
 		return "read the verification findings and decide whether to re-plan or abandon"
 	case StateBlocked:
 		return "the budget was exhausted; raise it or reduce the task's scope"
+	case StateReview:
+		return "answer the open gate with `le gate approve` or `le gate reject`"
 	}
 	return "resume the task"
 }

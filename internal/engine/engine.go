@@ -57,6 +57,11 @@ type Response struct {
 	ClaimsDone bool
 	// TokensUsed is for telemetry and budget accounting.
 	TokensUsed int
+	// Edited reports that the engine changed the worktree. The supervisor
+	// re-derives the actual change from the diff regardless; this is for
+	// telemetry and for spotting an engine that claims completion without
+	// having written anything.
+	Edited bool
 }
 
 // Engine produces edits in a worktree.

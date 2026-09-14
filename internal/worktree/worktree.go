@@ -124,6 +124,30 @@ func (m *Manager) Remove(ctx context.Context, wt *Worktree, keepBranch bool) err
 	return nil
 }
 
+// Commit records the worktree's current state on the task branch.
+//
+// Without this the task's work lives only in the checkout directory, and
+// removing that directory destroys it. The branch is what makes "the change is
+// on branch X" true — and what a pending gate is asking about.
+//
+// It returns false when there was nothing to commit.
+func (wt *Worktree) Commit(ctx context.Context, message string) (bool, error) {
+	if _, err := git(ctx, wt.Path, "add", "-A"); err != nil {
+		return false, err
+	}
+	if _, err := git(ctx, wt.Path, "diff", "--cached", "--quiet"); err == nil {
+		return false, nil // nothing changed
+	}
+	// A fixed identity: the commit is the system's record of what a task did,
+	// not a claim about who wrote it.
+	if _, err := git(ctx, wt.Path,
+		"-c", "user.name=local-engineer", "-c", "user.email=le@localhost",
+		"commit", "-q", "-m", message); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // Candidate returns the content manifest of the worktree: the identifier the
 // journal records as candidate_before and candidate_after (§7.1).
 func (wt *Worktree) Candidate() (string, error) {
@@ -291,6 +315,36 @@ func (wt *Worktree) SyncFrom(ctx context.Context, srcRepo string) (SyncReport, e
 	return rep, nil
 }
 
+// Rebase makes the worktree's current contents the baseline for later diffs.
+//
+// After SyncFrom the worktree holds the operator's uncommitted work, which is
+// not the task's change. Without this, the task's diff would include whatever
+// the operator already had — and a gate asking "apply this change?" would
+// present files the task never touched.
+//
+// The commit is local to the task branch and is never pushed; it exists so
+// that "what did this task change" has an honest answer.
+func (wt *Worktree) Rebase(ctx context.Context) error {
+	if _, err := git(ctx, wt.Path, "add", "-A"); err != nil {
+		return err
+	}
+	// Nothing staged means the worktree already matches its base.
+	if _, err := git(ctx, wt.Path, "diff", "--cached", "--quiet"); err == nil {
+		return nil
+	}
+	if _, err := git(ctx, wt.Path,
+		"-c", "user.name=local-engineer", "-c", "user.email=le@localhost",
+		"commit", "-q", "-m", "le: baseline (the operator's uncommitted state)"); err != nil {
+		return err
+	}
+	head, err := git(ctx, wt.Path, "rev-parse", "HEAD")
+	if err != nil {
+		return err
+	}
+	wt.Base = head
+	return nil
+}
+
 // SyncReport says what SyncFrom brought across, so a caller can report which
 // state it actually verified.
 type SyncReport struct {
@@ -350,4 +404,88 @@ func gitApply(ctx context.Context, dir, patch string) error {
 		return fmt.Errorf("%s", strings.TrimSpace(stderr.String()))
 	}
 	return nil
+}
+
+// Confinement. These are the only way anything writes into a task worktree.
+//
+// The check lives here, next to the thing it protects, rather than in each
+// caller. That matters most for the engine, which writes paths a *model*
+// supplied: the package handling untrusted input has no file-write capability
+// of its own, so a bug there cannot become an escape.
+
+// ErrOutside is returned when a path resolves outside the worktree.
+var ErrOutside = errors.New("path is outside the worktree")
+
+// Resolve turns a worktree-relative path into an absolute one, or fails.
+//
+// Both the cleaned path and its symlink-resolved form are checked. Without the
+// second check a symlink planted inside the worktree would point anywhere, and
+// the first check would happily approve it.
+func Resolve(worktreePath, rel string) (string, error) {
+	if rel == "" {
+		return "", fmt.Errorf("%w: empty path", ErrOutside)
+	}
+	if filepath.IsAbs(rel) {
+		return "", fmt.Errorf("%w: %s is absolute", ErrOutside, rel)
+	}
+	root, err := filepath.EvalSymlinks(worktreePath)
+	if err != nil {
+		return "", err
+	}
+	full := filepath.Join(root, filepath.FromSlash(rel))
+	if !inside(root, full) {
+		return "", fmt.Errorf("%w: %s", ErrOutside, rel)
+	}
+	if resolved, err := filepath.EvalSymlinks(full); err == nil && !inside(root, resolved) {
+		return "", fmt.Errorf("%w: %s resolves outside via a symlink", ErrOutside, rel)
+	}
+	if _, err := os.Lstat(full); err != nil {
+		if parent, perr := filepath.EvalSymlinks(filepath.Dir(full)); perr == nil && !inside(root, parent) {
+			return "", fmt.Errorf("%w: the parent of %s resolves outside", ErrOutside, rel)
+		}
+	}
+	return full, nil
+}
+
+func inside(root, path string) bool {
+	return path == root || strings.HasPrefix(path, root+string(os.PathSeparator))
+}
+
+// ReadWithin reads a file inside the worktree.
+func ReadWithin(worktreePath, rel string) ([]byte, error) {
+	full, err := Resolve(worktreePath, rel)
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(full) //nolint:gosec // Resolve confines the path to the worktree
+}
+
+// WriteWithin writes a file inside the worktree, creating parent directories.
+func WriteWithin(worktreePath, rel string, body []byte) error {
+	full, err := Resolve(worktreePath, rel)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(full), 0o750); err != nil {
+		return err
+	}
+	return os.WriteFile(full, body, 0o644) //nolint:gosec // Resolve confines the path to the worktree
+}
+
+// StatWithin reports whether a path exists inside the worktree.
+func StatWithin(worktreePath, rel string) (os.FileInfo, error) {
+	full, err := Resolve(worktreePath, rel)
+	if err != nil {
+		return nil, err
+	}
+	return os.Stat(full)
+}
+
+// ListWithin lists a directory inside the worktree.
+func ListWithin(worktreePath, rel string) ([]os.DirEntry, error) {
+	full, err := Resolve(worktreePath, rel)
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadDir(full)
 }

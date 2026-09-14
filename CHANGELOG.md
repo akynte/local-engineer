@@ -73,13 +73,35 @@ Released sections are generated from Conventional Commits at release time.
   implementation, so the whole pipeline runs and is tested without a model.
 - `le task verify`, `le task create` and `le task run`.
 
+- **Tool calling in the provider layer**, across both wire formats: the
+  OpenAI-compatible function envelope and the Messages API's content blocks,
+  including replaying tool calls on assistant turns and merging tool results
+  into a single user turn.
+- **The editing engine** (`internal/engine/native`): a bounded tool loop with
+  nine tools — read, edit, write, list, search, find symbol, impact, run
+  verification, done. Every file operation is confined to the task worktree by
+  `internal/worktree` as well as by the sandbox, tested against traversal and
+  symlink escapes. A failed tool call is a result the model can act on, not an
+  error that discards the turn.
+- **Task decomposition** into bounded child tasks with dependencies. A plan is
+  produced by a model and validated by the supervisor: a step with no scope, a
+  scope escaping the repository, an unknown verification level, or a forward
+  dependency is rejected before anything runs.
+- **The broker and human gates.** A gate carries the deterministic evidence —
+  impact report, diff, verification findings — and is journalled before it
+  blocks, so an interrupted approval is a pending gate on restart rather than a
+  lost one. Which decisions gate is configuration; a budget increase always is.
+- `le plan`, `le gate list/show/approve/reject`.
+
 ### Known gaps
 
-- The engine adapter that turns a packet into edits is not implemented. The
-  pipeline that judges a change is complete; what fills a worktree with a
-  model's change is not.
-- Language analyzers beyond Go and commit history are not implemented;
-  [the graph schema reference](docs/reference/graph-schema.md) marks the state
+- Language analyzers beyond Go and commit history.
+- The evaluation harness. No task-success numbers are published.
+- [The graph schema reference](docs/reference/graph-schema.md) marks the state
   per language.
-- No task-success benchmark results are published, and the README makes no
-  performance claims until they are.
+- The design chose OpenCode as the execution engine (DR-5). What shipped is a
+  native engine over the provider boundary: the adapter contract is what DR-5
+  is about, and a native implementation is testable end to end without an
+  external process. An OpenCode adapter remains a second implementation of the
+  same interface; the record should be superseded rather than ignored if the
+  native engine turns out to be the permanent answer.

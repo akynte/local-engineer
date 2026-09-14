@@ -76,6 +76,46 @@ from a deterministic table over the change kind and the edge kind.
 `search --expand N` sets the graph expansion depth from the lexical anchors;
 `0` disables expansion.
 
+## `le plan`
+
+```
+le plan <requirement…> [--apply] [--max-steps N]
+```
+
+Decomposes a requirement into independent, verifiable steps, each with the
+narrowest scope that contains its change. Nothing is created without `--apply`.
+
+The plan is produced by a model but is not trusted by one. A step is rejected
+before anything runs when it declares no scope, names a scope escaping the
+repository, uses an unknown verification level, or depends on a step that does
+not come before it. Those are the failures that would otherwise be discovered
+mid-execution, with a half-applied change in a worktree.
+
+## `le gate`
+
+| Command | |
+|---|---|
+| `list` | Gates waiting for a decision (`--all` includes decided ones) |
+| `show <id>` | The gate and the evidence behind it (`--diff` for the full diff) |
+| `approve <id> --note "…"` | Approve |
+| `reject <id> --note "…"` | Reject |
+
+A gate is a point where a decision leaves the system. Each carries the
+deterministic evidence — an impact report, a diff, the verification findings —
+so answering means reading what the supervisor computed rather than trusting a
+summary.
+
+Gates are journalled *before* they block, so an interrupted approval is a
+pending gate on restart rather than a lost one.
+
+Which decisions open a gate is configuration (`gates:` in `le.yaml`). The
+shipped default gates breaking changes, out-of-scope writes and applying a
+change; it does not gate plans. A budget increase is always a person's call —
+the budget exists precisely so a task cannot decide to keep going.
+
+The `--note` matters more than the verdict: it is what the gate is worth six
+months from now.
+
 ## `le task`
 
 | Command | |

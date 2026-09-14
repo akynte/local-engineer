@@ -90,11 +90,29 @@ func (p *OpenAICompatible) ChatStructured(ctx context.Context, req ChatRequest, 
 }
 
 func (p *OpenAICompatible) chat(ctx context.Context, req ChatRequest, schema json.RawMessage) (*ChatResponse, error) {
+	if len(req.Tools) > 0 && !p.caps.ToolCalling {
+		return nil, &UnsupportedError{Provider: p.name, Capability: "tool calling"}
+	}
 	model := req.Model
 	if model == "" {
 		model = p.model
 	}
-	body := map[string]any{"model": model, "messages": req.Messages}
+	body := map[string]any{"model": model, "messages": openAIMessages(req.Messages)}
+	if len(req.Tools) > 0 {
+		tools := make([]map[string]any, len(req.Tools))
+		for i, t := range req.Tools {
+			tools[i] = map[string]any{
+				"type": "function",
+				"function": map[string]any{
+					"name": t.Name, "description": t.Description, "parameters": t.Schema,
+				},
+			}
+		}
+		body["tools"] = tools
+		if req.ToolChoice != "" {
+			body["tool_choice"] = req.ToolChoice
+		}
+	}
 	if req.Temperature != nil {
 		body["temperature"] = *req.Temperature
 	}
@@ -134,8 +152,19 @@ func (p *OpenAICompatible) chat(ctx context.Context, req ChatRequest, schema jso
 	var out struct {
 		Model   string `json:"model"`
 		Choices []struct {
-			Message      Message `json:"message"`
-			FinishReason string  `json:"finish_reason"`
+			Message struct {
+				Role      string `json:"role"`
+				Content   string `json:"content"`
+				ToolCalls []struct {
+					ID       string `json:"id"`
+					Type     string `json:"type"`
+					Function struct {
+						Name      string `json:"name"`
+						Arguments string `json:"arguments"`
+					} `json:"function"`
+				} `json:"tool_calls"`
+			} `json:"message"`
+			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
 		Usage struct {
 			PromptTokens     int `json:"prompt_tokens"`
@@ -157,11 +186,50 @@ func (p *OpenAICompatible) chat(ctx context.Context, req ChatRequest, schema jso
 	if cached == 0 {
 		cached = out.TimingsCacheN
 	}
-	return &ChatResponse{
+	resp := &ChatResponse{
 		Content: out.Choices[0].Message.Content, FinishReason: out.Choices[0].FinishReason,
 		PromptTokens: out.Usage.PromptTokens, OutputTokens: out.Usage.CompletionTokens,
 		CachedTokens: cached, Model: out.Model, DurationMS: time.Since(start).Milliseconds(),
-	}, nil
+	}
+	for _, tc := range out.Choices[0].Message.ToolCalls {
+		args := tc.Function.Arguments
+		if strings.TrimSpace(args) == "" {
+			args = "{}"
+		}
+		resp.ToolCalls = append(resp.ToolCalls, ToolCall{
+			ID: tc.ID, Name: tc.Function.Name, Arguments: json.RawMessage(args),
+		})
+	}
+	return resp, nil
+}
+
+// openAIMessages renders the conversation in the wire shape, replaying tool
+// calls on the assistant turns that requested them. A tool result whose call
+// is missing from the history is rejected by the provider, so the replay is
+// not optional.
+func openAIMessages(msgs []Message) []map[string]any {
+	out := make([]map[string]any, 0, len(msgs))
+	for _, m := range msgs {
+		wire := map[string]any{"role": m.Role, "content": m.Content}
+		if m.Name != "" {
+			wire["name"] = m.Name
+		}
+		if m.ToolCallID != "" {
+			wire["tool_call_id"] = m.ToolCallID
+		}
+		if len(m.ToolCalls) > 0 {
+			calls := make([]map[string]any, len(m.ToolCalls))
+			for i, tc := range m.ToolCalls {
+				calls[i] = map[string]any{
+					"id": tc.ID, "type": "function",
+					"function": map[string]any{"name": tc.Name, "arguments": string(tc.Arguments)},
+				}
+			}
+			wire["tool_calls"] = calls
+		}
+		out = append(out, wire)
+	}
+	return out
 }
 
 func (p *OpenAICompatible) Embed(ctx context.Context, req EmbedRequest) (*EmbedResponse, error) {

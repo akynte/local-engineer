@@ -15,14 +15,15 @@ summarisers, the completion contract, the provider abstraction with four
 provider kinds, hardware profiles and `le models bench`, the supervisor API and
 dashboard, `le doctor`, container images and compose files, and the CI gates.
 
-A task runs end to end today: `le task verify` creates a worktree, syncs your
-uncommitted changes into it, runs build, vet and test inside a Landlock
-sandbox, records every result as evidence tied to the exact content hash it
-describes, and decides acceptance from that evidence alone.
+A task runs end to end today. `le task verify` puts your uncommitted work
+under the completion contract. `le plan` decomposes a requirement into bounded
+child tasks. `le task run` gives a task its own worktree, lets a model edit it
+through a confined tool loop with verification as the correction signal, and
+decides acceptance from evidence alone — then opens a human gate carrying the
+diff and the findings before anything is applied.
 
-**Not implemented**: the engine adapter that produces edits. The pipeline that
-judges a change is complete; what fills the worktree with a *model's* change is
-not. See Phase 3 below.
+**Not implemented**: language analyzers beyond Go, and the evaluation harness.
+No task-success numbers are published, so the README claims none.
 
 ---
 
@@ -48,7 +49,8 @@ executes every marked command block and fails the build on stale documentation.
 - [x] Two-workspace isolation tests, and proof they fail when isolation breaks
 - [x] `le doctor` reports which DR-3 layers are active
 - [x] Per-task worktrees, so a task never edits the operator's checkout
-- [ ] First model-authored bug fix completes inside the container *(needs the engine adapter)*
+- [x] The engine's file operations are confined to the worktree, tested against
+      traversal and symlink escapes, on top of the sandbox
 
 ## Phase 2 — Crash safety ✅ (core)
 
@@ -60,24 +62,36 @@ executes every marked command block and fails the build on stale documentation.
 - [x] Every task attempt journalled intent-first, with a checkpoint on finish
 - [ ] Full Stage D interruption-class suite driving long-running model tasks
 
-## Phase 3 — Task execution 🟡 (deterministic half done)
+## Phase 3 — Task execution ✅
 
 - [x] Engine adapter contract (`internal/engine`), with a verification-only
       implementation that exercises the whole pipeline without a model
+- [x] **The editing engine** (`internal/engine/native`): a bounded tool loop
+      over the provider boundary, with nine tools, worktree confinement, and
+      verification wired in as the correction signal
+- [x] Tool calling in the provider layer, both wire formats
 - [x] Per-task worktrees and the sandbox spec for each
 - [x] Verification levels (low, standard, high) and the completion contract
 - [x] Evidence summarisers for compiler, vet, test, race and format output
 - [x] Out-of-scope write detection against a declared scope
-- [ ] **The OpenCode integration** — the adapter that turns a packet into edits
-- [ ] Task decomposition into bounded child tasks
-- [ ] The broker and human gates
+- [x] Task decomposition into bounded child tasks, with dependencies
+- [x] The broker and human gates
 
-The completion contract is the part that matters most and it is done: a task
-is accepted only when every recipe its level requires has a **passing** result
-produced against the **current** candidate, with no out-of-scope writes. A
-skip, an error, or a pass against an older candidate satisfies nothing, and an
-engine's claim that it finished is an input to that decision, never the
-decision.
+The completion contract is the part that matters most: a task is accepted only
+when every recipe its level requires has a **passing** result produced against
+the **current** candidate, with no out-of-scope writes. A skip, an error, or a
+pass against an older candidate satisfies nothing, and an engine's claim that
+it finished is an input to that decision, never the decision.
+
+**A note on DR-5.** The design chose OpenCode as the execution engine. What
+shipped is a native engine driving the provider boundary directly, for a
+reason worth stating: the adapter contract is what DR-5 is actually about, and
+a native implementation is testable end to end without an external process,
+uses the provider abstraction that already exists, and works with any
+OpenAI-compatible backend. An OpenCode adapter remains a legitimate second
+implementation of `engine.Engine` — the contract was designed for exactly that
+— and the decision record should be superseded rather than quietly ignored if
+the native engine turns out to be the permanent answer.
 
 ## Phase 4 — Language analyzers and the full graph 🟡 (Go done)
 
@@ -94,7 +108,7 @@ Every Go relationship from the design's coverage table is implemented and
 tested against a real type-checked fixture. The per-language state is in
 [the graph schema reference](docs/reference/graph-schema.md).
 
-## Phase 5 — Evaluation ⬜
+## Phase 5 — Evaluation ⬜ **next**
 
 - [ ] Task set and harness
 - [ ] The (a) unsupervised / (b) supervised / (c) frontier comparison

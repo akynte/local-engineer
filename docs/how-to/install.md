@@ -81,8 +81,12 @@ container, and there is no container. `le doctor` says so.
 ```console
 $ le version
 local-engineer …
-schemas: index=1 ledger=1 telemetry=1
+schemas: index=… ledger=… telemetry=…
 ```
+
+The schema numbers move with each release. `le` refuses to open a data
+directory written by a newer build rather than misreading it, so a mismatch is
+a clear message, not corruption.
 
 ## Uninstall
 

@@ -172,3 +172,213 @@ func TestAnthropicDoesNotClaimEmbeddings(t *testing.T) {
 		t.Fatalf("expected ErrUnsupported, got %v", err)
 	}
 }
+
+// Tool calling has two incompatible wire formats behind one interface. Both
+// are pinned here, because a silent mismatch shows up as a model that never
+// calls a tool — which looks like a bad model rather than a bad adapter.
+
+var weatherTool = llm.ToolDef{
+	Name: "get_weather", Description: "Look up the weather",
+	Schema: json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}},"required":["city"],"additionalProperties":false}`),
+}
+
+func TestOpenAIToolWireFormat(t *testing.T) {
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&got)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"model":"m","choices":[{"finish_reason":"tool_calls","message":{
+			"role":"assistant","content":"",
+			"tool_calls":[{"id":"call_1","type":"function",
+			  "function":{"name":"get_weather","arguments":"{\"city\":\"Oslo\"}"}}]}}],
+			"usage":{"prompt_tokens":5,"completion_tokens":2}}`))
+	}))
+	defer srv.Close()
+
+	p := llm.NewOpenAICompatible(llm.Options{
+		Name: "o", BaseURL: srv.URL, Model: "m",
+		Caps: llm.Capabilities{Kind: llm.KindOpenAICompatible, ToolCalling: true},
+	})
+	resp, err := p.Chat(context.Background(), llm.ChatRequest{
+		Messages:   []llm.Message{{Role: "user", Content: "weather in Oslo?"}},
+		Tools:      []llm.ToolDef{weatherTool},
+		ToolChoice: "auto",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tools, _ := got["tools"].([]any)
+	if len(tools) != 1 {
+		t.Fatalf("tools not sent: %v", got["tools"])
+	}
+	first, _ := tools[0].(map[string]any)
+	if first["type"] != "function" {
+		t.Errorf("this surface wraps tools in a function envelope, got %v", first["type"])
+	}
+	fn, _ := first["function"].(map[string]any)
+	if fn["name"] != "get_weather" || fn["parameters"] == nil {
+		t.Errorf("function payload = %v", fn)
+	}
+
+	if !resp.WantsTools() || len(resp.ToolCalls) != 1 {
+		t.Fatalf("tool calls not parsed: %+v", resp)
+	}
+	tc := resp.ToolCalls[0]
+	if tc.ID != "call_1" || tc.Name != "get_weather" {
+		t.Errorf("tool call = %+v", tc)
+	}
+	// Arguments stay raw: the caller validates them against the tool's schema
+	// and reports a violation back as a tool result the model can act on.
+	var args struct{ City string }
+	if err := json.Unmarshal(tc.Arguments, &args); err != nil || args.City != "Oslo" {
+		t.Errorf("arguments = %s (%v)", tc.Arguments, err)
+	}
+}
+
+func TestOpenAIReplaysToolCallsAndResults(t *testing.T) {
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&got)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"model":"m","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"18C"}}],"usage":{}}`))
+	}))
+	defer srv.Close()
+
+	p := llm.NewOpenAICompatible(llm.Options{
+		Name: "o", BaseURL: srv.URL, Model: "m",
+		Caps: llm.Capabilities{Kind: llm.KindOpenAICompatible, ToolCalling: true},
+	})
+	_, err := p.Chat(context.Background(), llm.ChatRequest{
+		Messages: []llm.Message{
+			{Role: "user", Content: "weather?"},
+			{Role: "assistant", ToolCalls: []llm.ToolCall{
+				{ID: "call_1", Name: "get_weather", Arguments: json.RawMessage(`{"city":"Oslo"}`)}}},
+			{Role: "tool", ToolCallID: "call_1", Content: "18C"},
+		},
+		Tools: []llm.ToolDef{weatherTool},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	msgs, _ := got["messages"].([]any)
+	if len(msgs) != 3 {
+		t.Fatalf("expected 3 turns, got %d", len(msgs))
+	}
+	assistant, _ := msgs[1].(map[string]any)
+	calls, _ := assistant["tool_calls"].([]any)
+	if len(calls) != 1 {
+		t.Fatal("the assistant turn must replay its tool calls, or the provider rejects the result that follows")
+	}
+	toolMsg, _ := msgs[2].(map[string]any)
+	if toolMsg["tool_call_id"] != "call_1" {
+		t.Errorf("tool result must carry the call id, got %v", toolMsg)
+	}
+}
+
+// The Messages API expresses the same thing with content blocks and a
+// different schema key, and tool results are user turns rather than a role.
+func TestAnthropicToolWireFormat(t *testing.T) {
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&got)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"model":"claude-opus-5","stop_reason":"tool_use","content":[
+			{"type":"text","text":"checking"},
+			{"type":"tool_use","id":"toolu_1","name":"get_weather","input":{"city":"Oslo"}}],
+			"usage":{"input_tokens":5,"output_tokens":2}}`))
+	}))
+	defer srv.Close()
+
+	p := llm.NewAnthropic(llm.Options{Name: "a", BaseURL: srv.URL, APIKey: "k",
+		Caps: llm.Capabilities{ToolCalling: true}})
+	resp, err := p.Chat(context.Background(), llm.ChatRequest{
+		Messages: []llm.Message{{Role: "user", Content: "weather?"}},
+		Tools:    []llm.ToolDef{weatherTool},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tools, _ := got["tools"].([]any)
+	first, _ := tools[0].(map[string]any)
+	if first["input_schema"] == nil {
+		t.Errorf("this API names the schema input_schema, got keys %v", keysOf(first))
+	}
+	if first["function"] != nil {
+		t.Error("this API does not use a function envelope")
+	}
+
+	if len(resp.ToolCalls) != 1 || resp.ToolCalls[0].ID != "toolu_1" {
+		t.Fatalf("tool use blocks not parsed: %+v", resp.ToolCalls)
+	}
+	if resp.Content != "checking" {
+		t.Errorf("text blocks alongside a tool use must still form the content, got %q", resp.Content)
+	}
+}
+
+func TestAnthropicToolResultsBecomeUserBlocks(t *testing.T) {
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&got)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"model":"m","stop_reason":"end_turn","content":[{"type":"text","text":"ok"}],"usage":{}}`))
+	}))
+	defer srv.Close()
+
+	p := llm.NewAnthropic(llm.Options{Name: "a", BaseURL: srv.URL, APIKey: "k",
+		Caps: llm.Capabilities{ToolCalling: true}})
+	_, err := p.Chat(context.Background(), llm.ChatRequest{
+		Messages: []llm.Message{
+			{Role: "user", Content: "weather?"},
+			{Role: "assistant", ToolCalls: []llm.ToolCall{
+				{ID: "toolu_1", Name: "get_weather", Arguments: json.RawMessage(`{"city":"Oslo"}`)}}},
+			{Role: "tool", ToolCallID: "toolu_1", Content: "18C"},
+			{Role: "tool", ToolCallID: "toolu_2", Content: "sunny"},
+		},
+		Tools: []llm.ToolDef{weatherTool},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	msgs, _ := got["messages"].([]any)
+	if len(msgs) != 3 {
+		t.Fatalf("two tool results must merge into one user turn; got %d turns", len(msgs))
+	}
+	last, _ := msgs[2].(map[string]any)
+	if last["role"] != "user" {
+		t.Errorf("a tool result is a user turn here, got role %v", last["role"])
+	}
+	blocks, _ := last["content"].([]any)
+	if len(blocks) != 2 {
+		t.Fatalf("expected both results in one turn, got %d blocks", len(blocks))
+	}
+	b0, _ := blocks[0].(map[string]any)
+	if b0["type"] != "tool_result" || b0["tool_use_id"] != "toolu_1" {
+		t.Errorf("block = %v", b0)
+	}
+}
+
+func TestToolsAgainstAProviderThatDoesNotDeclareThemIsRefused(t *testing.T) {
+	p := llm.NewOpenAICompatible(llm.Options{
+		Name: "plain", BaseURL: "http://127.0.0.1:1",
+		Caps: llm.Capabilities{Kind: llm.KindOpenAICompatible, ToolCalling: false},
+	})
+	_, err := p.Chat(context.Background(), llm.ChatRequest{
+		Messages: []llm.Message{{Role: "user", Content: "x"}},
+		Tools:    []llm.ToolDef{weatherTool},
+	})
+	if !errors.Is(err, llm.ErrUnsupported) {
+		t.Fatalf("expected ErrUnsupported, got %v", err)
+	}
+}
+
+func keysOf(m map[string]any) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}

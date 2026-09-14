@@ -242,11 +242,22 @@ func newGraphSearchCmd() *cobra.Command {
 	return cmd
 }
 
+// truncate keeps the END of a string. Fully qualified names share long
+// prefixes, so the tail is what distinguishes them.
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
 	return "…" + s[len(s)-n+1:]
+}
+
+// truncateHead keeps the START of a string, for prose where the beginning
+// carries the meaning.
+func truncateHead(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n-1] + "…"
 }
 
 func joinArgs(args []string) string {

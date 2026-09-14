@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,10 +11,14 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/akynte/local-engineer/internal/broker"
 	"github.com/akynte/local-engineer/internal/config"
 	"github.com/akynte/local-engineer/internal/engine"
+	"github.com/akynte/local-engineer/internal/engine/native"
 	"github.com/akynte/local-engineer/internal/ledger"
+	"github.com/akynte/local-engineer/internal/llm"
 	"github.com/akynte/local-engineer/internal/recipe"
+	"github.com/akynte/local-engineer/internal/retrieval"
 	"github.com/akynte/local-engineer/internal/sandbox"
 	"github.com/akynte/local-engineer/internal/store"
 	"github.com/akynte/local-engineer/internal/task"
@@ -31,6 +36,64 @@ func newTaskCmd() *cobra.Command {
 	cmd.AddCommand(newTaskListCmd(), newTaskJournalCmd(), newTaskRecoverCmd(),
 		newTaskCreateCmd(), newTaskRunCmd(), newTaskVerifyCmd())
 	return cmd
+}
+
+// engineFor builds the editing engine from the configured provider.
+//
+// When no provider is reachable the verification-only engine is used instead,
+// and the caller is told which it got. Silently falling back would let someone
+// believe a model had looked at their code when nothing had.
+func engineFor(cmd *cobra.Command, root *store.Root, st *store.Store) (engine.Engine, error) {
+	cfg, err := loadConfig(root)
+	if err != nil {
+		return nil, err
+	}
+	f, err := llm.LoadProvidersFile(root.Layout().ConfigDir())
+	if err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(),
+			"no providers.yaml: running verification only. Run `le config init` and configure a model to make edits.\n")
+		return engine.Verify{}, nil
+	}
+	router, err := llm.NewRouter(f, cfg.Offline)
+	if err != nil {
+		return nil, fmt.Errorf("providers.yaml is invalid: %w", err)
+	}
+	provider, err := router.For(llm.RoleCoding)
+	if err != nil {
+		return nil, err
+	}
+
+	probe, cancel := context.WithTimeout(cmd.Context(), 15*time.Second)
+	defer cancel()
+	if err := provider.Health(probe); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(),
+			"provider %q is not reachable (%v): running verification only.\n", provider.Name(), err)
+		return engine.Verify{}, nil
+	}
+
+	profile := loadProfile(root, cfg)
+	opts := native.Options{
+		Provider:  provider,
+		Retriever: retrieval.New(st),
+		Graph:     graphFor(st),
+		Logf:      func(f string, a ...any) { fmt.Fprintf(cmd.ErrOrStderr(), f+"\n", a...) },
+	}
+	// §9.3: none of these are hardcoded. They come from the active profile,
+	// and the fallback below is the shipped default rather than a tuned value.
+	if profile != nil {
+		opts.MaxTools = profile.ToolSurfaceMax
+		opts.MaxTokens = profile.ReservedOutput
+		opts.Temperature = profile.Sampling.Temperature
+		opts.Thinking = profile.Thinking
+	}
+	eng, err := native.New(opts)
+	if err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(),
+			"provider %q cannot drive edits (%v): running verification only.\n", provider.Name(), err)
+		return engine.Verify{}, nil
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(), "engine: %s\n", eng.Name())
+	return eng, nil
 }
 
 // runnerFor builds a task runner with the strongest available sandbox and the
@@ -52,6 +115,7 @@ func runnerFor(cmd *cobra.Command, root *store.Root, st *store.Store, eng engine
 	r.Logf = func(format string, args ...any) {
 		fmt.Fprintf(cmd.ErrOrStderr(), format+"\n", args...)
 	}
+	r.Broker = broker.New(st, policyFrom(cfg.Gates))
 
 	tmp := st.TmpDir()
 	r.SandboxSpec = sandbox.Spec{
@@ -140,10 +204,13 @@ func newTaskRunCmd() *cobra.Command {
 			}
 			defer closeRoot(cmd, root)
 
-			// Until an engine adapter is configured, a run verifies rather
-			// than edits. That is a real operation, not a placeholder: it puts
-			// a human's change under the same completion contract.
-			r, err := runnerFor(cmd, root, st, engine.Verify{})
+			eng, err := engineFor(cmd, root, st)
+			if err != nil {
+				return err
+			}
+			defer eng.Close()
+
+			r, err := runnerFor(cmd, root, st, eng)
 			if err != nil {
 				return err
 			}
@@ -276,6 +343,12 @@ func printOutcome(cmd *cobra.Command, out *task.Outcome, showDiff bool) error {
 	fmt.Fprintln(w, "\nWhy:")
 	for _, r := range out.Reasons {
 		fmt.Fprintf(w, "  - %s\n", r)
+	}
+	if out.Branch != "" && strings.TrimSpace(out.Diff) != "" {
+		fmt.Fprintf(w, "\nThe change is on branch %s.\n", out.Branch)
+	}
+	if out.Gate != nil && out.Gate.Open() {
+		fmt.Fprintf(w, "Answer the gate with:  le gate show %s\n", out.Gate.ID)
 	}
 	if showDiff && out.Diff != "" {
 		fmt.Fprintf(w, "\n--- diff ---\n%s\n", out.Diff)
