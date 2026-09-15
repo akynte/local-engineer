@@ -73,6 +73,11 @@ type Response struct {
 	// harness limit as a model verdict, and an evaluation built on that
 	// measures the budget rather than the system.
 	Truncated bool
+	// DroppedMessages counts how many messages were trimmed from the
+	// conversation to fit the model's context window. A non-zero value means
+	// the engine pruned older tool exchanges so Provider.Chat would not
+	// exceed the window.
+	DroppedMessages int
 }
 
 // Engine produces edits in a worktree.

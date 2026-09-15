@@ -45,10 +45,11 @@ type SystemSolver struct {
 	// SandboxSpec is the base spec; the task copy is added per run.
 	SandboxSpec sandbox.Spec
 	// Profile-derived limits (§9.3: never hardcoded).
-	MaxTools    int
-	MaxTokens   int
-	Temperature float64
-	Thinking    string
+	MaxTools      int
+	MaxTokens     int
+	Temperature   float64
+	Thinking      string
+	ContextTokens int
 	// Analyzers are the language analyzers `le index` runs, so a task copy is
 	// indexed exactly the way a real repository would be. Without them the
 	// graph holds containment edges only, and the graph ablation compares two

@@ -9,6 +9,7 @@ import (
 	"github.com/akynte/local-engineer/internal/engine"
 	"github.com/akynte/local-engineer/internal/graph"
 	"github.com/akynte/local-engineer/internal/llm"
+	"github.com/akynte/local-engineer/internal/models"
 	"github.com/akynte/local-engineer/internal/recipe"
 	"github.com/akynte/local-engineer/internal/retrieval"
 	"github.com/akynte/local-engineer/prompts"
@@ -41,6 +42,12 @@ type Engine struct {
 	MaxTokens   int
 	Thinking    string
 
+	// ContextTokens is the model's context window in tokens. The engine
+	// trims the conversation when the estimate exceeds this budget so that
+	// Provider.Chat never receives a request larger than the window. Zero
+	// disables trimming entirely.
+	ContextTokens int
+
 	// Logf reports each tool call. Nil discards them.
 	Logf func(format string, args ...any)
 
@@ -49,16 +56,17 @@ type Engine struct {
 
 // Options configures an engine.
 type Options struct {
-	Provider    llm.Provider
-	Retriever   *retrieval.Retriever
-	Graph       graph.Graph
-	Recipes     *recipe.Runner
-	MaxSteps    int
-	MaxTools    int
-	Temperature float64
-	MaxTokens   int
-	Thinking    string
-	Logf        func(string, ...any)
+	Provider      llm.Provider
+	Retriever     *retrieval.Retriever
+	Graph         graph.Graph
+	Recipes       *recipe.Runner
+	MaxSteps      int
+	MaxTools      int
+	Temperature   float64
+	MaxTokens     int
+	Thinking      string
+	ContextTokens int
+	Logf          func(string, ...any)
 }
 
 // DefaultMaxSteps bounds one attempt when no profile says otherwise.
@@ -80,7 +88,7 @@ func New(o Options) (*Engine, error) {
 	e := &Engine{
 		Provider: o.Provider, Retriever: o.Retriever, Graph: o.Graph, Recipes: o.Recipes,
 		MaxSteps: o.MaxSteps, MaxTools: o.MaxTools, Temperature: o.Temperature,
-		MaxTokens: o.MaxTokens, Thinking: o.Thinking, Logf: o.Logf,
+		MaxTokens: o.MaxTokens, Thinking: o.Thinking, ContextTokens: o.ContextTokens, Logf: o.Logf,
 	}
 	if e.MaxSteps <= 0 {
 		e.MaxSteps = DefaultMaxSteps
@@ -112,6 +120,111 @@ func (e *Engine) logf(format string, args ...any) {
 	}
 }
 
+// estimateTokens counts the approximate token footprint of messages and tool
+// definitions. It accumulates character counts as an int, then converts ONCE
+// at the end using float arithmetic so the untyped float constant 3.5 is
+// never converted to int directly (which would be a compile error).
+func estimateTokens(messages []llm.Message, tools []llm.ToolDef) int {
+	const overhead = 16 // fixed per-message overhead for role + tool_call_id metadata
+	chars := 0
+	for _, m := range messages {
+		chars += overhead
+		chars += len(m.Role)
+		chars += len(m.Content)
+		chars += len(m.ToolCallID)
+		for _, tc := range m.ToolCalls {
+			chars += len(tc.ID) + len(tc.Name) + len(tc.Arguments)
+		}
+	}
+	for _, t := range tools {
+		chars += overhead
+		chars += len(t.Name) + len(t.Description) + len(t.Schema)
+	}
+	return int(float64(chars) / models.DefaultCharsPerToken)
+}
+
+// trimMessages removes the oldest exchange (one assistant message plus its
+// tool-result children) while the estimate exceeds the budget. It never drops
+// the first two messages (system prompt and user packet) and never drops the
+// most recent exchange. It builds a new slice rather than mutating the caller's.
+// Returns the trimmed slice and the number of messages dropped.
+func trimMessages(messages []llm.Message, contextTokens int) ([]llm.Message, int) {
+	if contextTokens <= 0 {
+		// Zero budget: skip trimming entirely.
+		return messages, 0
+	}
+
+	dropped := 0
+	for {
+		est := estimateTokens(messages, nil)
+		budget := contextTokens
+		if est <= budget {
+			break
+		}
+		// Find the oldest exchange to drop: the first assistant message
+		// (at index >= 2) and all tool messages that follow it until the
+		// next assistant message or the end.
+		// We must never drop the first two messages (system + user).
+		// We must never drop the most recent exchange.
+		// Strategy: scan from the back to find the most recent assistant
+		// message, then scan from the front (after index 1) to find the
+		// oldest assistant message. Drop that oldest exchange.
+
+		// Find the last assistant message index.
+		lastAssistant := -1
+		for i := len(messages) - 1; i >= 2; i-- {
+			if messages[i].Role == "assistant" {
+				lastAssistant = i
+				break
+			}
+		}
+		if lastAssistant < 0 {
+			// No assistant message to drop; nothing to trim.
+			break
+		}
+
+		// Find the first assistant message at or after index 2.
+		firstAssistant := -1
+		for i := 2; i < len(messages); i++ {
+			if messages[i].Role == "assistant" {
+				firstAssistant = i
+				break
+			}
+		}
+		if firstAssistant < 0 {
+			break
+		}
+
+		// If the first and last assistant are the same, there's only one
+		// exchange and we must not drop it.
+		if firstAssistant == lastAssistant {
+			break
+		}
+
+		// Find the end of the first exchange: the message right before the
+		// next assistant message, or the last message.
+		endOfFirst := len(messages)
+		for i := firstAssistant + 1; i < len(messages); i++ {
+			if messages[i].Role == "assistant" {
+				endOfFirst = i
+				break
+			}
+		}
+
+		// Count how many messages we're dropping.
+		dropCount := endOfFirst - firstAssistant
+		dropped += dropCount
+
+		// Build a new slice without the dropped messages.
+		newMsgs := make([]llm.Message, 0, len(messages)-dropCount)
+		newMsgs = append(newMsgs, messages[:firstAssistant]...)
+		newMsgs = append(newMsgs, messages[endOfFirst:]...)
+		messages = newMsgs
+	}
+
+	return messages, dropped
+}
+
 // Step runs one attempt: a bounded tool loop that ends when the model calls
 // done, runs out of steps, or stops asking for tools.
 func (e *Engine) Step(ctx context.Context, req engine.Request) (*engine.Response, error) {
@@ -123,6 +236,18 @@ func (e *Engine) Step(ctx context.Context, req engine.Request) (*engine.Response
 		if err := ctx.Err(); err != nil {
 			resp.Summary = fmt.Sprintf("stopped after %d step(s): %v", step-1, err)
 			return resp, nil
+		}
+
+		// §8.1: bound the tool transcript against the context window.
+		// Trim the oldest exchanges when the estimate exceeds the budget,
+		// so Provider.Chat never receives a request larger than the window.
+		if e.ContextTokens > 0 {
+			var dropped int
+			messages, dropped = trimMessages(messages, e.ContextTokens)
+			if dropped > 0 {
+				resp.DroppedMessages += dropped
+				e.logf("trimmed %d message(s) to fit the %d-token context window", dropped, e.ContextTokens)
+			}
 		}
 
 		out, err := e.Provider.Chat(ctx, llm.ChatRequest{
