@@ -387,7 +387,10 @@ func (r *Runner) run(ctx context.Context, t *Task, wt *worktree.Worktree) (*Outc
 		}
 		out.OutOfScope = scope
 
-		accepted, reasons := Accept(t.Verification, results, after, scope)
+		accepted, reasons := Accept(t.Verification, results, after, scope, Effect{
+			Made:     len(changed) > 0,
+			Expected: engine.Edits(r.Engine),
+		})
 		out.Reasons = reasons
 		if accepted {
 			out.Accepted = true
@@ -813,6 +816,19 @@ func summaries(results []recipe.Result) []map[string]any {
 // contract was not met.
 var ErrNotAccepted = errors.New("task: completion contract not satisfied")
 
+// Effect is what the task did to the worktree, which rule 6 of the completion
+// contract needs and the recipe results cannot supply: a passing build is a
+// fact about the code that is there, not about the work that produced it.
+type Effect struct {
+	// Made reports that the worktree differs from the baseline the task
+	// started from.
+	Made bool
+	// Expected reports that this run was supposed to change the worktree.
+	// False for a verification-only run, where an unchanged worktree is the
+	// correct outcome — see engine.Edits.
+	Expected bool
+}
+
 // Accept decides whether the completion contract is satisfied.
 //
 // This is the function the whole design points at, so its rules are explicit:
@@ -823,7 +839,17 @@ var ErrNotAccepted = errors.New("task: completion contract not satisfied")
 //     for an older state of the code cannot be reused (§7.2),
 //  4. no check that ran may have FAILED, including the conditional kinds the
 //     level does not demand a result from,
-//  5. no file may be changed outside the task's declared scope.
+//  5. no file may be changed outside the task's declared scope,
+//  6. a task that was supposed to change the worktree must have changed it.
+//
+// Rule 6 exists because rules 1 to 4 are questions about the code in the
+// worktree, not about the work. Against an untouched worktree every required
+// recipe passes on the strength of the baseline, so a task whose engine read
+// fifteen files and edited nothing was accepted with build, vet, test, race,
+// gofmt and lint all green. The verdict described the repository, which was
+// healthy, rather than the task, which had not been done. A verification-only
+// run is exempt by construction: engine.Edits reports that it was never
+// expected to change anything.
 //
 // Rule 4 is separate from rule 1 because the two questions are different.
 // recipe.Required answers "which kinds must have produced evidence", and the
@@ -839,7 +865,9 @@ var ErrNotAccepted = errors.New("task: completion contract not satisfied")
 // longer exists.
 //
 // No part of it consults what the engine claimed.
-func Accept(level recipe.Level, results []recipe.Result, candidate string, outOfScope []string) (bool, []string) {
+func Accept(level recipe.Level, results []recipe.Result, candidate string,
+	outOfScope []string, effect Effect) (bool, []string) {
+
 	byKind := map[recipe.Kind]recipe.Result{}
 	for _, r := range results {
 		// Keep the worst result per kind: one passing package does not excuse
@@ -851,6 +879,15 @@ func Accept(level recipe.Level, results []recipe.Result, candidate string, outOf
 
 	var reasons []string
 	ok := true
+
+	// Rule 6, first because it is the one rule the recipe results cannot
+	// speak to: they all pass against a worktree nobody touched.
+	if effect.Expected && !effect.Made {
+		ok = false
+		reasons = append(reasons,
+			"the task changed nothing: every check below passed against the unmodified worktree, "+
+				"so they describe the baseline rather than the work")
+	}
 
 	for _, kind := range recipe.Required(level) {
 		res, ran := byKind[kind]

@@ -93,6 +93,22 @@ type Engine interface {
 // ErrNoEngine is returned when a task needs edits but no engine is configured.
 var ErrNoEngine = fmt.Errorf("engine: no engine configured")
 
+// Edits reports whether an engine is expected to modify the worktree.
+//
+// The completion contract needs this because passing recipes describe the
+// code that is in the worktree, not the work that was done: against an
+// untouched worktree every required check passes trivially, so a task that
+// edited nothing would be accepted on the strength of the baseline. An engine
+// that changes nothing by design says so by implementing `Edits() bool`;
+// everything else is assumed to edit, which is the safe default — it can only
+// cause a no-op to be refused, never accepted.
+func Edits(e Engine) bool {
+	if d, ok := e.(interface{ Edits() bool }); ok {
+		return d.Edits()
+	}
+	return true
+}
+
 // Verify is the engine used for verification-only tasks: it changes nothing
 // and immediately reports that it is done.
 //
@@ -106,6 +122,11 @@ type Verify struct{}
 func (Verify) Name() string                 { return "verify-only" }
 func (Verify) Health(context.Context) error { return nil }
 func (Verify) Close() error                 { return nil }
+
+// Edits reports that this engine is not expected to change the worktree, so
+// an unchanged worktree is its correct outcome rather than a task that did
+// nothing. See Edits.
+func (Verify) Edits() bool { return false }
 
 func (Verify) Step(_ context.Context, req Request) (*Response, error) {
 	return &Response{

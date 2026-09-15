@@ -301,7 +301,7 @@ func TestAFailingConditionalCheckBlocksAcceptance(t *testing.T) {
 		pass(recipe.KindFormat, "formatting is clean"),
 	}
 
-	if ok, reasons := task.Accept(recipe.High, base, cand, nil); !ok {
+	if ok, reasons := task.Accept(recipe.High, base, cand, nil, task.Effect{Made: true, Expected: true}); !ok {
 		t.Fatalf("a clean run was not accepted: %v", reasons)
 	}
 
@@ -315,7 +315,7 @@ func TestAFailingConditionalCheckBlocksAcceptance(t *testing.T) {
 			Recipe: string(kind), Kind: kind, Status: recipe.Fail, Candidate: cand,
 			Summary: recipe.Summary{Headline: "2 findings"},
 		})
-		ok, reasons := task.Accept(recipe.High, results, cand, nil)
+		ok, reasons := task.Accept(recipe.High, results, cand, nil, task.Effect{Made: true, Expected: true})
 		if ok {
 			t.Errorf("a failing %s check was ignored: %v", kind, reasons)
 		}
@@ -336,7 +336,7 @@ func TestAConditionalCheckThatCouldNotRunDoesNotBlock(t *testing.T) {
 		{Recipe: "semgrep", Kind: recipe.KindAnalyzer, Status: recipe.Error, Candidate: cand},
 		{Recipe: "golangci-lint", Kind: recipe.KindLint, Status: recipe.Skipped, Candidate: cand},
 	}
-	if ok, reasons := task.Accept(recipe.Standard, results, cand, nil); !ok {
+	if ok, reasons := task.Accept(recipe.Standard, results, cand, nil, task.Effect{Made: true, Expected: true}); !ok {
 		t.Fatalf("a missing optional tool blocked acceptance: %v", reasons)
 	}
 }
@@ -350,7 +350,7 @@ func TestAStaleConditionalFailureDoesNotBlock(t *testing.T) {
 		{Recipe: "go test", Kind: recipe.KindTest, Status: recipe.Pass, Candidate: "current"},
 		{Recipe: "semgrep", Kind: recipe.KindAnalyzer, Status: recipe.Fail, Candidate: "older"},
 	}
-	if ok, reasons := task.Accept(recipe.Standard, results, "current", nil); !ok {
+	if ok, reasons := task.Accept(recipe.Standard, results, "current", nil, task.Effect{Made: true, Expected: true}); !ok {
 		t.Fatalf("a stale analyzer failure blocked acceptance: %v", reasons)
 	}
 }

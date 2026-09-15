@@ -78,7 +78,14 @@ func Rank(level recipe.Level, candidates []Candidate) Ranking {
 	}
 	var all []scored
 	for _, c := range candidates {
-		ok, reasons := Accept(level, c.Results, c.Manifest, c.OutOfScope)
+		// Rule 6 is the runner's to enforce, not this function's: the runner
+		// sees the worktree a candidate was built from, where "changed
+		// nothing" is answerable, and this sees only the evidence. DiffBytes
+		// is not that answer — it is documented as a weak tiebreak, and a
+		// producer that left it unset would have every candidate silently
+		// refused here.
+		ok, reasons := Accept(level, c.Results, c.Manifest, c.OutOfScope,
+			Effect{Made: true, Expected: true})
 		s := scored{c: c, acceptable: ok, passing: passingKinds(c.Results), why: reasons}
 		all = append(all, s)
 	}

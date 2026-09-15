@@ -29,7 +29,7 @@ func TestStandardLevelRequiresBuildVetAndTest(t *testing.T) {
 	const c = "cand-1"
 	ok, reasons := task.Accept(recipe.Standard, []recipe.Result{
 		pass(recipe.KindBuild, c), pass(recipe.KindVet, c), pass(recipe.KindTest, c),
-	}, c, nil)
+	}, c, nil, task.Effect{Made: true, Expected: true})
 
 	if !ok {
 		t.Fatalf("expected acceptance, got: %v", reasons)
@@ -45,7 +45,7 @@ func TestAFailingRecipeBlocksAcceptance(t *testing.T) {
 	ok, reasons := task.Accept(recipe.Standard, []recipe.Result{
 		pass(recipe.KindBuild, c), pass(recipe.KindVet, c),
 		fail(recipe.KindTest, c, "2 test(s) failed in 1 package(s)"),
-	}, c, nil)
+	}, c, nil, task.Effect{Made: true, Expected: true})
 
 	if ok {
 		t.Fatal("a failing test must block acceptance")
@@ -61,7 +61,7 @@ func TestAMissingRecipeIsNotAPass(t *testing.T) {
 	const c = "cand-1"
 	ok, reasons := task.Accept(recipe.Standard, []recipe.Result{
 		pass(recipe.KindBuild, c), pass(recipe.KindVet, c),
-	}, c, nil)
+	}, c, nil, task.Effect{Made: true, Expected: true})
 
 	if ok {
 		t.Fatal("a level requiring tests must not accept a run where tests never happened")
@@ -79,7 +79,7 @@ func TestASkippedRecipeIsNotAPass(t *testing.T) {
 	}
 	ok, reasons := task.Accept(recipe.Standard, []recipe.Result{
 		pass(recipe.KindBuild, c), pass(recipe.KindVet, c), skipped,
-	}, c, nil)
+	}, c, nil, task.Effect{Made: true, Expected: true})
 
 	if ok {
 		t.Fatal("a skipped recipe must not satisfy a requirement")
@@ -99,7 +99,7 @@ func TestAnErroredRecipeIsNotAPass(t *testing.T) {
 	}
 	ok, reasons := task.Accept(recipe.Standard, []recipe.Result{
 		pass(recipe.KindBuild, c), pass(recipe.KindVet, c), errored,
-	}, c, nil)
+	}, c, nil, task.Effect{Made: true, Expected: true})
 
 	if ok {
 		t.Fatal("a recipe that could not run must not satisfy a requirement")
@@ -116,7 +116,7 @@ func TestStaleEvidenceCannotAcceptATask(t *testing.T) {
 		pass(recipe.KindBuild, "cand-2"),
 		pass(recipe.KindVet, "cand-2"),
 		pass(recipe.KindTest, "cand-1"), // produced before the last edit
-	}, "cand-2", nil)
+	}, "cand-2", nil, task.Effect{Made: true, Expected: true})
 
 	if ok {
 		t.Fatal("a pass against an older candidate must not accept the current one")
@@ -130,7 +130,7 @@ func TestOutOfScopeWritesBlockAcceptance(t *testing.T) {
 	const c = "cand-1"
 	ok, reasons := task.Accept(recipe.Standard, []recipe.Result{
 		pass(recipe.KindBuild, c), pass(recipe.KindVet, c), pass(recipe.KindTest, c),
-	}, c, []string{"internal/store/store.go", ".github/workflows/ci.yml"})
+	}, c, []string{"internal/store/store.go", ".github/workflows/ci.yml"}, task.Effect{Made: true, Expected: true})
 
 	if ok {
 		t.Fatal("changes outside the declared scope must block acceptance")
@@ -150,7 +150,7 @@ func TestTheWorstResultPerKindDecides(t *testing.T) {
 		pass(recipe.KindBuild, c), pass(recipe.KindVet, c),
 		pass(recipe.KindTest, c),
 		fail(recipe.KindTest, c, "1 test failed"),
-	}, c, nil)
+	}, c, nil, task.Effect{Made: true, Expected: true})
 
 	if ok {
 		t.Fatal("a failing result must win over a passing one of the same kind")
@@ -159,12 +159,12 @@ func TestTheWorstResultPerKindDecides(t *testing.T) {
 
 func TestLowLevelOnlyRequiresCompilation(t *testing.T) {
 	const c = "cand-1"
-	ok, _ := task.Accept(recipe.Low, []recipe.Result{pass(recipe.KindBuild, c)}, c, nil)
+	ok, _ := task.Accept(recipe.Low, []recipe.Result{pass(recipe.KindBuild, c)}, c, nil, task.Effect{Made: true, Expected: true})
 	if !ok {
 		t.Fatal("the low level should accept on a passing build alone")
 	}
 	// But it still must not accept a failing build.
-	if ok, _ := task.Accept(recipe.Low, []recipe.Result{fail(recipe.KindBuild, c, "broken")}, c, nil); ok {
+	if ok, _ := task.Accept(recipe.Low, []recipe.Result{fail(recipe.KindBuild, c, "broken")}, c, nil, task.Effect{Made: true, Expected: true}); ok {
 		t.Fatal("even the low level requires the code to compile")
 	}
 }
@@ -173,21 +173,21 @@ func TestHighLevelRequiresRaceAndFormat(t *testing.T) {
 	const c = "cand-1"
 	standard := []recipe.Result{pass(recipe.KindBuild, c), pass(recipe.KindVet, c), pass(recipe.KindTest, c)}
 
-	if ok, reasons := task.Accept(recipe.High, standard, c, nil); ok {
+	if ok, reasons := task.Accept(recipe.High, standard, c, nil, task.Effect{Made: true, Expected: true}); ok {
 		t.Fatalf("the high level must require more than standard: %v", reasons)
 	}
 	full := append(standard, pass(recipe.KindRace, c), pass(recipe.KindFormat, c))
-	if ok, reasons := task.Accept(recipe.High, full, c, nil); !ok {
+	if ok, reasons := task.Accept(recipe.High, full, c, nil, task.Effect{Made: true, Expected: true}); !ok {
 		t.Fatalf("expected acceptance at the high level: %v", reasons)
 	}
 }
 
 // An empty result set must never accept anything.
 func TestNoEvidenceNeverAccepts(t *testing.T) {
-	if ok, _ := task.Accept(recipe.Standard, nil, "c", nil); ok {
+	if ok, _ := task.Accept(recipe.Standard, nil, "c", nil, task.Effect{Made: true, Expected: true}); ok {
 		t.Fatal("a task with no evidence at all must not be accepted")
 	}
-	if ok, _ := task.Accept(recipe.Low, nil, "c", nil); ok {
+	if ok, _ := task.Accept(recipe.Low, nil, "c", nil, task.Effect{Made: true, Expected: true}); ok {
 		t.Fatal("even the low level requires evidence")
 	}
 }
