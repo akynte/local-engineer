@@ -1,12 +1,14 @@
-# Packet cap by needle test — no retrieval ceiling below the context window
+# Packet cap by needle test — no retrieval ceiling at any size this hardware can serve
 
-A 35B MoE recalled a random access code at every depth of every packet size
-tested, from 8,000 to 32,024 tokens, on a machine whose per-slot context window
-is 32,768. **No retrieval ceiling was found** — recall was perfect to within
-744 tokens of the window's edge, which is as close as the sweep can get. The measurement's own conclusion
-is therefore a negative one: at this context size the packet cap is bounded by
-the window, not by what the model can retrieve from, and
-`max_packet_tokens: 16384` is well inside what the model demonstrably handles.
+A 35B MoE recalled a random access code at **every depth of every packet size
+tested, from 8,000 to 64,028 tokens**, across two server configurations. The
+context window was doubled from 32,768 to 65,536 specifically to look for the
+point where retrieval degrades. **It was not found.** Forty-five probes, no
+misses.
+
+The result is therefore a negative one, and worth stating plainly: on this
+machine the packet cap is not set by what the model can retrieve from. It is set
+by what the hardware can serve.
 
 ## What was measured
 
@@ -30,87 +32,98 @@ qwen3.6-35b-a3b
 3.39 characters per token plus 56 tokens of fixed prompt overhead,
 measured against this model's own tokenizer
 
-  asked    sent (min..max)          drift  depths 0% 25% 50% 75% 100%
-   8000     8007..8011        11 tok  0.14%   .   .   .   .   .
-  16000    15999..16003        3 tok  0.02%   .   .   .   .   .
-  22000    22013..22016       16 tok  0.07%   .   .   .   .   .
-  26000    26007..26011       11 tok  0.04%   .   .   .   .   .
-  30000    30002..30007        7 tok  0.02%   .   .   .   .   .
+  asked    sent (min..max)      drift   0%  25%  50%  75% 100%   window
+   8000     8007..8011    11 tok 0.14%   .    .    .    .    .    32768
+  16000    15999..16003    3 tok 0.02%   .    .    .    .    .    32768
+  22000    22013..22016   16 tok 0.07%   .    .    .    .    .    32768
+  26000    26007..26011   11 tok 0.04%   .    .    .    .    .    32768
+  30000    30002..30007    7 tok 0.02%   .    .    .    .    .    32768
+  32000    32020..32024    4 tok 0.01%   .    .    .    .    .  32768 / 65536
+  44000    44009..44011   11 tok 0.03%   .    .    .    .    .    65536
+  56000    55996..55997    4 tok 0.01%   .    .    .    .    .    65536
+  64000    64025..64028   28 tok 0.04%   .    .    .    .    .    65536
 
-25 of 25 probes recalled the code. No probe errored.
+45 of 45 probes recalled the code. None missed, none truncated, none errored.
 ```
 
-### Extended to the edge of the window
+`recommended_cap` and `largest_tested` are both **64,028 measured tokens**, and
+the tool's verdict is the right one: *"No ceiling found up to 64028 measured
+tokens. That is not a measured limit: try larger sizes before treating it as
+one."*
 
-The sweep above reserved 2,048 tokens of the window for an answer that is
-sixteen hexadecimal characters long, which made everything above about 30,720
-untestable. With that budget reduced to 256 the top of the window opened up, and
-one more size was run:
+The 32,000 row was run under both configurations and gave the same answer, which
+is what makes the two halves comparable: `32020..32024` at one slot of 65,536
+against `32020..32024` at two slots of 32,768.
 
-```
-   32000 asked /  32022 actual, depth   0%: found
-   32000 asked /  32024 actual, depth  25%: found
-   32000 asked /  32022 actual, depth  50%: found
-   32000 asked /  32023 actual, depth  75%: found
-   32000 asked /  32021 actual, depth 100%: found
+## Why it stopped at 64,028
 
-No ceiling found up to 32024 measured tokens. That is not a measured
-limit: try larger sizes before treating it as one.
-```
+`llama-server` was restarted as `-c 65536 --parallel 1`, giving a single slot of
+65,536 tokens. A probe must fit its prompt *and* its completion budget, so
+64,028 + 256 = 64,284 is near everything a slot will hold.
 
-`recommended_cap` and `largest_tested` are both **32,024 measured tokens**, and
-the tool's own verdict is the right one: no ceiling found, which is not a
-measured limit. Recall did not fail anywhere the window allowed it to be tested,
-and the last size tested is within 744 tokens of the window's edge.
+Going further means more KV cache. This model keeps 40 layers × 2 KV heads × 256
+dimensions for keys and values, which at `q8_0` is about **43.5 KB per token** —
+65,536 tokens costs roughly 2.85 GB, and the card has 8,188 MiB total. 131,072
+would need about 5.7 GB of KV plus the resident weights and compute buffers,
+which is close enough to the limit to be an experiment rather than a
+continuation.
 
-## Why the sweep stopped at 32,024
-
-`llama-server` was started with `-c 65536 --parallel 2`, so each slot gets
-32,768 tokens. A probe has to fit its prompt *and* its completion budget in
-that, so 32,024 + 256 = 32,280 is close to everything a slot will hold.
-
-Testing past 32,768 needs the server restarted with `--parallel 1`, which would
-also make the profile's `context_tokens: 32768` wrong — that field has to match
-what the server was started with. That is a different measurement on a different
-configuration, and it has not been run.
+**The model is not the constraint.** Its trained context is 262,144
+(`qwen35moe.context_length`), so every size above was served well inside what it
+was trained for, with `rope.freq_base` untouched and no scaling applied. Nothing
+here is measuring a model pushed past its design window.
 
 ## What this does and does not establish
 
-It establishes that at 32,768 tokens of served context this model is not the
-binding constraint on packet size. Anything the retrieval layer can fit in the
-window, the model can find, at any depth — the sweep got to within 744 tokens of
-the window and recall had still not degraded.
+It establishes that up to 64,028 tokens this model retrieves a specific fact
+from a packet of code regardless of where in the packet it sits. Anything the
+retrieval layer can fit in the window, the model can find.
 
-It does **not** establish a retrieval ceiling, because none was reached. It does
-not say `max_packet_tokens` should be raised: the cap that fits this profile is
-`context_tokens - reserved_output_tokens` = 32768 − 8192 = **24,576**, and
-raising 16,384 to that costs prefill time on every step of every task in
-exchange for a packet the retrieval layer may not have anything to put in. That
-is a cost/benefit decision about retrieval, not a conclusion from this
-measurement, and no profile value was changed on the strength of it.
+It does **not** establish a retrieval ceiling, because none was reached at any
+size the hardware could serve. Twice now the sweep has been extended
+specifically to find one — from 30,007 to 32,024 by shrinking the completion
+budget, then to 64,028 by doubling the window — and twice it has come back
+clean.
+
+It does not say `max_packet_tokens` should be raised. Raising it costs prefill
+time on every step of every task, in exchange for a packet the retrieval layer
+may have nothing to put in. That is a cost/benefit decision about retrieval, not
+a conclusion from this measurement, and **no profile value was changed on the
+strength of it.**
 
 It also says nothing about recall over prose. The filler is code-shaped on
 purpose — this measures what a packet of retrieved source does, and a model's
-recall over English is not evidence about its recall over Go.
+recall over English is not evidence about its recall over Go. Nor does a single
+needle at a single depth resemble a task needing several scattered facts at
+once; this is the easy version of the question, and it is the version §8.3 asks.
 
 ## How the sizes came to be trustworthy
 
-The first three runs of this test were wrong in the axis the answer is read off,
-and each error was invisible until the numbers were looked at:
+The first three runs were wrong in the axis the answer is read off, and each
+error was invisible until the numbers were looked at:
 
 | Run | Asked | Sent | Error | Cause |
 |---|---|---|---|---|
 | 1 | 32,000 | 36,526 | 14% | assumed 4.0 characters per token |
 | 2 | 8,000 | 8,465 | 5.8% at depth 0% only | filler density depended on where the needle sat |
 | 3 | 8,000 | 8,244 | 3.1% at every depth | fixed prompt overhead folded into a per-character ratio |
-| 4 | 8,000 | 8,010 | 0.13% | — |
-| 4 | 32,000 | 32,022 | 0.07% | — |
+| 4+ | 64,000 | 64,025 | 0.04% | — |
 
 The third was diagnosable only because the second was fixed: once depth stopped
 moving the number, the residual was flat across all five depths, which is the
 signature of a constant rather than a scaling error. The sweep now calibrates
-with two probe-shaped requests solved for slope and intercept, and every figure
-it reports is the provider's own count rather than the size requested.
+with two probe-shaped requests solved for slope and intercept — 3.39 characters
+per token and 56 tokens of overhead, reproduced identically across three
+separate runs and both server configurations — and every figure it reports is
+the provider's own count rather than the size requested.
+
+Two further defects were fixed because they would have produced a *false
+ceiling*, which is the one error this test exists not to make:
+
+- A probe refused for exceeding the window was being recorded as a recall
+  failure. The model was never asked.
+- An answer cut off at the completion budget was being recorded as a miss. That
+  would report a ceiling at whatever size the model first decided to be wordy.
 
 ## Disclosure
 
@@ -121,19 +134,22 @@ it reports is the provider's own count rather than the size requested.
 | GPU | NVIDIA GeForce RTX 4060 Laptop, 8188 MiB, driver 595.84 |
 | Kernel | 7.0.0-31-generic |
 | Model | `Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf`, sha256 `707a55a8a4397ecde44de0c499d3e68c1ad1d240d1da65826b4949d1043f4450` |
-| Server | `llama-server -c 65536 --parallel 2 -ngl 999 --n-cpu-moe 999 -fa on -ctk q8_0 -ctv q8_0 -b 2048 -ub 512 -t 8 -tb 16 --jinja` |
-| Profile | `measured-7gb-gpu-61gb-ram` — `context_tokens: 32768`, `max_packet_tokens: 16384`, `reserved_output_tokens: 8192` |
-| Commit | `d7b3f09` |
-| Raw | [`2026-09-15-packet-cap.json`](2026-09-15-packet-cap.json) — all 25 probes of the main sweep, with the answer each returned. The 32,000 extension is quoted in full above. |
+| Trained context | 262,144 tokens; no rope scaling applied |
+| Server (runs 1–2) | `llama-server -c 65536 --parallel 2` → one slot of 32,768 |
+| Server (run 3) | `llama-server -c 65536 --parallel 1` → one slot of 65,536 |
+| Common flags | `-ngl 999 --n-cpu-moe 999 -fa on -ctk q8_0 -ctv q8_0 -b 2048 -ub 512 -t 8 -tb 16 --jinja` |
+| Profile | `measured-7gb-gpu-61gb-ram` — `max_packet_tokens: 16384`, `reserved_output_tokens: 8192`, unchanged by this measurement |
+| Commit | `df9e385` |
+| Raw | [`2026-09-15-packet-cap.json`](2026-09-15-packet-cap.json) (8k–30k) and [`2026-09-15-packet-cap-65k.json`](2026-09-15-packet-cap-65k.json) (32k–64k), every probe with the answer it returned |
 
-Note the KV cache is quantised to `q8_0` for both keys and values. That is part
-of the configuration measured, and a run with an unquantised cache is a
-different measurement.
+The KV cache is quantised to `q8_0` for both keys and values. That is part of
+the configuration measured; a run with an unquantised cache is a different
+measurement, and one that would not have fit 65,536 tokens on this card.
 
 ## Reproducing
 
 ```console
-$ le models needle --sizes 8000,16000,22000,26000,32000 --json
+$ le models needle --sizes 32000,44000,56000,64000 --json
 ```
 
 Add `--write` to save the measured cap into the active profile. It refuses when

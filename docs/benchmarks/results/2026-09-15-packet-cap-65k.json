@@ -1,0 +1,170 @@
+{
+  "model": "qwen3.6-35b-a3b",
+  "probes": [
+    {
+      "requested_tokens": 32000,
+      "prompt_tokens": 32022,
+      "placement": 0,
+      "found": true,
+      "answer": "9e9d8d445370fcaf",
+      "model": "qwen3.6-35b-a3b"
+    },
+    {
+      "requested_tokens": 32000,
+      "prompt_tokens": 32022,
+      "placement": 0.25,
+      "found": true,
+      "answer": "5faa2d580fe2558b",
+      "model": "qwen3.6-35b-a3b"
+    },
+    {
+      "requested_tokens": 32000,
+      "prompt_tokens": 32021,
+      "placement": 0.5,
+      "found": true,
+      "answer": "2abfef605001672d",
+      "model": "qwen3.6-35b-a3b"
+    },
+    {
+      "requested_tokens": 32000,
+      "prompt_tokens": 32021,
+      "placement": 0.75,
+      "found": true,
+      "answer": "8f4abf369445dfde",
+      "model": "qwen3.6-35b-a3b"
+    },
+    {
+      "requested_tokens": 32000,
+      "prompt_tokens": 32020,
+      "placement": 1,
+      "found": true,
+      "answer": "e2dbf45dbe6c0318",
+      "model": "qwen3.6-35b-a3b"
+    },
+    {
+      "requested_tokens": 44000,
+      "prompt_tokens": 44009,
+      "placement": 0,
+      "found": true,
+      "answer": "\"a5372dd72cd5007f\"",
+      "model": "qwen3.6-35b-a3b"
+    },
+    {
+      "requested_tokens": 44000,
+      "prompt_tokens": 44010,
+      "placement": 0.25,
+      "found": true,
+      "answer": "c6a13803209e54bf",
+      "model": "qwen3.6-35b-a3b"
+    },
+    {
+      "requested_tokens": 44000,
+      "prompt_tokens": 44010,
+      "placement": 0.5,
+      "found": true,
+      "answer": "4117dcef358051f9",
+      "model": "qwen3.6-35b-a3b"
+    },
+    {
+      "requested_tokens": 44000,
+      "prompt_tokens": 44011,
+      "placement": 0.75,
+      "found": true,
+      "answer": "58a1a5e0ad970221",
+      "model": "qwen3.6-35b-a3b"
+    },
+    {
+      "requested_tokens": 44000,
+      "prompt_tokens": 44010,
+      "placement": 1,
+      "found": true,
+      "answer": "8ab9b8f3143b40da",
+      "model": "qwen3.6-35b-a3b"
+    },
+    {
+      "requested_tokens": 56000,
+      "prompt_tokens": 55996,
+      "placement": 0,
+      "found": true,
+      "answer": "950bcebaed7bd750",
+      "model": "qwen3.6-35b-a3b"
+    },
+    {
+      "requested_tokens": 56000,
+      "prompt_tokens": 55997,
+      "placement": 0.25,
+      "found": true,
+      "answer": "ea3956cf809c1570",
+      "model": "qwen3.6-35b-a3b"
+    },
+    {
+      "requested_tokens": 56000,
+      "prompt_tokens": 55997,
+      "placement": 0.5,
+      "found": true,
+      "answer": "daf2568dd3522416",
+      "model": "qwen3.6-35b-a3b"
+    },
+    {
+      "requested_tokens": 56000,
+      "prompt_tokens": 55996,
+      "placement": 0.75,
+      "found": true,
+      "answer": "a3fe85494c46badd",
+      "model": "qwen3.6-35b-a3b"
+    },
+    {
+      "requested_tokens": 56000,
+      "prompt_tokens": 55996,
+      "placement": 1,
+      "found": true,
+      "answer": "b9f05ad3e5bcd0b9",
+      "model": "qwen3.6-35b-a3b"
+    },
+    {
+      "requested_tokens": 64000,
+      "prompt_tokens": 64025,
+      "placement": 0,
+      "found": true,
+      "answer": "bcc8ee3e2a5d285f",
+      "model": "qwen3.6-35b-a3b"
+    },
+    {
+      "requested_tokens": 64000,
+      "prompt_tokens": 64025,
+      "placement": 0.25,
+      "found": true,
+      "answer": "8ed5b9efc2043ee5",
+      "model": "qwen3.6-35b-a3b"
+    },
+    {
+      "requested_tokens": 64000,
+      "prompt_tokens": 64026,
+      "placement": 0.5,
+      "found": true,
+      "answer": "0d5cff7c45207b8d",
+      "model": "qwen3.6-35b-a3b"
+    },
+    {
+      "requested_tokens": 64000,
+      "prompt_tokens": 64026,
+      "placement": 0.75,
+      "found": true,
+      "answer": "13dc18f4c54dc2f1",
+      "model": "qwen3.6-35b-a3b"
+    },
+    {
+      "requested_tokens": 64000,
+      "prompt_tokens": 64028,
+      "placement": 1,
+      "found": true,
+      "answer": "7964a0738826341d",
+      "model": "qwen3.6-35b-a3b"
+    }
+  ],
+  "recommended_cap": 64028,
+  "largest_tested": 64028,
+  "chars_per_token": 3.388888888888889,
+  "prompt_overhead": 56,
+  "tokens_measured": true
+}

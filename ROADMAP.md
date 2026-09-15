@@ -28,18 +28,25 @@ empty on purpose — §1.2 lists it and v3 defines it nowhere, so it carries a
 README saying so rather than an invented mechanism.
 
 The §8.3 needle test has been run against a local model and the result is
-published in `docs/benchmarks/results/`. It found **no retrieval ceiling**: a
-35B MoE recalled a random code at every depth of every size from 8,000 to
-32,024 measured tokens — within 744 tokens of a 32,768-token window's edge, and
-as close to it as a probe that also needs room for an answer can get. At this context size the packet cap is bounded by the window rather
-than by retrieval, and `max_packet_tokens` was deliberately left where it was —
-the measurement says the current value is safe, not that a larger one is
-warranted.
+published in `docs/benchmarks/results/`. It found **no retrieval ceiling at any
+size this hardware can serve**. A 35B MoE recalled a random code at every depth
+of every size from 8,000 to 64,028 measured tokens — 45 probes, no misses. The
+context window was doubled from 32,768 to 65,536 specifically to look for the
+degradation point, and it is still not there. The model's trained context is
+262,144, so none of this was measured past what it was built for.
+
+So the packet cap here is set by what the hardware can serve, not by what the
+model can retrieve from, and `max_packet_tokens` was deliberately left where it
+was: the measurement says the current value is safe, not that a larger one is
+warranted. Raising it costs prefill on every step in exchange for a packet
+retrieval may have nothing to put in.
 
 Getting there took four runs, three of which were wrong by 14%, 5.8% and 3.1%
-in the axis the answer is read off. None of the three was visible without
-looking at the numbers the tool printed beside its own conclusion, which is the
-argument for printing both.
+in the axis the answer is read off, plus two separate false-ceiling bugs — a
+refused request and a truncated answer were both being recorded as the model
+failing to retrieve. None of the five was visible without looking at the numbers
+the tool printed beside its own conclusion, which is the argument for printing
+both.
 
 The evaluation harness has been run against a local model — 3 tasks × 4 arms ×
 5 passes, 60 runs, published in `docs/benchmarks/results/`. It settled nothing:
