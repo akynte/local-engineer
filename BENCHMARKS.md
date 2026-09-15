@@ -42,8 +42,7 @@ Full result: [`docs/benchmarks/results/2026-09-14-tasks.md`](docs/benchmarks/res
 A 35B MoE recalled a random access code at **every depth of every packet size
 tested, from 8,000 to 64,028 tokens**, across two server configurations. The
 context window was doubled from 32,768 to 65,536 specifically to look for the
-point where retrieval degrades. **It was not found.** Forty-five probes, no
-misses.
+point where retrieval degrades. **It was not found.** Fifty probes, no misses.
 
 Full result: [`docs/benchmarks/results/2026-09-15-packet-cap.md`](docs/benchmarks/results/2026-09-15-packet-cap.md)
 

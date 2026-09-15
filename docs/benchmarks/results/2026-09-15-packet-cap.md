@@ -3,8 +3,7 @@
 A 35B MoE recalled a random access code at **every depth of every packet size
 tested, from 8,000 to 64,028 tokens**, across two server configurations. The
 context window was doubled from 32,768 to 65,536 specifically to look for the
-point where retrieval degrades. **It was not found.** Forty-five probes, no
-misses.
+point where retrieval degrades. **It was not found.** Fifty probes, no misses.
 
 The result is therefore a negative one, and worth stating plainly: on this
 machine the packet cap is not set by what the model can retrieve from. It is set
@@ -38,12 +37,13 @@ measured against this model's own tokenizer
   22000    22013..22016   16 tok 0.07%   .    .    .    .    .    32768
   26000    26007..26011   11 tok 0.04%   .    .    .    .    .    32768
   30000    30002..30007    7 tok 0.02%   .    .    .    .    .    32768
-  32000    32020..32024    4 tok 0.01%   .    .    .    .    .  32768 / 65536
+  32000    32021..32024   24 tok 0.08%   .    .    .    .    .    32768
+  32000    32020..32022   22 tok 0.07%   .    .    .    .    .    65536
   44000    44009..44011   11 tok 0.03%   .    .    .    .    .    65536
   56000    55996..55997    4 tok 0.01%   .    .    .    .    .    65536
   64000    64025..64028   28 tok 0.04%   .    .    .    .    .    65536
 
-45 of 45 probes recalled the code. None missed, none truncated, none errored.
+50 of 50 probes recalled the code. None missed, none truncated, none errored.
 ```
 
 `recommended_cap` and `largest_tested` are both **64,028 measured tokens**, and
@@ -51,9 +51,10 @@ the tool's verdict is the right one: *"No ceiling found up to 64028 measured
 tokens. That is not a measured limit: try larger sizes before treating it as
 one."*
 
-The 32,000 row was run under both configurations and gave the same answer, which
-is what makes the two halves comparable: `32020..32024` at one slot of 65,536
-against `32020..32024` at two slots of 32,768.
+32,000 is listed twice on purpose: it was run under both configurations, and it
+is the control that makes the two halves one result rather than two. Two slots
+of 32,768 sent `32021..32024`; one slot of 65,536 sent `32020..32022`. Same
+answer, four tokens apart, which is the drift the sizing model already has.
 
 ## Why it stopped at 64,028
 

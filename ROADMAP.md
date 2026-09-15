@@ -30,7 +30,7 @@ README saying so rather than an invented mechanism.
 The §8.3 needle test has been run against a local model and the result is
 published in `docs/benchmarks/results/`. It found **no retrieval ceiling at any
 size this hardware can serve**. A 35B MoE recalled a random code at every depth
-of every size from 8,000 to 64,028 measured tokens — 45 probes, no misses. The
+of every size from 8,000 to 64,028 measured tokens — 50 probes, no misses. The
 context window was doubled from 32,768 to 65,536 specifically to look for the
 degradation point, and it is still not there. The model's trained context is
 262,144, so none of this was measured past what it was built for.
