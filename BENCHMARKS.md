@@ -40,8 +40,9 @@ Full result: [`docs/benchmarks/results/2026-09-14-tasks.md`](docs/benchmarks/res
 
 ### Packet cap by needle test — no retrieval ceiling below the context window
 A 35B MoE recalled a random access code at every depth of every packet size
-tested, from 8,000 to 30,007 tokens, on a machine whose per-slot context window
-is 32,768. **No retrieval ceiling was found.** The measurement's own conclusion
+tested, from 8,000 to 32,024 tokens, on a machine whose per-slot context window
+is 32,768. **No retrieval ceiling was found** — recall was perfect to within
+744 tokens of the window's edge, which is as close as the sweep can get. The measurement's own conclusion
 is therefore a negative one: at this context size the packet cap is bounded by
 the window, not by what the model can retrieve from, and
 `max_packet_tokens: 16384` is well inside what the model demonstrably handles.

@@ -58,10 +58,23 @@ type NeedleProbe struct {
 	// Model is what the provider reported, carried so the result names what
 	// was actually measured.
 	Model string `json:"model,omitempty"`
+	// Truncated marks a probe whose answer hit the completion budget without
+	// containing the code. The model was asked and started answering, so this
+	// is not a refusal; but it was cut off, so it is not a recall failure
+	// either. Counting it as one would report a ceiling at whatever size the
+	// model first decided to be wordy.
+	Truncated bool `json:"truncated,omitempty"`
 	// OverContext marks a probe the provider refused because the request was
 	// larger than the window. It is not a recall failure and must never be
 	// read as one: the model was never asked.
 	OverContext bool `json:"over_context,omitempty"`
+}
+
+// inconclusive reports that this probe says nothing about recall — it errored,
+// was refused, or was cut off mid-answer. Such a probe must never narrow the
+// cap: a size nobody got an answer at has not been tested.
+func (p NeedleProbe) inconclusive() bool {
+	return p.Err != "" || p.Truncated
 }
 
 // tokens is the size this probe should be read off. A provider that reports no
@@ -114,6 +127,20 @@ type NeedleOptions struct {
 	Placements []NeedlePlacement
 	Progress   func(string)
 }
+
+// needleAnswerTokens is the completion budget for a probe.
+//
+// The answer is sixteen hexadecimal characters. Reserving 2048 tokens for it,
+// as this test first did, spent 6% of a 32,768-token window on room the model
+// was never going to use — and the window is the whole testable range, so that
+// is 6% of the measurement given away. 256 leaves room for a short preamble
+// before the code.
+//
+// A small budget is only safe because truncation is distinguishable from a
+// miss. See NeedleProbe.Truncated: without that, a model that pads its answer
+// would be recorded as failing to retrieve, and a false ceiling is the one
+// error this test exists to avoid making.
+const needleAnswerTokens = 256
 
 // DefaultCharsPerToken is the starting estimate, used only until the real ratio
 // is measured. Code tokenises denser than prose, and denser than the 4.0 an
@@ -263,7 +290,7 @@ func Needle(ctx context.Context, p llm.Provider, opts NeedleOptions) (NeedleResu
 			if probe.PromptTokens > 0 {
 				res.TokensMeasured = true
 			}
-			if probe.Err == "" {
+			if !probe.inconclusive() {
 				anyRan = true
 				if n := probe.tokens(); n > measured {
 					measured = n
@@ -311,6 +338,9 @@ func verdictOf(p NeedleProbe) string {
 		return "could not run: " + p.Err
 	case p.Found:
 		return "found"
+	case p.Truncated:
+		return "no answer: cut off at the completion budget, which says nothing " +
+			"about recall"
 	default:
 		return "MISSED — " + firstLine(p.Answer)
 	}
@@ -334,7 +364,7 @@ func runNeedleProbe(ctx context.Context, p llm.Provider, size int, place NeedleP
 	temp := 0.0
 	resp, err := p.Chat(ctx, llm.ChatRequest{
 		Messages:  needleMessages(haystack),
-		MaxTokens: 2048, Temperature: &temp, Thinking: "off",
+		MaxTokens: needleAnswerTokens, Temperature: &temp, Thinking: "off",
 	})
 	if err != nil {
 		probe.Err = err.Error()
@@ -345,6 +375,9 @@ func runNeedleProbe(ctx context.Context, p llm.Provider, size int, place NeedleP
 	probe.PromptTokens = resp.PromptTokens
 	probe.Answer = strings.TrimSpace(resp.Content)
 	probe.Found = strings.Contains(strings.ToLower(probe.Answer), strings.ToLower(secret))
+	// Only when the code is absent. A truncated answer that still contains the
+	// code is a hit: the model retrieved it, whatever it did afterwards.
+	probe.Truncated = !probe.Found && resp.FinishReason == "length"
 	return probe
 }
 
@@ -441,7 +474,7 @@ func (r NeedleResult) Format() string {
 	for _, size := range sizes {
 		measured := 0
 		for _, p := range bySize[size] {
-			if p.Err == "" && p.tokens() > measured {
+			if !p.inconclusive() && p.tokens() > measured {
 				measured = p.tokens()
 			}
 		}
@@ -452,15 +485,33 @@ func (r NeedleResult) Format() string {
 		fmt.Fprintf(&b, "%-10d %-10s ", size, label)
 		for _, p := range bySize[size] {
 			switch {
-			case p.Err != "":
-				b.WriteString("?  ")
 			case p.Found:
 				b.WriteString(".  ")
+			case p.Truncated:
+				b.WriteString("~  ")
+			case p.Err != "":
+				b.WriteString("?  ")
 			default:
 				b.WriteString("X  ")
 			}
 		}
 		b.WriteString("\n")
+	}
+
+	// A legend, because the difference between the three non-hits is the whole
+	// point: only one of them is the model failing to retrieve.
+	b.WriteString("\n  .  found    X  missed    ~  cut off mid-answer    ?  could not run\n")
+
+	var truncated int
+	for _, p := range r.Probes {
+		if p.Truncated {
+			truncated++
+		}
+	}
+	if truncated > 0 {
+		fmt.Fprintf(&b, "\n%d probe(s) hit the %d-token completion budget without giving the\n"+
+			"code. They are not recall failures — the model was answering and got cut\n"+
+			"off — and no cap was derived from them.\n", truncated, needleAnswerTokens)
 	}
 
 	b.WriteString("\n")

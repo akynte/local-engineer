@@ -1,8 +1,9 @@
 # Packet cap by needle test — no retrieval ceiling below the context window
 
 A 35B MoE recalled a random access code at every depth of every packet size
-tested, from 8,000 to 30,007 tokens, on a machine whose per-slot context window
-is 32,768. **No retrieval ceiling was found.** The measurement's own conclusion
+tested, from 8,000 to 32,024 tokens, on a machine whose per-slot context window
+is 32,768. **No retrieval ceiling was found** — recall was perfect to within
+744 tokens of the window's edge, which is as close as the sweep can get. The measurement's own conclusion
 is therefore a negative one: at this context size the packet cap is bounded by
 the window, not by what the model can retrieve from, and
 `max_packet_tokens: 16384` is well inside what the model demonstrably handles.
@@ -39,17 +40,34 @@ measured against this model's own tokenizer
 25 of 25 probes recalled the code. No probe errored.
 ```
 
-`recommended_cap` and `largest_tested` are both **30,007 measured tokens**,
-which the tool reports as "no ceiling found up to 30,007 measured tokens — that
-is not a measured limit". It is the right thing for it to say. Recall did not
-fail anywhere the window allowed it to be tested.
+### Extended to the edge of the window
 
-## Why the sweep stopped at 30,000
+The sweep above reserved 2,048 tokens of the window for an answer that is
+sixteen hexadecimal characters long, which made everything above about 30,720
+untestable. With that budget reduced to 256 the top of the window opened up, and
+one more size was run:
+
+```
+   32000 asked /  32022 actual, depth   0%: found
+   32000 asked /  32024 actual, depth  25%: found
+   32000 asked /  32022 actual, depth  50%: found
+   32000 asked /  32023 actual, depth  75%: found
+   32000 asked /  32021 actual, depth 100%: found
+
+No ceiling found up to 32024 measured tokens. That is not a measured
+limit: try larger sizes before treating it as one.
+```
+
+`recommended_cap` and `largest_tested` are both **32,024 measured tokens**, and
+the tool's own verdict is the right one: no ceiling found, which is not a
+measured limit. Recall did not fail anywhere the window allowed it to be tested,
+and the last size tested is within 744 tokens of the window's edge.
+
+## Why the sweep stopped at 32,024
 
 `llama-server` was started with `-c 65536 --parallel 2`, so each slot gets
-32,768 tokens. The probe reserves 2,048 of those for the answer, leaving about
-30,720 that can be filled with haystack. 30,000 is the largest round size inside
-that.
+32,768 tokens. A probe has to fit its prompt *and* its completion budget in
+that, so 32,024 + 256 = 32,280 is close to everything a slot will hold.
 
 Testing past 32,768 needs the server restarted with `--parallel 1`, which would
 also make the profile's `context_tokens: 32768` wrong — that field has to match
@@ -59,8 +77,9 @@ configuration, and it has not been run.
 ## What this does and does not establish
 
 It establishes that at 32,768 tokens of served context this model is not the
-binding constraint on packet size. Anything the retrieval layer can fit, the
-model can find, at any depth.
+binding constraint on packet size. Anything the retrieval layer can fit in the
+window, the model can find, at any depth — the sweep got to within 744 tokens of
+the window and recall had still not degraded.
 
 It does **not** establish a retrieval ceiling, because none was reached. It does
 not say `max_packet_tokens` should be raised: the cap that fits this profile is
@@ -85,6 +104,7 @@ and each error was invisible until the numbers were looked at:
 | 2 | 8,000 | 8,465 | 5.8% at depth 0% only | filler density depended on where the needle sat |
 | 3 | 8,000 | 8,244 | 3.1% at every depth | fixed prompt overhead folded into a per-character ratio |
 | 4 | 8,000 | 8,010 | 0.13% | — |
+| 4 | 32,000 | 32,022 | 0.07% | — |
 
 The third was diagnosable only because the second was fixed: once depth stopped
 moving the number, the residual was flat across all five depths, which is the
@@ -104,7 +124,7 @@ it reports is the provider's own count rather than the size requested.
 | Server | `llama-server -c 65536 --parallel 2 -ngl 999 --n-cpu-moe 999 -fa on -ctk q8_0 -ctv q8_0 -b 2048 -ub 512 -t 8 -tb 16 --jinja` |
 | Profile | `measured-7gb-gpu-61gb-ram` — `context_tokens: 32768`, `max_packet_tokens: 16384`, `reserved_output_tokens: 8192` |
 | Commit | `d7b3f09` |
-| Raw | [`2026-09-15-packet-cap.json`](2026-09-15-packet-cap.json) — all 25 probes, with the answer each returned |
+| Raw | [`2026-09-15-packet-cap.json`](2026-09-15-packet-cap.json) — all 25 probes of the main sweep, with the answer each returned. The 32,000 extension is quoted in full above. |
 
 Note the KV cache is quantised to `q8_0` for both keys and values. That is part
 of the configuration measured, and a run with an unquantised cache is a
@@ -113,7 +133,7 @@ different measurement.
 ## Reproducing
 
 ```console
-$ le models needle --sizes 8000,16000,22000,26000,30000 --json
+$ le models needle --sizes 8000,16000,22000,26000,32000 --json
 ```
 
 Add `--write` to save the measured cap into the active profile. It refuses when

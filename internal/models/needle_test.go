@@ -209,7 +209,10 @@ type counting struct {
 	contextTokens int
 	// overhead is the fixed cost a chat template adds, which a single-point
 	// ratio cannot tell apart from the per-character cost.
-	overhead  int
+	overhead int
+	// preamble makes the model pad its answer, so the code falls past the
+	// completion budget. A real model does this whenever it feels chatty.
+	preamble  bool
 	sizesSent []int
 }
 
@@ -219,9 +222,9 @@ func (c *counting) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatResp
 		n += len(m.Content)
 	}
 	tokens := int(float64(n)/c.charsPerToken) + c.overhead
-	if c.contextTokens > 0 && tokens > c.contextTokens {
+	if c.contextTokens > 0 && tokens+req.MaxTokens > c.contextTokens {
 		return nil, fmt.Errorf("HTTP 400: request (%d tokens) exceeds the available "+
-			"context size (%d)", tokens, c.contextTokens)
+			"context size (%d)", tokens+req.MaxTokens, c.contextTokens)
 	}
 	c.sizesSent = append(c.sizesSent, tokens)
 	resp, err := c.recaller.Chat(ctx, req)
@@ -229,6 +232,12 @@ func (c *counting) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatResp
 		return nil, err
 	}
 	resp.PromptTokens = tokens
+	if c.preamble && resp.Content != "" {
+		// Cut off before ever reaching the code, exactly as a provider does
+		// when the completion budget runs out.
+		resp.Content = strings.Repeat("Let me look through the document. ", 8)
+		resp.FinishReason = "length"
+	}
 	return resp, nil
 }
 
@@ -437,5 +446,92 @@ func TestFillerDensityDoesNotDriftWithSize(t *testing.T) {
 				t.Fatalf("a declaration is a different width: %q", line)
 			}
 		}
+	}
+}
+
+// A model cut off mid-answer has said nothing about recall. Counting that as a
+// miss would report a ceiling at whatever size the model first decided to be
+// wordy — a false ceiling, which is the one error this test exists not to make.
+func TestTruncatedAnswerIsNotARecallFailure(t *testing.T) {
+	c := &counting{charsPerToken: 3.0, preamble: true}
+	res, err := Needle(context.Background(), c, NeedleOptions{
+		Sizes: []int{4000, 8000}, Placements: []NeedlePlacement{0.5},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.RecommendedCap != 0 || res.LargestTested != 0 {
+		t.Errorf("cap = %d, largest tested = %d; a sweep that never got an answer "+
+			"has measured nothing", res.RecommendedCap, res.LargestTested)
+	}
+	for _, probe := range res.Probes {
+		if !probe.Truncated {
+			t.Errorf("a cut-off answer at %d tokens was not recorded as truncated",
+				probe.Requested)
+		}
+	}
+	out := res.Format()
+	if !strings.Contains(out, "cut off") {
+		t.Errorf("the report presents truncation as a recall failure:\n%s", out)
+	}
+	if strings.Contains(out, "Recommended max_packet_tokens") {
+		t.Errorf("a cap was recommended from probes that were never answered:\n%s", out)
+	}
+}
+
+// A truncated answer that still carries the code is a hit. The model retrieved
+// it; what it did afterwards is not this test's business.
+func TestTruncationAfterTheCodeStillCounts(t *testing.T) {
+	p := &truncatesAfterAnswering{}
+	res, err := Needle(context.Background(), p, NeedleOptions{
+		Sizes: []int{2000}, Placements: []NeedlePlacement{0.5},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, probe := range res.Probes {
+		if probe.Truncated {
+			t.Error("an answer containing the code was discarded as truncated")
+		}
+		if !probe.Found {
+			t.Error("the code was in the answer and was not counted")
+		}
+	}
+}
+
+type truncatesAfterAnswering struct{ recaller }
+
+func (p *truncatesAfterAnswering) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
+	resp, err := p.recaller.Chat(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	resp.Content += " and then I kept talking until I was"
+	resp.FinishReason = "length"
+	resp.PromptTokens = 2000
+	return resp, nil
+}
+
+// The completion budget comes out of the window, and the window is the entire
+// testable range. Reserving 2048 tokens for sixteen hexadecimal characters
+// made the top 6% of a 32,768-token window untestable — the sweep was refused
+// at sizes the model could have handled.
+func TestTheAnswerBudgetDoesNotEatTheTestableRange(t *testing.T) {
+	// A provider whose slot is 32,768, refusing when prompt plus completion
+	// budget will not fit — which is what llama-server does.
+	c := &counting{charsPerToken: 3.0, contextTokens: 32768}
+	res, err := Needle(context.Background(), c, NeedleOptions{
+		Sizes: []int{32000}, Placements: []NeedlePlacement{0.5},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StoppedAtContextLimit {
+		t.Fatalf("a 32000-token probe was refused by a 32768-token window; the "+
+			"completion budget (%d) is taking range the measurement needs",
+			needleAnswerTokens)
+	}
+	if res.RecommendedCap == 0 {
+		t.Fatal("the probe did not run")
 	}
 }
