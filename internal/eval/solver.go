@@ -286,6 +286,7 @@ func (s *SystemSolver) engineFor(arm Arm, provider llm.Provider, st *store.Store
 		Provider: provider, Logf: s.Logf,
 		MaxTools: s.MaxTools, MaxTokens: s.MaxTokens,
 		Temperature: s.Temperature, Thinking: s.Thinking,
+		ContextTokens: s.ContextTokens,
 	}
 	if arm.Supervised {
 		opts.Retriever = retrieval.New(st)

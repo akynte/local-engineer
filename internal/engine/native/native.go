@@ -148,16 +148,19 @@ func estimateTokens(messages []llm.Message, tools []llm.ToolDef) int {
 // the first two messages (system prompt and user packet) and never drops the
 // most recent exchange. It builds a new slice rather than mutating the caller's.
 // Returns the trimmed slice and the number of messages dropped.
-func trimMessages(messages []llm.Message, contextTokens int) ([]llm.Message, int) {
-	if contextTokens <= 0 {
-		// Zero budget: skip trimming entirely.
+//
+// The tools travel with the messages because they are part of the same request:
+// the definitions are roughly 900 tokens on every call, and a budget that
+// ignores them permits exactly the oversized request this function prevents.
+func trimMessages(messages []llm.Message, tools []llm.ToolDef, budget int) ([]llm.Message, int) {
+	if budget <= 0 {
+		// Zero or negative budget: skip trimming entirely.
 		return messages, 0
 	}
 
 	dropped := 0
 	for {
-		est := estimateTokens(messages, nil)
-		budget := contextTokens
+		est := estimateTokens(messages, tools)
 		if est <= budget {
 			break
 		}
@@ -242,8 +245,14 @@ func (e *Engine) Step(ctx context.Context, req engine.Request) (*engine.Response
 		// Trim the oldest exchanges when the estimate exceeds the budget,
 		// so Provider.Chat never receives a request larger than the window.
 		if e.ContextTokens > 0 {
+			// The reply has to fit too, so the transcript's budget is what is
+			// left after reserving the output allowance.
+			budget := e.ContextTokens - e.MaxTokens
+			if budget < 0 {
+				budget = 0
+			}
 			var dropped int
-			messages, dropped = trimMessages(messages, e.ContextTokens)
+			messages, dropped = trimMessages(messages, e.tools, budget)
 			if dropped > 0 {
 				resp.DroppedMessages += dropped
 				e.logf("trimmed %d message(s) to fit the %d-token context window", dropped, e.ContextTokens)
