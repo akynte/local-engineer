@@ -178,6 +178,7 @@ func newEvalRunCmd() *cobra.Command {
 				solver.MaxTokens = profile.ReservedOutput
 				solver.Temperature = profile.Sampling.Temperature
 				solver.Thinking = profile.Thinking
+				solver.ContextTokens = profile.ContextTokens
 			}
 
 			runner := &eval.Runner{
