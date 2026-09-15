@@ -70,7 +70,7 @@ func (p Policy) Validate() error {
 			return fmt.Errorf("%w: %s rule %q has no reason", ErrInvalid, p.Name, r.Path)
 		}
 		if _, err := path.Match(r.Path, "probe"); err != nil {
-			return fmt.Errorf("%w: %s rule %q is not a valid pattern: %v",
+			return fmt.Errorf("%w: %s rule %q is not a valid pattern: %w",
 				ErrInvalid, p.Name, r.Path, err)
 		}
 	}
@@ -107,7 +107,7 @@ func Load(dir string) (Set, error) {
 		}
 		var p Policy
 		if err := yaml.Unmarshal(body, &p); err != nil {
-			return Set{}, fmt.Errorf("%w: %s: %v", ErrInvalid, name, err)
+			return Set{}, fmt.Errorf("%w: %s: %w", ErrInvalid, name, err)
 		}
 		if err := p.Validate(); err != nil {
 			return Set{}, fmt.Errorf("%s: %w", name, err)

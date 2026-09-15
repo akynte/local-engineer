@@ -1,0 +1,110 @@
+# Docs site (design v3 §1.1: "a `docs/` site built from Markdown is preferred
+# over a wiki", and §15's "Docs site (Diátaxis)").
+#
+# The site is a *view* of docs/, never a second source. Every page here is a
+# file that reads correctly on GitHub too, because the repository is where
+# people actually find documentation and a site that reformats its source is a
+# second thing to keep true.
+#
+# Build:  pip install mkdocs mkdocs-material && mkdocs serve
+site_name: local-engineer
+site_description: A supervised local coding engineer with per-workspace isolation
+repo_url: https://github.com/akynte/local-engineer
+repo_name: akynte/local-engineer
+edit_uri: edit/main/docs/
+docs_dir: docs
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - content.action.edit
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Light mode
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+# The Diátaxis split of §1.1, in the order a reader needs it: learn, then do,
+# then look up, then understand why.
+nav:
+  - Home: index.md
+  - Tutorials:
+      - First task in 15 minutes: tutorials/first-task.md
+      - Index a Go microservice: tutorials/index-a-go-service.md
+      - Run the reference evaluation: tutorials/run-the-evaluation.md
+  - How-to:
+      - Install: how-to/install.md
+      - Install on the host: how-to/install-on-the-host.md
+      - Configure models: how-to/configure-models.md
+      - Choose a hardware profile: how-to/choose-a-profile.md
+      - Persistent storage: how-to/persistent-storage.md
+      - Start, stop, update: how-to/start-stop-update.md
+      - Back up and restore: how-to/backup-and-restore.md
+      - Fetch a dependency: how-to/fetch-dependencies.md
+      - Run fully offline: how-to/run-offline.md
+      - Add a provider: how-to/add-a-provider.md
+      - Add a language analyzer: how-to/add-a-language-analyzer.md
+      - Write a recipe: how-to/write-a-recipe.md
+      - Declare runtime and generation checks: how-to/declare-runtime-checks.md
+      - Write a policy rule: how-to/write-a-policy-rule.md
+      - Verify a release: how-to/verify-a-release.md
+      - Troubleshooting: how-to/troubleshooting.md
+  - Reference:
+      - CLI: reference/cli.md
+      - Configuration: reference/configuration.md
+      - Storage layout: reference/storage-layout.md
+      - Graph schema: reference/graph-schema.md
+      - Recipe format: reference/recipe-format.md
+      - Tool schemas: reference/tool-schemas.md
+      - Telemetry schema: reference/telemetry-schema.md
+      - HTTP API: reference/http-api.md
+      - Image manifest: reference/image-manifest.md
+      - Verify list: reference/verify-list.md
+  - Explanation:
+      - Architecture: explanation/architecture.md
+      - Why small models can work here: explanation/why-small-models.md
+      - Isolation model: explanation/isolation-model.md
+      - Trust boundaries: explanation/trust-boundaries.md
+      - Crash recovery: explanation/crash-recovery.md
+      - Known limitations: explanation/known-limitations.md
+      - C4 context: architecture/c4-context.md
+      - C4 container: architecture/c4-container.md
+      - C4 component: architecture/c4-component.md
+      - Decision records:
+          - Index: adr/README.md
+          - DR-1 Single container, SQLite: adr/0001-single-container-sqlite.md
+          - DR-2 Graph in SQLite: adr/0002-graph-in-sqlite.md
+          - DR-3 Layered sandbox: adr/0003-layered-sandbox.md
+          - DR-4 OpenAI-compatible provider: adr/0004-openai-compatible-provider.md
+          - DR-5 OpenCode engine (superseded): adr/0005-opencode-engine.md
+          - DR-6 Workspace identity: adr/0006-workspace-identity.md
+          - DR-7 Native engine: adr/0007-native-engine.md
+  - Benchmarks:
+      - Methodology: benchmarks/METHODOLOGY.md
+      - Results:
+          - Index: benchmarks/results/README.md
+          - Storage and graph: benchmarks/results/2026-09-14-storage.md
+          - Task set: benchmarks/results/2026-09-14-tasks.md
+          - Packet cap: benchmarks/results/2026-09-15-packet-cap.md

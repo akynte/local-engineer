@@ -17,6 +17,7 @@ import (
 	"github.com/akynte/local-engineer/internal/config"
 	"github.com/akynte/local-engineer/internal/index"
 	"github.com/akynte/local-engineer/internal/procman"
+	"github.com/akynte/local-engineer/internal/proxy"
 	"github.com/akynte/local-engineer/internal/sandbox"
 	"github.com/akynte/local-engineer/internal/sandbox/bwrap"
 	"github.com/akynte/local-engineer/internal/sandbox/landlock"
@@ -99,6 +100,18 @@ func newAPICmd() *cobra.Command {
 				} else if stop != nil {
 					defer stop()
 				}
+			}
+
+			// §6.1's allowlisting egress proxy, one listener per provisioning
+			// lane. Off unless an operator turned it on: a machine whose
+			// premise is that it has no egress should not acquire some from a
+			// shipped default.
+			if cfg.Egress.Enabled {
+				stop, err := startEgressProxies(ctx, cfg, log)
+				if err != nil {
+					return fmt.Errorf("egress is enabled but the proxy cannot start: %w", err)
+				}
+				defer stop()
 			}
 
 			srv := api.New(cfg.API.Addr, api.Deps{
@@ -247,10 +260,64 @@ func startIndexWatcher(ctx context.Context, root *store.Root, cfg config.Config,
 	return cancel, nil
 }
 
+// startEgressProxies runs one allowlisting proxy per provisioning lane (§6.1).
+//
+// One listener per lane rather than one proxy with a lane parameter: the lane
+// has to come from which socket the client reached, because a lane carried in
+// the request is a lane the client chooses.
+func startEgressProxies(ctx context.Context, cfg config.Config, log *slog.Logger) (func(), error) {
+	type laneSpec struct {
+		lane proxy.Lane
+		port int
+	}
+	var stops []func()
+	stopAll := func() {
+		for _, s := range stops {
+			s()
+		}
+	}
+
+	for _, ls := range []laneSpec{
+		{proxy.LaneDeps, cfg.Egress.DepsPort},
+		{proxy.LaneDocs, cfg.Egress.DocsPort},
+	} {
+		ln, err := proxy.Listen(ctx, ls.port)
+		if err != nil {
+			stopAll()
+			return nil, fmt.Errorf("the %s lane cannot listen on 127.0.0.1:%d: %w", ls.lane, ls.port, err)
+		}
+		lane := ls.lane
+		srv := &proxy.Server{
+			Lane:  lane,
+			Allow: cfg.Egress.Allowlist,
+			// Every decision is logged. §6.1's proxy refusing silently is
+			// indistinguishable from a network fault, and an operator then
+			// debugs DNS instead of reading an allowlist.
+			Journal: func(d proxy.Decision) {
+				if d.Allowed {
+					log.Info("egress allowed", "lane", d.Lane, "host", d.Host, "port", d.Port, "rule", d.Rule)
+					return
+				}
+				log.Warn("egress refused", "lane", d.Lane, "host", d.Host, "port", d.Port, "reason", d.Reason)
+			},
+		}
+		lnCtx, cancel := context.WithCancel(ctx)
+		go func() {
+			if err := srv.Serve(lnCtx, ln); err != nil && !errors.Is(err, context.Canceled) {
+				log.Warn("egress proxy stopped", "lane", lane, "error", err)
+			}
+		}()
+		stops = append(stops, func() { cancel(); _ = ln.Close() })
+		log.Info("egress proxy listening", "lane", lane, "addr", ln.Addr().String(),
+			"rules", len(cfg.Egress.Allowlist.Rules))
+	}
+	return stopAll, nil
+}
+
 // startACPBridge listens for editor connections and hands each one its own
 // agent process. It returns a stop function.
 func startACPBridge(ctx context.Context, cfg config.Config, log *slog.Logger) (func(), error) {
-	ln, err := acp.Listen(cfg.API.ACPAddr)
+	ln, err := acp.Listen(ctx, cfg.API.ACPAddr)
 	if err != nil {
 		return nil, err
 	}

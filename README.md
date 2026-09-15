@@ -10,16 +10,48 @@ A supervised local coding engineer: a deterministic harness around a local
 model, with strict per-project isolation, an intent-first execution journal,
 and evidence-backed verification.
 
+## 60 seconds
+
+[![asciicast](https://asciinema.org/a/local-engineer-demo.svg)](docs/demo.cast)
+
+```console
+$ le workspace init          # pin this repository's identity
+$ le index                   # build the source index, symbol index and graph
+$ le graph impact Total --change signature
+3 consumers: 1 breaking, 0 undetermined, 2 behaviour-only, 0 compatible
+
+  …hop/internal/orders.LineTotal breaking     resolved   via calls        depth 1
+                                   → update the call site to the new signature
+
+A missing edge means 'not discovered', not 'does not exist'.
+
+$ le task verify             # put the working tree under the completion contract
+ACCEPTED  verify-… (1 attempt(s), candidate 761de4ef8354)
+
+RECIPE    KIND   STATUS  SUMMARY
+go build  build  pass    compiles
+go vet    vet    pass    no vet findings
+go test   test   pass    no test packages ran
+```
+
+[`docs/demo.cast`](docs/demo.cast) is an asciicast v2 recording of exactly
+that, **generated** by [`scripts/record-demo.sh`](scripts/record-demo.sh) from
+real command output inside the image — never hand-written. A hand-written demo
+is a screenshot of a system that may no longer exist, and the whole argument
+here is that claims are checkable. Regenerate it after any change that alters
+what these commands print.
+
 > **Status: pre-1.0, under active development.** The full task pipeline works:
 > retrieval, a bounded tool loop that edits a confined worktree, verification
 > inside a Landlock sandbox, a completion contract decided from evidence, and
 > a human gate carrying the diff before anything is applied.
 >
-> What is **not** done: language analyzers beyond Go, and a task set large
-> enough to evaluate against. The harness has been run (60 runs, local 35B MoE,
-> results published) and the run's own conclusion is that the task set cannot
-> answer the questions it was built to ask, so this README claims no success
-> rate.
+> What is **not** done: a task set large enough to evaluate against. The
+> harness has been run (60 runs, local 35B MoE, results published) and the
+> run's own conclusion is that the task set cannot answer the questions it was
+> built to ask, so this README claims no success rate. Language coverage is
+> uneven rather than absent — Go is deepest, TypeScript needs the sidecar for a
+> call graph, and the limitations below say which is which.
 > See [ROADMAP.md](ROADMAP.md).
 
 ## What it is
@@ -110,9 +142,16 @@ reports what is *actually* in effect, not what the design hopes for:
   optional namespace mode.** Unprivileged user namespaces are usually
   unavailable inside a container, so the bubblewrap layer is off by default.
 - **Landlock's TCP rules do not cover Multipath TCP sockets**, and Go's
-  `net.Listen` uses MPTCP by default. Port restrictions are therefore
-  augmented by the container's network configuration and an allowlisting
-  proxy, never relied on alone.
+  `net.Listen` uses MPTCP by default. Port restrictions are therefore augmented
+  by the container's network configuration, never relied on alone.
+- **A task never reaches the network.** Verification runs with `GOPROXY=off`,
+  and a task's Landlock ruleset grants the inference endpoint and assigned test
+  ports and nothing else. When a change genuinely needs a new dependency, that
+  is an operator's `le deps sync` through the §6.1 allowlisting proxy — a
+  separate confined lane, on a port no task is granted, reaching only hosts
+  named in `egress.allowlist` with a reason. It is **off by default**; a
+  machine whose premise is that it has no egress should not acquire some from
+  a shipped config file.
 - **SQLite needs a real filesystem with working `fsync`.** Do not put `/data`
   on an overlay layer or a network share. `le doctor` fails if you do.
 - **Downgrades across schema versions are not supported.** Migrations are
@@ -132,13 +171,17 @@ reports what is *actually* in effect, not what the design hopes for:
   4 of 15 runs. Storage and graph latency numbers **are** published. See
   [the results directory](docs/benchmarks/results/) for what is and is not
   there.
-- **TypeScript is analysed lexically, not type-checked.** Go, SQL schemas,
-  Dockerfiles, Makefiles, compose, Kubernetes and Terraform are. TypeScript
-  imports, declarations, heritage clauses and `process.env` reads are indexed
-  by reading the source; there is no call graph, because without the compiler
-  an identifier in call position may be a local or a shadowed binding, and an
-  edge that is wrong half the time is worse than no edge. Every TypeScript edge
-  carries the evidence category that reading supports. The
+- **TypeScript is type-checked only when the sidecar is installed.** Go, SQL
+  schemas, Dockerfiles, Makefiles, compose, Kubernetes and Terraform need
+  nothing extra. For TypeScript the `cpu` and `cuda` images carry a Node
+  sidecar built on the TypeScript compiler, and its edges — including the call
+  graph — are `resolved`. Without it (the `-slim` image, or a host install with
+  no Node) the analyzer reads the source instead: imports, declarations,
+  heritage clauses and `process.env` reads are indexed, and there is **no call
+  graph at all**, because without the compiler an identifier in call position
+  may be a local or a shadowed binding, and an edge that is wrong half the time
+  is worse than no edge. Every TypeScript edge carries the evidence category
+  that produced it, so the two readings are told apart rather than blurred. The
   [graph schema reference](docs/reference/graph-schema.md) marks the state per
   relationship, because a schema describing edges the code does not emit would
   make impact reports look better than they are.

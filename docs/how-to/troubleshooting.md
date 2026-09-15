@@ -84,9 +84,21 @@ $ docker exec local-engineer le doctor --json | jq '.checks[] | select(.name|con
 
 By design. Landlock's TCP rules do not cover Multipath TCP sockets, and Go's
 `net.Listen` uses MPTCP by default, so a sandboxed Go program can still listen
-on an unlisted port. The port rules are augmentation; the container's network
-configuration and the allowlisting proxy are the boundary. The warning is
-permanent so nobody builds a guarantee on top of the port rules alone.
+on an unlisted port. The port rules are augmentation; **the container's network
+configuration is the boundary** — run with `--network none` plus an
+in-container inference route, or on a user-defined bridge that reaches only
+your inference endpoint. The warning is permanent so nobody builds a guarantee
+on top of the port rules alone.
+
+## `egress refused: <host> is not in the deps lane's allowlist`
+
+The §6.1 proxy did its job. Add the host to `egress.allowlist` in `le.yaml`
+with a `why`, or decide you did not want that fetch. The reason field is
+required precisely so that this decision is legible later.
+
+A refusal is logged by the supervisor as `egress refused` with the host, the
+lane and the reason — check there first when a fetch fails in a way that looks
+like DNS.
 
 ## `no .le/workspace.yaml found`
 
@@ -166,4 +178,4 @@ outcome is uncertain is how a half-applied change becomes a corrupted one.
 ## Still stuck
 
 Open an issue with `le doctor --json`, `le version`, the image digest, and what
-you expected. See [SUPPORT.md](../../SUPPORT.md).
+you expected. See [SUPPORT.md](https://github.com/akynte/local-engineer/blob/main/SUPPORT.md).

@@ -25,7 +25,7 @@ func echoAgent() []string {
 
 func serve(t *testing.T, b *acp.Bridge) (string, context.CancelFunc) {
 	t.Helper()
-	ln, err := acp.Listen("127.0.0.1:0")
+	ln, err := acp.Listen(context.Background(), "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestPayloadIsNotAltered(t *testing.T) {
 // a silent accept-and-hang.
 func TestNoAgentIsRefusedByName(t *testing.T) {
 	b := &acp.Bridge{}
-	ln, err := acp.Listen("127.0.0.1:0")
+	ln, err := acp.Listen(context.Background(), "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}

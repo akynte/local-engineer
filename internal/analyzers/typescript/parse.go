@@ -174,7 +174,10 @@ func parseExportFrom(src, code string, i int) (Import, int, bool) {
 	if j >= len(code) {
 		return Import{}, i, false
 	}
-	if !(code[j] == '{' || code[j] == '*' || wordAt(code, j, "type")) {
+	// `export {a} from`, `export * from`, `export type {a} from` — anything
+	// else after `export` is a declaration, not a re-export.
+	reExport := code[j] == '{' || code[j] == '*' || wordAt(code, j, "type")
+	if !reExport {
 		return Import{}, i, false
 	}
 	from := indexWord(code, j, "from")

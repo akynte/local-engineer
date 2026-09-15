@@ -44,6 +44,12 @@ With `offline: true`, a provider that is not local is refused when the router
 is built — at startup, before any request can be made. A misconfiguration
 becomes a failure to start rather than a silent egress.
 
+`offline: true` also refuses to coexist with `egress.enabled: true`. The §6.1
+provisioning lanes exist to reach an allowlisted host, and offline mode has no
+route out; rather than one setting quietly overriding the other, the pair is a
+configuration error. If you need to fetch something, do it before going
+offline — see [fetch a dependency](fetch-dependencies.md).
+
 An external provider URL that is not loopback is refused too:
 
 ```

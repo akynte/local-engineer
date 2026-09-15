@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -535,14 +536,48 @@ func (r *Runner) step(ctx context.Context, t *Task, wt *worktree.Worktree,
 // verify runs the recipes the task's level demands and records each result as
 // evidence against the candidate it describes.
 func (r *Runner) verify(ctx context.Context, t *Task, wt *worktree.Worktree, candidate string) ([]recipe.Result, error) {
-	runner := &recipe.Runner{
-		Sandbox: r.Sandbox,
-		Spec:    r.specFor(wt),
-		Store:   r.Artifacts,
-	}
+	spec := r.specFor(wt)
+
 	recipes := recipe.GoRecipes(t.Verification)
+
+	// §10.1's runtime feedback and generation checks are facts about a
+	// repository, not about Go, so the repository declares them in
+	// `.le/verify.yaml`. Generation runs first — stale generated code fails
+	// the build with a message about the generated file rather than about the
+	// schema that moved — and integration runs last, because it is the only
+	// check that needs something running.
+	if t.Verification.IncludesDeclared() {
+		declared := recipe.DeclaredRecipes(t.Verification, wt.Path, recipe.SelfPath())
+		if len(declared) > 0 {
+			var gen, integ []recipe.Recipe
+			for _, d := range declared {
+				if d.Kind == recipe.KindGenerate {
+					gen = append(gen, d)
+					continue
+				}
+				integ = append(integ, d)
+			}
+			recipes = append(append(gen, recipes...), integ...)
+			// An integration step binds and dials the ports it declared, and
+			// the sandbox grants exactly those. They are declared rather than
+			// discovered because a rule for a port nobody named would either
+			// be missing when needed or wider than intended.
+			if d, err := recipe.LoadDeclared(wt.Path); err == nil {
+				ports := d.Ports()
+				spec.TCPBind = dedupePorts(append(spec.TCPBind, ports...))
+				spec.TCPConnect = dedupePorts(append(spec.TCPConnect, ports...))
+			}
+		}
+	}
+
 	if len(recipes) == 0 {
 		return nil, nil
+	}
+
+	runner := &recipe.Runner{
+		Sandbox: r.Sandbox,
+		Spec:    spec,
+		Store:   r.Artifacts,
 	}
 
 	h, err := r.Ledger.Begin(ctx, t.ID, ledger.KindRecipeRun, map[string]any{
@@ -593,6 +628,15 @@ func (r *Runner) specFor(wt *worktree.Worktree) sandbox.Spec {
 	// Device nodes every ordinary program expects. Granting them read-write is
 	// correct: /dev/null is written to constantly.
 	spec.ReadWrite = append(spec.ReadWrite, recipe.DeviceFiles()...)
+	// The `le` binary itself, because the declared-verification recipes run a
+	// subcommand of it. In the image it sits under /usr and is covered by the
+	// configured read-only paths; a host install puts it in ~/.local/bin,
+	// which is not — and the symptom is the sandbox helper exiting 126 on
+	// every declared step. Granting its own path is cheaper than asking every
+	// host installer to edit sandbox.read_only_paths.
+	if self := recipe.SelfPath(); filepath.IsAbs(self) {
+		spec.ReadOnly = append(spec.ReadOnly, self)
+	}
 	spec.Dir = wt.Path
 
 	// Each directory must exist before the sandbox can grant it: Landlock
@@ -615,6 +659,21 @@ func envValue(env []string, key string) string {
 		}
 	}
 	return ""
+}
+
+// dedupePorts keeps a sandbox spec's port list free of repeats: a declaration
+// naming the same port in two steps must not produce two rules.
+func dedupePorts(in []uint16) []uint16 {
+	seen := map[uint16]bool{}
+	out := in[:0]
+	for _, p := range in {
+		if seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	return out
 }
 
 func dedupe(in []string) []string {
@@ -762,7 +821,22 @@ var ErrNotAccepted = errors.New("task: completion contract not satisfied")
 //  2. that result must be a pass — a skip or an error satisfies nothing,
 //  3. it must have been produced against the current candidate, so evidence
 //     for an older state of the code cannot be reused (§7.2),
-//  4. no file may be changed outside the task's declared scope.
+//  4. no check that ran may have FAILED, including the conditional kinds the
+//     level does not demand a result from,
+//  5. no file may be changed outside the task's declared scope.
+//
+// Rule 4 is separate from rule 1 because the two questions are different.
+// recipe.Required answers "which kinds must have produced evidence", and the
+// conditional kinds — lint and analyzer, which run only where the repository
+// committed a configuration — cannot be on that list without failing every
+// repository that committed neither. But a check that did run and did find a
+// problem is evidence about this code, and ignoring it would make the check
+// decorative. Until this rule existed, a failing semgrep run produced an
+// accepted task.
+//
+// An Error is still not a Fail here: a tool that could not run says nothing
+// about the code, and a stale Fail is evidence about a candidate that no
+// longer exists.
 //
 // No part of it consults what the engine claimed.
 func Accept(level recipe.Level, results []recipe.Result, candidate string, outOfScope []string) (bool, []string) {
@@ -801,6 +875,34 @@ func Accept(level recipe.Level, results []recipe.Result, candidate string, outOf
 		default:
 			reasons = append(reasons, fmt.Sprintf("%s passed: %s", kind, res.Summary.Headline))
 		}
+	}
+
+	// Rule 4: a conditional check that ran and failed disqualifies, even
+	// though its kind is not on the level's required list. Sorted so the
+	// reasons a person reads at the gate are stable between runs.
+	required := map[recipe.Kind]bool{}
+	for _, k := range recipe.Required(level) {
+		required[k] = true
+	}
+	extra := make([]recipe.Kind, 0, len(byKind))
+	for kind := range byKind {
+		if !required[kind] {
+			extra = append(extra, kind)
+		}
+	}
+	sort.Slice(extra, func(i, j int) bool { return extra[i] < extra[j] })
+	for _, kind := range extra {
+		res := byKind[kind]
+		if res.Status != recipe.Fail {
+			continue
+		}
+		if candidate != "" && res.Candidate != "" && res.Candidate != candidate {
+			// A failure against code that has since changed is not a verdict
+			// on the code that is there now.
+			continue
+		}
+		ok = false
+		reasons = append(reasons, fmt.Sprintf("%s failed: %s", kind, res.Summary.Headline))
 	}
 
 	if len(outOfScope) > 0 {

@@ -17,8 +17,11 @@ const (
 	Low Level = "low"
 	// Standard: compiles, vets, and the tests pass. The default.
 	Standard Level = "standard"
-	// High: adds the race detector and formatting. For concurrency,
-	// public API and anything touching shared state.
+	// High: adds the race detector, formatting, lint and the project's own
+	// analyzers. For concurrency, public API and anything touching shared
+	// state. The lint and analyzer recipes run only where the repository
+	// committed a configuration for them, so High is not a different verdict
+	// on a repository that adopted neither.
 	High Level = "high"
 )
 
@@ -43,6 +46,11 @@ func (l Level) Includes(k Kind) bool {
 	}
 	return false
 }
+
+// IncludesDeclared reports whether a level runs repository-declared checks.
+// Both are HIGH-only: §10.1 adopts runtime feedback "for HIGH and UI", and a
+// generator run is the slowest cheap check there is.
+func (l Level) IncludesDeclared() bool { return l == High }
 
 // GoRecipes returns the built-in Go verification recipes for a level.
 //
@@ -79,6 +87,22 @@ func GoRecipes(level Level) []Recipe {
 			Name: "go test -race", Kind: KindRace, AppliesTo: isGo,
 			Argv: []string{"go", "test", "-race", "./..."}, Timeout: 25 * time.Minute,
 			Summarize: GoRace,
+		},
+		{
+			// §10.1 names lint in the core feedback loop: "compiler, vet,
+			// lint, test, race". KindLint existed for it and nothing produced
+			// one, so the loop shipped with four of its five legs.
+			//
+			// It runs only where the repository committed a `.golangci.yml`.
+			// golangci-lint's default set is opinionated, and a verdict a
+			// repository never opted into is a verdict its maintainers did not
+			// agree to be measured by — the same reason semgrep runs only
+			// where there are rules.
+			Name: "golangci-lint", Kind: KindLint, AppliesTo: HasGolangciConfig,
+			Argv: []string{
+				"golangci-lint", "run", "--output.json.path", "stdout", "./...",
+			},
+			Timeout: 10 * time.Minute, Summarize: GolangciLint,
 		},
 		{
 			// §10.1: project-invariant analyzers catch "domain rules the model
@@ -165,6 +189,19 @@ func DeviceFiles() []string {
 // Required reports the recipe kinds a level demands actually pass. A skipped
 // recipe satisfies nothing: if `go test` did not run, the task has no evidence
 // its tests pass.
+//
+// KindLint and KindAnalyzer are deliberately NOT here, and the reason is
+// worth stating because their absence looks like the oversight it partly was.
+// Both are conditional: they run only where the repository committed a
+// configuration for them. Demanding a result unconditionally would mean every
+// repository without a `.golangci.yml` failed `high` for a check that could
+// never have run.
+//
+// That is not the same as letting them be ignored. A conditional check that
+// runs and finds something still blocks acceptance — see Accept, which treats
+// a Fail from any kind as disqualifying. The distinction is between "this
+// kind must have produced evidence" and "no check may have found a problem",
+// and only the first depends on the level.
 func Required(level Level) []Kind {
 	switch level {
 	case Low:
@@ -175,6 +212,46 @@ func Required(level Level) []Kind {
 		return []Kind{KindBuild, KindVet, KindTest, KindRace, KindFormat}
 	}
 	return nil
+}
+
+// ConditionalKinds are the kinds that run only where a repository asked for
+// them, and so cannot be on Required's list at any level.
+//
+// They are named here rather than left implicit because "not required" reads
+// as "optional", and they are not: Accept disqualifies on a Fail from any kind.
+// What is conditional is whether the check exists, not whether its verdict
+// counts.
+func ConditionalKinds() []Kind {
+	return []Kind{KindLint, KindAnalyzer, KindGenerate, KindIntegration}
+}
+
+// GolangciConfigNames are the config filenames golangci-lint itself looks for.
+var GolangciConfigNames = []string{
+	".golangci.yml", ".golangci.yaml", ".golangci.toml", ".golangci.json",
+}
+
+// HasGolangciConfig reports whether the lint recipe is worth running: the
+// repository committed a golangci-lint configuration and the tool is
+// installed.
+//
+// Both halves matter, for the same reasons as HasSemgrepRules. A repository
+// with no config has not chosen a linter set, and running the default one
+// would hold a change to rules its maintainers never adopted. And a machine
+// without golangci-lint should skip the recipe, not fail verification over a
+// missing tool — a missing toolchain says nothing about the code.
+func HasGolangciConfig(worktree string) bool {
+	var found bool
+	for _, name := range GolangciConfigNames {
+		if st, err := os.Stat(filepath.Join(worktree, name)); err == nil && !st.IsDir() {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return false
+	}
+	_, err := exec.LookPath("golangci-lint")
+	return err == nil
 }
 
 // SemgrepRuleDir is where a repository keeps its own invariant rules.

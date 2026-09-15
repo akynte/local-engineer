@@ -43,6 +43,18 @@ index:
   chunk_lines: 60
   watch_enabled: true
   excludes: [".git", "node_modules", "vendor", "dist", "build"]
+egress:
+  enabled: false
+  deps_port: 7780
+  docs_port: 7781
+  allowlist:
+    rules:
+      - host: proxy.golang.org
+        lanes: [deps]
+        why: the Go module proxy
+      - host: pkg.go.dev
+        lanes: [docs]
+        why: Go package documentation
 ```
 
 ### Notes on individual fields
@@ -62,7 +74,27 @@ looks like a crash loop.
 container boundary only, and `le doctor` says so.
 
 `offline` — refuses any non-local provider when the router is built, at
-startup rather than at first call.
+startup rather than at first call. It also refuses to coexist with
+`egress.enabled`: offline mode has no route out, so the provisioning lanes
+cannot exist. That is an error rather than a precedence rule, because silently
+winning either way would leave you believing something untrue about the
+machine.
+
+`egress.enabled` — the §6.1 allowlisting proxy, **off by default**. It is the
+only provisioned route out of the container, and a task sandbox is never
+granted its port. Turning it on is what makes `le deps` and `le docs` work.
+
+`egress.allowlist.rules` — each rule is a `host`, an optional `lanes` list, and
+a **required** `why`. A host is either exact (`proxy.golang.org`) or carries one
+leading wildcard label (`*.golang.org`, which covers subdomains but *not* the
+apex). `*` alone is refused: an allowlist that allows everything should be an
+absent proxy instead. Omitting `lanes` means every lane. Only ports 80 and 443
+are reachable — widening that would turn a host allowlist into a general
+tunnel, and it is deliberately not a config field.
+
+`egress.deps_port` / `egress.docs_port` — loopback ports, one per lane. They
+must differ: the lane comes from which socket the client reached, because a
+lane carried in the request is a lane the client chooses.
 
 ### Environment overrides
 

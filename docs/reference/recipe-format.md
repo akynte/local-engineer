@@ -19,14 +19,42 @@ the shape.
 
 ## Verification levels
 
-| Level | Kinds required |
+| Level | Kinds that must produce a passing result |
 |---|---|
 | `low` | build |
 | `standard` | build, vet, test |
-| `high` | every kind |
+| `high` | build, vet, test, race, format |
+
+`high` *runs* every kind, including `lint` and `analyzer`, but cannot *demand*
+a result from those two: they are conditional on a configuration the repository
+committed, so a repository with neither would fail `high` for checks that could
+never have run. They are not thereby optional — a conditional check that runs
+and fails blocks acceptance anyway. See the completion contract in
+[the CLI reference](cli.md#the-completion-contract).
 
 A level is what a task selects; the completion contract then requires a
 **passing** result for every required kind against the **current** candidate.
+
+Four of the kinds `high` selects run only where the repository asked for them:
+
+| Kind | Asked for by |
+|---|---|
+| `lint` | a committed `.golangci.yml` |
+| `analyzer` | rules under `semgrep/` |
+| `generate` | a `generate:` entry in `.le/verify.yaml` |
+| `integration` | an `integration:` entry in `.le/verify.yaml` |
+
+Holding a change to rules a repository never adopted is a verdict its
+maintainers did not agree to, so a repository that declared none of these gets
+the same `high` as before. What is conditional is whether the check *exists* —
+not whether its verdict counts: a conditional check that runs and fails blocks
+acceptance like any other.
+
+`generate` and `integration` are documented in
+[declare runtime and generation checks](../how-to/declare-runtime-checks.md).
+They are the two §10.1 rows that cannot be built-ins, because how to bring up a
+database and which generator writes which files are facts about a repository
+rather than about Go.
 
 ## Summarizer
 

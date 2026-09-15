@@ -136,7 +136,7 @@ reports whether the completion contract is met.
 
 | Flag | |
 |---|---|
-| `--verify` | `low` (build only), `standard` (build, vet, test), `high` (adds race and format) |
+| `--verify` | `low` (build only), `standard` (build, vet, test), `high` (adds race, format, and — where the repository declared them — lint, semgrep, generator checks and integration steps) |
 | `--committed` | Verify the last commit instead of your working tree |
 | `--json` | Machine-readable outcome |
 
@@ -170,7 +170,17 @@ A task is accepted only when:
 2. that result is a **pass** — a skip or an error satisfies nothing,
 3. it was produced against the **current** candidate, so evidence for an older
    state cannot be reused,
-4. no file changed outside the declared scope.
+4. **no check that ran found a problem**, including the conditional kinds
+   (`lint`, `analyzer`) the level does not demand a result from,
+5. no file changed outside the declared scope.
+
+Rules 1 and 4 answer different questions. A level says which kinds must have
+produced evidence; `lint` and `analyzer` cannot be on that list because they
+run only where the repository committed a configuration, and demanding them
+unconditionally would fail every repository that committed neither. But a check
+that *did* run and *did* find something is evidence about this code, so it
+disqualifies regardless of level. An `error` still does not: a tool that could
+not run says nothing about the code.
 
 An engine's claim that it finished is an input to that decision and never the
 decision itself.
@@ -304,6 +314,104 @@ rumour.
 repository that recorded it, and `observation` is evidence about one codebase
 rather than a rule about any.
 
+## `le deps`
+
+The dependency provisioning lane of §6.1: a confined process whose only route
+out is the allowlisting egress proxy.
+
+| Command | |
+|---|---|
+| `sync` | `go mod download all` inside the deps lane |
+| `run -- <cmd>` | Any command inside the deps lane |
+
+**These are not part of a task, and that is the design.** A task sandbox has no
+egress at all: verification runs with `GOPROXY=off`, and a task's Landlock
+ruleset grants the inference endpoint and assigned test ports and nothing else.
+There is no per-task flag that changes this — the only function that builds a
+spec containing the proxy port takes a lane, and a task runner cannot construct
+one.
+
+So a change that needs a new dependency is an operator running `le deps sync`
+between tasks, with the `go.mod` diff visible before any task verifies against
+it.
+
+Both lanes require `egress.enabled` in `le.yaml`, which is **off by default**,
+and both refuse to run when `offline` is set. Each lane has its own listener and
+its own slice of the allowlist, so a documentation host cannot be used to fetch
+code.
+
+A refused host is reported by the supervisor as `egress refused` with the host,
+the lane and the reason. The fix is an entry in `egress.allowlist` with a `why`
+— the reason is required so the decision is legible later. `le doctor` reports
+the proxy's state and warns about wildcard rules.
+
+## `le docs`
+
+The documentation provisioning lane, separate from `le deps` so that a
+documentation host cannot be used to fetch code.
+
+| Command | |
+|---|---|
+| `fetch <url>` | Fetch one URL through the docs lane; `--output` writes a file |
+| `run -- <cmd>` | Any command inside the docs lane |
+
+The same rules apply as for `le deps`: `egress.enabled` must be on, `offline`
+refuses, the lane is confined, and only hosts the allowlist names for the
+`docs` lane are reachable.
+
+## `le tui`
+
+A repainting status view for use inside the container (§4.1):
+
+```console
+$ docker exec -it local-engineer le tui
+```
+
+It shows what `le doctor` cannot — what is happening *now*: the supervisor's
+children and their restart counts, the active sandbox layers, non-terminal
+tasks, and any gate waiting for a decision.
+
+| Flag | |
+|---|---|
+| `--interval` | refresh period (default 2s) |
+| `--once` | render a single frame and exit |
+
+Deliberately not a full-screen application. Without a TTY it appends plain
+blocks instead of repainting, so it can be piped or redirected to a log — and a
+cursor-addressed UI would add a dependency and break under `docker exec`
+without a terminal.
+
+**It is read-only, and that is not an omission.** Approving a gate is
+`le gate approve`, with the diff and the impact report in front of you. A key
+that approved from a status screen would be a way to approve without reading,
+which is the failure the gates exist to prevent.
+
+## `le telemetry`
+
+| Command | |
+|---|---|
+| `show` | counters for the workspace containing the working directory |
+| `aggregate build` | collect counters from every workspace |
+| `aggregate show` | report counters across workspaces |
+| `aggregate forget <id>` | remove one workspace from the aggregate |
+
+Telemetry is per workspace, like everything else (§2.2). The aggregate is the
+**one** exception §2.2 permits — "an optional aggregate with workspace ids
+only", holding "counters, never content" — and it is bounded accordingly:
+
+- It stores a workspace id, a metric name, a UTC day and two numbers. There is
+  nowhere in the row shape to put a path, a symbol or a task title, which is how
+  "never content" is enforced rather than promised. A test asserts the column
+  set, because adding a column is exactly how that would stop being true.
+- A **day** is the finest resolution. Per-second counters across workspaces
+  would be a timing channel between projects, which §2.2's slot clearing is
+  careful to avoid elsewhere.
+- It is built by `build`, never written continuously, so nothing accumulates
+  across your projects while you are not looking. `show` says out loud that its
+  numbers are as of the last build.
+- It is derived and disposable: deleting the file loses nothing that is not
+  still in each workspace's own telemetry.
+
 ## `le config`
 
 | Command | |
@@ -325,3 +433,12 @@ restrict exposure with `-p 127.0.0.1:7777:7777`.
 
 `__sandbox-exec` is the Landlock re-exec helper. It is internal, and fails if
 invoked without the environment the runner sets.
+
+`verify-declared --kind <generate|integration> --name <step>` runs one step
+from `.le/verify.yaml` and prints its result as JSON. It is hidden because it
+is not an interface: it is how a recipe expresses a *sequence*. A recipe is
+argv and never a shell string — a shell inside the sandbox would make the
+argument boundary meaningless — and neither declared kind is one command. An
+integration step is up-then-test-then-down with the teardown guaranteed; a
+generate check is snapshot-run-compare-restore. See
+[declare runtime and generation checks](../how-to/declare-runtime-checks.md).

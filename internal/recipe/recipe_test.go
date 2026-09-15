@@ -153,6 +153,9 @@ func TestVerificationLevels(t *testing.T) {
 	for _, want := range []recipe.Kind{
 		recipe.KindBuild, recipe.KindVet, recipe.KindTest,
 		recipe.KindRace, recipe.KindFormat, recipe.KindAnalyzer,
+		// §10.1's loop is "compiler, vet, lint, test, race". KindLint existed
+		// with nothing producing one; this is the assertion that noticed.
+		recipe.KindLint,
 	} {
 		if !kinds[want] {
 			t.Errorf("high does not select the %s kind", want)
@@ -207,6 +210,29 @@ func TestMissingCommandIsAnErrorNotAFailure(t *testing.T) {
 	}
 	if res.Err == "" {
 		t.Error("an error result must say why")
+	}
+}
+
+func TestAToolTheSandboxDeniedIsAnErrorNotAFailure(t *testing.T) {
+	// The sandbox runner re-executes `le` as a helper, so a tool it could not
+	// exec surfaces as the helper exiting 126 — not as a Go exec error. A
+	// summarizer handed that output sees garbage and calls it a Fail, which
+	// reports broken code when nothing checked the code. This is what
+	// happened to semgrep when its virtualenv was outside read_only_paths.
+	dir := t.TempDir()
+	r := &recipe.Runner{Sandbox: sandbox.ContainerRunner{}, Spec: sandbox.Spec{ReadWrite: []string{dir}, Dir: dir}}
+	res := r.Run(context.Background(), recipe.Recipe{
+		Name: "denied-tool", Kind: recipe.KindAnalyzer,
+		// 126 is what a shell reports for "found but not executable".
+		Argv: []string{"sh", "-c", "exit 126"}, Timeout: time.Minute,
+		Summarize: recipe.Semgrep,
+	}, dir, "candidate")
+
+	if res.Status != recipe.Error {
+		t.Fatalf("status = %q, want error: a tool that could not run says nothing about the code", res.Status)
+	}
+	if !strings.Contains(res.Err, "read_only_paths") {
+		t.Errorf("the error does not name the likely cause: %q", res.Err)
 	}
 }
 
@@ -348,5 +374,154 @@ func TestSemgrepUnparseableOutputIsNotAPass(t *testing.T) {
 func TestSemgrepAppliesOnlyWithRules(t *testing.T) {
 	if recipe.HasSemgrepRules(t.TempDir()) {
 		t.Error("the recipe applied to a repository with no rules")
+	}
+}
+
+func TestEveryRecipeKindHasARecipe(t *testing.T) {
+	// A Kind with no recipe behind it is a verification level promising
+	// something nothing delivers. KindLint was exactly that until the
+	// golangci-lint recipe existed, and the levels reported no problem.
+	produced := map[recipe.Kind]bool{}
+	for _, r := range recipe.GoRecipes(recipe.High) {
+		produced[r.Kind] = true
+	}
+	for _, k := range []recipe.Kind{
+		recipe.KindBuild, recipe.KindVet, recipe.KindTest, recipe.KindRace,
+		recipe.KindLint, recipe.KindAnalyzer, recipe.KindFormat,
+	} {
+		if !produced[k] {
+			t.Errorf("kind %q is selectable by a level but no recipe produces one", k)
+		}
+	}
+
+	// The declared kinds come from the repository rather than from GoRecipes,
+	// so they are checked against their own constructor.
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".le"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	decl := "version: 1\n" +
+		"generate:\n  - name: g\n    argv: [\"true\"]\n    outputs: [\"out\"]\n" +
+		"integration:\n  - name: i\n    test: [\"true\"]\n"
+	if err := os.WriteFile(filepath.Join(dir, recipe.DeclaredFile), []byte(decl), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	declared := map[recipe.Kind]bool{}
+	for _, r := range recipe.DeclaredRecipes(recipe.High, dir, "le") {
+		declared[r.Kind] = true
+	}
+	for _, k := range []recipe.Kind{recipe.KindGenerate, recipe.KindIntegration} {
+		if !declared[k] {
+			t.Errorf("kind %q is selectable but no declared recipe produces one", k)
+		}
+	}
+}
+
+func TestGolangciLintAppliesOnlyWithCommittedConfig(t *testing.T) {
+	// golangci-lint's default set is opinionated. A repository that never
+	// committed a config never chose those rules, and holding a change to
+	// them would be a verdict its maintainers did not agree to.
+	if recipe.HasGolangciConfig(t.TempDir()) {
+		t.Error("the lint recipe applied to a repository with no golangci config")
+	}
+}
+
+func TestGolangciLintFindingsCarryLinterAndLocation(t *testing.T) {
+	// Verified against golangci-lint 2.13.2 output.
+	out := `{"Issues":[{"FromLinter":"errcheck",
+	  "Text":"Error return value of ` + "`f.Close`" + ` is not checked",
+	  "Severity":"","Pos":{"Filename":"p.go","Offset":71,"Line":7,"Column":15}}],
+	  "Report":{"Linters":[{"Name":"errcheck","Enabled":true}]}}`
+	status, summary := recipe.GolangciLint(1, out, "")
+	if status != recipe.Fail {
+		t.Fatalf("status = %q, want fail", status)
+	}
+	if len(summary.Findings) != 1 {
+		t.Fatalf("got %d findings, want 1", len(summary.Findings))
+	}
+	f := summary.Findings[0]
+	// The linter name is what a maintainer needs to turn the rule off.
+	if f.Rule != "errcheck" {
+		t.Errorf("rule = %q, want errcheck", f.Rule)
+	}
+	if f.File != "p.go" || f.Line != 7 || f.Column != 15 {
+		t.Errorf("location lost: %+v", f)
+	}
+	if summary.Counts["errcheck"] != 1 {
+		t.Errorf("counts by linter = %v", summary.Counts)
+	}
+}
+
+func TestGolangciLintJSONFollowedByTextStillParses(t *testing.T) {
+	// golangci-lint prints a plain-text tally after its JSON. Unmarshalling
+	// the whole buffer fails with "extra data", the summarizer falls back to
+	// Generic, and a structured report arrives as an undifferentiated blob —
+	// silently, because a Fail is still a Fail. This is the real output shape.
+	out := `{"Issues":[{"FromLinter":"errcheck","Text":"Error return value of ` + "`f.Close`" + ` is not checked",` +
+		`"Pos":{"Filename":"p.go","Line":7,"Column":15}}],"Report":{"Linters":[{"Name":"errcheck","Enabled":true}]}}` +
+		"\n1 issues:\n* errcheck: 1\n"
+	status, summary := recipe.GolangciLint(1, out, "")
+	if status != recipe.Fail {
+		t.Fatalf("status = %q, want fail", status)
+	}
+	if len(summary.Findings) != 1 || summary.Findings[0].Rule != "errcheck" {
+		t.Fatalf("the trailing text defeated the parser: %+v", summary)
+	}
+	if strings.Contains(summary.Headline, "{") {
+		t.Errorf("headline is raw output rather than a summary: %q", summary.Headline)
+	}
+}
+
+func TestAFallbackSummaryCannotDumpAWholeReportIntoAPacket(t *testing.T) {
+	// §8.2 compresses tool output at source. The fallback path has to honour
+	// that too: a tool whose entire report is ONE long line would otherwise
+	// carry all of it into a packet.
+	oneHugeLine := "{" + strings.Repeat("x", 8000) + "}"
+	_, summary := recipe.Generic(1, oneHugeLine, "")
+	if len(summary.Headline) > 300 {
+		t.Errorf("headline is %d bytes; a fallback must still be a summary", len(summary.Headline))
+	}
+	for _, f := range summary.Findings {
+		if len(f.Message) > 300 {
+			t.Errorf("finding is %d bytes; every line must be bounded", len(f.Message))
+		}
+	}
+}
+
+func TestGolangciLintCleanRunPasses(t *testing.T) {
+	status, summary := recipe.GolangciLint(0, `{"Issues":[],"Report":{}}`, "")
+	if status != recipe.Pass {
+		t.Fatalf("status = %q, want pass", status)
+	}
+	if summary.Headline == "" {
+		t.Error("a passing run has no headline")
+	}
+}
+
+func TestGolangciLintFailingToRunIsNotAFailingVerdict(t *testing.T) {
+	// A broken .golangci.yml must not read as broken code. golangci-lint
+	// signals it with a non-zero exit and nothing to report.
+	status, summary := recipe.GolangciLint(3, `{"Issues":[],"Report":{}}`, "can't load config: unknown linter")
+	if status != recipe.Error {
+		t.Fatalf("status = %q, want error", status)
+	}
+	if !strings.Contains(summary.Headline, "no issues reported") {
+		t.Errorf("headline does not say the run failed: %q", summary.Headline)
+	}
+
+	// Same when the report carries the error explicitly.
+	status, summary = recipe.GolangciLint(3, `{"Issues":[],"Report":{"Error":"context loading failed"}}`, "")
+	if status != recipe.Error {
+		t.Fatalf("status = %q, want error", status)
+	}
+	if !strings.Contains(summary.Headline, "could not complete") {
+		t.Errorf("headline = %q", summary.Headline)
+	}
+}
+
+func TestGolangciLintUnparseableOutputIsNotAPass(t *testing.T) {
+	status, _ := recipe.GolangciLint(1, "panic: runtime error", "")
+	if status == recipe.Pass {
+		t.Fatal("unparseable output was reported as a pass")
 	}
 }

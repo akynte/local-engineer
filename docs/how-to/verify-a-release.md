@@ -71,5 +71,5 @@ $ docker run --rm $IMAGE cat /opt/le/image-manifest.txt
 
 It tells you the artifact came from this repository's release workflow and has
 not been altered since. It does not tell you the code is correct or safe — for
-that, read [SECURITY.md](../../SECURITY.md) for the trust boundary, and
+that, read [SECURITY.md](https://github.com/akynte/local-engineer/blob/main/SECURITY.md) for the trust boundary, and
 `le doctor` for what is actually in effect on your machine.

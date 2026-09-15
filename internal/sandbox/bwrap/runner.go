@@ -161,9 +161,10 @@ func (r *Runner) Command(ctx context.Context, spec sandbox.Spec, argv ...string)
 	args = append(args, "--chdir", spec.Dir, "--")
 
 	// The network namespace is deliberately NOT unshared here: the design
-	// routes egress through the container's network configuration and the
-	// allowlisting proxy, and a task still needs to reach the inference
-	// endpoint. Port-level restriction is the Landlock layer's job (§6.1).
+	// routes egress through the container's network configuration, and a task
+	// still needs to reach the inference endpoint. Port-level restriction is
+	// the Landlock layer's job (§6.1). Provisioning reaches the §6.1
+	// allowlisting proxy on its own port, which a task's ruleset never grants.
 
 	inner := argv
 	if r.Inner != nil {

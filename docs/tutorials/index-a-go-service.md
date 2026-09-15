@@ -137,4 +137,4 @@ it immediately.
 - [The graph schema](../reference/graph-schema.md) — what is implemented today
 - [Why small models can work here](../explanation/why-small-models.md) — the
   argument the whole design rests on, and how it will be tested
-- [ROADMAP.md](../../ROADMAP.md) — where the language analyzers sit
+- [ROADMAP.md](https://github.com/akynte/local-engineer/blob/main/ROADMAP.md) — where the language analyzers sit

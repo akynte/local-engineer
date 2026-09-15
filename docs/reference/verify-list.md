@@ -11,7 +11,7 @@ the list untracked would make the label decorative.
 |---|---|---|
 | 1 | Landlock syscalls under the container runtime's default seccomp profile; Podman behaviour | **Checked (Docker)** |
 | 2 | Unprivileged user namespaces inside the default container on Ubuntu 26.04 | **Checked — unavailable** |
-| 3 | `opencode acp` transport options from outside the container | **Superseded by DR-5** |
+| 3 | `opencode acp` transport options from outside the container | **Superseded by DR-7** |
 | 4 | NVIDIA Container Toolkit and CUDA pairing for the pinned llama.cpp build | **Checked on the reference machine** |
 | 5 | Image size after layering; whether Playwright belongs in its own layer | **Partly checked** |
 | 6 | SQLite on a Docker named volume versus a bind mount | **Not checked** |
@@ -42,9 +42,10 @@ that process-level isolation between concurrent tasks requires it.
 
 ## 3. ACP transport
 
-**Superseded.** The item asks about `opencode acp`, and DR-5 deviated: what
-shipped is a native engine that does not speak ACP. The `[VERIFY]` cannot be
-resolved as written.
+**Superseded.** The item asks about `opencode acp`, and the engine decision
+changed: [DR-7](../adr/0007-native-engine.md) supersedes DR-5, and what shipped
+is a native engine that does not speak ACP. The `[VERIFY]` cannot be resolved
+as written.
 
 What exists instead is the ACP-over-TCP bridge of §4.3, which carries bytes
 between a TCP connection and any configured agent's stdio without parsing the
@@ -61,9 +62,38 @@ One machine is not a compatibility matrix. ROCm is **not checked**.
 
 ## 5. Image size and layering
 
-The CPU image is about **700 MB** ([manifest](image-manifest.md)), well under
-the 4–5 GB the design estimated for the CUDA variant — which is unsurprising,
-since the estimate was for the image carrying the CUDA runtime.
+The CPU image is about **837 MB** ([manifest](image-manifest.md)), still well
+under the 4–5 GB the design estimated for the CUDA variant — which is
+unsurprising, since the estimate was for the image carrying the CUDA runtime.
+
+That is 127 MB more than the 710 MB first measured, for twelve added tools:
+
+| Addition | Why it is in the image |
+|---|---|
+| TypeScript sidecar | Without it TypeScript gets no call graph at all. |
+| `golangci-lint` | §10.1's lint leg had no recipe to run. |
+| `semgrep` | The analyzer recipe skipped on every published image. |
+| `gosec`, `gitleaks`, `osv-scanner`, `buf`, `oasdiff`, `squawk` | Reachable through a `check:` step; the engine has no shell tool, so a tool absent here is unreachable. |
+
+**It was 3,822 MB before the caches were cleaned.** The `go install` layer had
+`rm -rf $GOPATH/pkg/mod/cache/download`, which removes the *download* cache and
+leaves 3.2 GB of extracted modules — plus a second Go toolchain that `buf`
+asked for. `go clean -cache -modcache -testcache` and removing `$GOPATH/pkg`
+outright is what the layer does now. Worth recording because the difference
+between the two commands is invisible in a Dockerfile review and costs 3 GB.
+
+semgrep is the largest single item that remains (a Python virtualenv, ~175 MB,
+with no released binary, so there is no smaller way to carry it). If image size
+becomes the binding constraint it is the first thing to reconsider, and the
+`-slim` variant is already the answer for anyone who wants none of this.
+
+**Playwright is still not in any image, and the question is now sharper rather
+than resolved.** The mechanism to drive a browser exists — an `integration:`
+step in `.le/verify.yaml` runs one, with the ports it declares — so the
+blocker is no longer "nothing could use it". It is that no image ships a UI for
+a browser to drive, so ~300 MB of browsers would run nothing for every user who
+is not testing a web front end. That is an argument for a separate layer or a
+derived image, which is exactly what this item asks and what remains unsettled.
 
 **Playwright is not in any image**, so whether it belongs in its own layer has
 not been settled. It becomes a real question when runtime UI verification is

@@ -11,11 +11,11 @@ is exactly the claim someone reads it to check.
 
 | | |
 |---|---|
-| Reference | `local-engineer:split-test` |
-| Digest | `local-engineer@sha256:a2e8fd5113fcd7c9af1326f7b935ee1a18a40d62120115e60e83c43e92fdff1b` |
-| Image ID | `sha256:a2e8fd5113fcd7c9af1326f7b935ee1a18a40d62120115e60e83c43e92fdff1b` |
-| Created | 2026-09-14T20:41:09.903366119Z |
-| Size | 701 MB |
+| Reference | `local-engineer:cpu-test` |
+| Digest | `local-engineer@sha256:4399bbd8a39f7248f659c492f92a00d10b6bb9f528924ec7ec386991e39c83f5` |
+| Image ID | `sha256:4399bbd8a39f7248f659c492f92a00d10b6bb9f528924ec7ec386991e39c83f5` |
+| Created | 2026-09-15T14:03:42.191925849Z |
+| Size | 837 MB |
 
 Pin by digest, not by tag. A tag moves; the digest is the thing you tested.
 
@@ -38,16 +38,19 @@ VERSION_ID="12"
 | `rg` | ripgrep 13.0.0 |
 | `gopls` | golang.org/x/tools/gopls v0.23.0 |
 | `staticcheck` | staticcheck 2026.2.1 (0.8.1) |
-| `golangci-lint` | not present |
+| `golangci-lint` | golangci-lint has version 2.13.2 built with go1.27.0 from 27774aaf on 2026-08-27T23:01:12Z |
 | `govulncheck` | Go: go1.26.3 |
-| `gosec` | not present |
-| `semgrep` | not present |
-| `gitleaks` | not present |
-| `osv-scanner` | not present |
+| `gosec` | Version: dev |
+| `semgrep` | 1.177.0 |
+| `gitleaks` | version is set by build process |
+| `osv-scanner` | osv-scanner version: 2.6.0 |
 | `trivy` | not present |
-| `buf` | not present |
+| `buf` | 1.73.0 |
+| `squawk` | squawk 2.65.0 |
+| `oasdiff` | oasdiff version main |
 | `benchstat` | Usage: benchstat [flags] inputs... |
 | `bwrap` | bubblewrap 0.8.0 |
+| `typescript-sidecar` | typescript 5.9.2 |
 
 ## Reading this
 
@@ -55,6 +58,31 @@ VERSION_ID="12"
 the supervisor and no toolchain; the `-cpu` image carries no CUDA runtime. §4.2
 describes three variants on purpose, and a tool missing from one is why you
 would choose another.
+
+### What is here, and why
+
+**The engine has no shell tool.** Its only route to an external program is
+`run_recipe`, so a binary that no recipe invokes cannot be reached by a task at
+all — it would be bytes with no capability. That is the rule for what belongs
+in this image.
+
+Two tools have built-in recipes:
+
+| Tool | Recipe |
+|---|---|
+| `golangci-lint` | the `lint` kind, where the repository committed a `.golangci.yml` |
+| `semgrep` | the `analyzer` kind, where the repository carries rules under `semgrep/` |
+
+The rest are reached through a `check:` step in `.le/verify.yaml`, because
+which tables a migration may lock, and which proto changes are breaking, are
+facts about a repository rather than about Go. See
+[declare runtime and generation checks](../how-to/declare-runtime-checks.md).
+
+| §4.2 tool | Why it is absent |
+|---|---|
+| Playwright browsers | No image ships a UI for a browser to drive, so 300 MB of browsers would run nothing. An `integration:` step is how you use one if you install it yourself. [Verify item 5](verify-list.md) tracks whether they belong in their own layer. |
+| `trivy` | It reports vulnerabilities in dependencies, so a task would fail for a CVE published between two runs — a property of the world, not of the change. That belongs in CI, where it is, not in a completion contract. Declare it as a `check:` step and install it if you disagree. |
+| OpenCode | Superseded by [DR-7](../adr/0007-native-engine.md): the engine is native and does not need it. |
 
 Regenerate after any change to `deploy/Dockerfile`:
 

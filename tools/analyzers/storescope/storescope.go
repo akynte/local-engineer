@@ -66,6 +66,13 @@ var exemptions = map[string]string{
 	// put them in $LE_DATA, where they would not travel and a clone would lose
 	// them.
 	"internal/memory": "writes the repository's own memory notes",
+	// The generate check of §10.1 snapshots a repository's declared generator
+	// outputs, runs the generator, and restores the worktree exactly as it was
+	// found. Those writes are inside the worktree being verified — source
+	// being edited, the same reasoning as internal/worktree above — and the
+	// restore is what keeps the check from invalidating every other result
+	// (§7.2). Nothing here touches the data directory.
+	"internal/recipe": "restores a worktree's generator outputs after a generate check",
 	// The analyzer's own tests write fixtures.
 	"tools/analyzers": "analyzer test fixtures",
 }

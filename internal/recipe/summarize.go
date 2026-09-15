@@ -31,11 +31,15 @@ func Generic(exitCode int, stdout, stderr string) (Status, Summary) {
 	lines := lastLines(combined, 5)
 	head := fmt.Sprintf("exited %d", exitCode)
 	if len(lines) > 0 {
-		head += ": " + lines[0]
+		head += ": " + truncateLine(lines[0], 200)
 	}
+	// Every line is bounded, not just the headline. A tool that emits its
+	// whole report as ONE line — golangci-lint's JSON is a single 3 KB line —
+	// would otherwise put all of it in a packet through the fallback path,
+	// which is exactly the token waste §8.2 compresses output to avoid.
 	findings := make([]Finding, 0, len(lines))
 	for _, l := range lines {
-		findings = append(findings, Finding{Message: l})
+		findings = append(findings, Finding{Message: truncateLine(l, 200)})
 	}
 	return Fail, Summary{Headline: head, Findings: findings}
 }
@@ -271,7 +275,7 @@ type semgrepOutput struct {
 // did not manage to check it".
 func Semgrep(exitCode int, stdout, stderr string) (Status, Summary) {
 	var out semgrepOutput
-	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &out); err != nil {
+	if err := decodeFirstJSON(stdout, &out); err != nil {
 		// No parseable JSON: fall back rather than claim a clean run.
 		return Generic(exitCode, stdout, stderr)
 	}
@@ -325,6 +329,108 @@ func Semgrep(exitCode int, stdout, stderr string) (Status, Summary) {
 		Counts:    countsOf(bySeverity),
 		Truncated: truncated,
 	}
+}
+
+// golangciOutput is the subset of golangci-lint's JSON this reads. Verified
+// against golangci-lint 2.13.2: `--output.json.path stdout` emits an object
+// with `Issues` and a `Report`, and exits 1 when there are issues.
+type golangciOutput struct {
+	Issues []struct {
+		FromLinter string `json:"FromLinter"`
+		Text       string `json:"Text"`
+		Severity   string `json:"Severity"`
+		Pos        struct {
+			Filename string `json:"Filename"`
+			Line     int    `json:"Line"`
+			Column   int    `json:"Column"`
+		} `json:"Pos"`
+	} `json:"Issues"`
+	Report struct {
+		Error string `json:"Error"`
+	} `json:"Report"`
+}
+
+// GolangciLint summarises a golangci-lint run.
+//
+// The linter name travels as the finding's Rule for the same reason semgrep's
+// check id does: a lint that keeps firing on correct code has to be findable
+// so it can be turned off in `.golangci.yml`, and a message alone does not
+// say which linter to disable.
+//
+// The distinction that matters is the one §10.1 depends on: issues in the code
+// are a Fail, but a run that could not complete — a bad config, a package that
+// would not load — is an Error. golangci-lint signals the second with a
+// non-zero exit and no issues, and conflating the two would let a broken
+// .golangci.yml read as broken code.
+func GolangciLint(exitCode int, stdout, stderr string) (Status, Summary) {
+	var out golangciOutput
+	if err := decodeFirstJSON(stdout, &out); err != nil {
+		// No parseable JSON: fall back rather than claim a clean run.
+		return Generic(exitCode, stdout, stderr)
+	}
+
+	if e := strings.TrimSpace(out.Report.Error); e != "" {
+		return Error, Summary{Headline: "golangci-lint could not complete: " + truncateLine(e, 160)}
+	}
+
+	if len(out.Issues) == 0 {
+		if exitCode != 0 {
+			// Non-zero with nothing to report is the run failing, not the code.
+			return Error, Summary{
+				Headline: fmt.Sprintf("golangci-lint exited %d with no issues reported", exitCode),
+				Findings: genericFindings(stderr),
+			}
+		}
+		return Pass, Summary{Headline: "no golangci-lint issues"}
+	}
+
+	findings := make([]Finding, 0, len(out.Issues))
+	byLinter := map[string]int{}
+	for _, iss := range out.Issues {
+		byLinter[iss.FromLinter]++
+		msg := strings.TrimSpace(iss.Text)
+		if msg == "" {
+			msg = iss.FromLinter
+		}
+		findings = append(findings, Finding{
+			File: iss.Pos.Filename, Line: iss.Pos.Line, Column: iss.Pos.Column,
+			Message: msg, Rule: iss.FromLinter,
+		})
+	}
+
+	sortFindings(findings)
+	shown, truncated := trimFindings(findings)
+	return Fail, Summary{
+		Headline:  fmt.Sprintf("%d golangci-lint issue(s)", len(findings)),
+		Findings:  shown,
+		Counts:    countsOf(byLinter),
+		Truncated: truncated,
+	}
+}
+
+// genericFindings lifts the last few stderr lines into findings so an Error
+// carries some explanation rather than only a count.
+func genericFindings(stderr string) []Finding {
+	var out []Finding
+	for _, l := range lastLines(stderr, 3) {
+		out = append(out, Finding{Message: l})
+	}
+	return out
+}
+
+// decodeFirstJSON reads the first JSON value from a tool's stdout and ignores
+// whatever follows it.
+//
+// json.Unmarshal on the whole buffer will not do, because a tool is entitled
+// to print something after its report and several do: golangci-lint follows
+// its JSON with a plain-text tally ("1 issues:\n* errcheck: 1"), which makes
+// Unmarshal fail with "extra data". The summarizer then falls back to Generic,
+// and a structured report the model could have acted on arrives as an
+// undifferentiated blob. That failure is silent — a Fail is still a Fail — so
+// it is worth being explicit about which part of the stream is the document.
+func decodeFirstJSON(stdout string, v any) error {
+	dec := json.NewDecoder(strings.NewReader(strings.TrimSpace(stdout)))
+	return dec.Decode(v)
 }
 
 func truncateLine(s string, n int) string {

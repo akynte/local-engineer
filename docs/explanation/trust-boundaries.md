@@ -56,9 +56,15 @@ Three layers, and `le doctor` reports which are active (§6.2):
 |---|---|---|---|
 | Cannot touch host files outside mounts | yes | yes | yes |
 | Cannot read another workspace's data | by permissions | yes | yes |
-| Cannot reach model-management endpoints | proxy allowlist | yes | yes |
+| Cannot reach model-management endpoints | proxy allowlist¹ | yes | yes |
 | Cannot see other tasks' processes | no | no | yes |
 | Cannot modify policy, ledger, hidden tests | permissions | yes | yes |
+
+¹ The §6.1 proxy, when `egress.enabled`. A task is never granted its port, so
+this row holds for tasks whether or not egress is on; with it off, the whole
+container has no provisioned route out. See
+[the isolation model](isolation-model.md) for why the sandbox and the allowlist
+are separate mechanisms.
 
 **Does not protect against:** out-of-scope writes *inside* the worktree. The
 task legitimately has write access to the checkout it is editing, so a change to

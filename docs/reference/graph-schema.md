@@ -71,8 +71,15 @@ report carries that sentence.
 | Build target to dependency | Dockerfile `COPY`/`FROM`, Makefile targets | `resolved` + `inferred` | **done** |
 | Deployment to service | Compose, Kubernetes manifests | `declared` | **done** |
 | Infrastructure to component | Terraform HCL | `declared` + `inferred` | **done** |
-| TypeScript: modules, call sites, references | TS compiler API | `resolved` | not yet |
+| TypeScript: modules, imports, declarations, heritage, `process.env` | Lexical reading of the source | `resolved` / `declared` / `inferred` | **done** |
+| TypeScript: call sites, resolved heritage, path aliases | TS compiler API, via the Node sidecar | `resolved` | **done, sidecar only**¹ |
 | API to consumer | Route inventory plus literal client prefixes | `inferred` / `declared` | not yet |
+
+¹ The sidecar (`sidecars/typescript/`) ships in the `cpu` and `cuda` images and
+is used automatically when present. Without it — the `-slim` image, or a host
+with no Node — TypeScript gets the lexical row only, and **no call graph at
+all**: without a checker an identifier in call position may be a local or a
+shadowed binding. `le index` says which reading it used.
 
 The state column is deliberate. A schema that described relationships the code
 does not produce would make impact reports look better than they are.

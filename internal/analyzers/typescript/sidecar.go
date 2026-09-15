@@ -96,11 +96,18 @@ func SidecarPath(installRoot string) (string, error) {
 	if cwd, err := os.Getwd(); err == nil {
 		candidates = append(candidates, filepath.Join(cwd, SidecarDir, "analyze.js"))
 	}
+	// gosec reports G703 on both Stat calls because one candidate derives from
+	// an environment variable. That variable is EnvSidecarDir, the documented
+	// way a non-standard installation says where it put the sidecar: it is
+	// part of the process environment, not repository input, and anyone who
+	// can set it can already set PATH. The candidate from the *repository*
+	// side — the working directory — is deliberately not searched upwards, a
+	// few lines above, which is the traversal that would actually matter here.
 	for _, c := range candidates {
-		if st, err := os.Stat(c); err == nil && !st.IsDir() {
+		if st, err := os.Stat(c); err == nil && !st.IsDir() { //nolint:gosec // installation-controlled path, see above
 			// node_modules has to be there too, or the script fails on import
 			// with a message about `typescript` that says nothing useful.
-			if _, err := os.Stat(filepath.Join(filepath.Dir(c), "node_modules")); err == nil {
+			if _, err := os.Stat(filepath.Join(filepath.Dir(c), "node_modules")); err == nil { //nolint:gosec // same
 				return c, nil
 			}
 		}

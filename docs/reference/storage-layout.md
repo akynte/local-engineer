@@ -19,7 +19,29 @@
     slots/             saved prompt-cache slots, cleared on workspace switch
     tmp/               wiped at task end; the only tmp a sandboxed task sees
   backups/<timestamp>/<workspace_id>/{index,ledger,telemetry}.db
+  provisioning/<lane>/     §6.1 lane caches: go-mod, go-build, tmp
+  telemetry-aggregate.db   §2.2's optional cross-workspace counters
 ```
+
+## The two things outside a workspace directory
+
+Everything above is per workspace except `config/`, `models/`, and these two,
+and each is outside for a stated reason rather than by omission.
+
+**`provisioning/<lane>/`** holds what `le deps` fetches. A downloaded module is
+not workspace state: two projects needing the same version should not download
+it twice, and nothing about a fetched dependency identifies the project that
+asked for it. A lane never opens any workspace's databases, so this shares no
+boundary with §2.2's isolation contract.
+
+**`telemetry-aggregate.db`** is the one exception §2.2 permits to
+"no cross-workspace query exists in the code": *"an optional aggregate with
+workspace ids only"*, holding *"counters, never content"*. It is the only
+database opened outside a workspace directory, it takes no workspace handle,
+nothing reads it during a task, and its row shape — a workspace id, a metric
+name, a UTC day and two numbers — has nowhere to put content. It is built by
+`le telemetry aggregate build` rather than written continuously, and deleting
+it loses nothing that is not still in each workspace's own `telemetry.db`.
 
 ## Why three databases per workspace
 

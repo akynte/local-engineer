@@ -99,9 +99,21 @@ gitleaks|gitleaks version
 osv-scanner|osv-scanner --version 2>&1 | head -1
 trivy|trivy --version | head -1
 buf|buf --version
+squawk|squawk --version
+oasdiff|oasdiff --version 2>&1 | head -1
 benchstat|benchstat -h 2>&1 | head -1
 bwrap|bwrap --version
 TOOLS
+
+# The TypeScript sidecar is not a binary on PATH, so it needs its own probe.
+# It is listed because §3.2's TypeScript rows are `resolved` only when it is
+# installed: an image without it analyses TypeScript lexically and emits no
+# call graph, which is a property of the image someone reads this table to
+# check.
+sidecar_dir='/opt/le/sidecars/typescript'
+sidecar="$(run "test -f $sidecar_dir/analyze.js && node -p \"'typescript ' + require('$sidecar_dir/node_modules/typescript/package.json').version\"")"
+sidecar="$(printf '%s' "$sidecar" | head -1 | tr -d '\r')"
+printf '| `typescript-sidecar` | %s |\n' "${sidecar:-not present}"
 
 cat <<'FOOTER'
 
@@ -111,6 +123,31 @@ cat <<'FOOTER'
 the supervisor and no toolchain; the `-cpu` image carries no CUDA runtime. §4.2
 describes three variants on purpose, and a tool missing from one is why you
 would choose another.
+
+### What is here, and why
+
+**The engine has no shell tool.** Its only route to an external program is
+`run_recipe`, so a binary that no recipe invokes cannot be reached by a task at
+all — it would be bytes with no capability. That is the rule for what belongs
+in this image.
+
+Two tools have built-in recipes:
+
+| Tool | Recipe |
+|---|---|
+| `golangci-lint` | the `lint` kind, where the repository committed a `.golangci.yml` |
+| `semgrep` | the `analyzer` kind, where the repository carries rules under `semgrep/` |
+
+The rest are reached through a `check:` step in `.le/verify.yaml`, because
+which tables a migration may lock, and which proto changes are breaking, are
+facts about a repository rather than about Go. See
+[declare runtime and generation checks](../how-to/declare-runtime-checks.md).
+
+| §4.2 tool | Why it is absent |
+|---|---|
+| Playwright browsers | No image ships a UI for a browser to drive, so 300 MB of browsers would run nothing. An `integration:` step is how you use one if you install it yourself. [Verify item 5](verify-list.md) tracks whether they belong in their own layer. |
+| `trivy` | It reports vulnerabilities in dependencies, so a task would fail for a CVE published between two runs — a property of the world, not of the change. That belongs in CI, where it is, not in a completion contract. Declare it as a `check:` step and install it if you disagree. |
+| OpenCode | Superseded by [DR-7](../adr/0007-native-engine.md): the engine is native and does not need it. |
 
 Regenerate after any change to `deploy/Dockerfile`:
 

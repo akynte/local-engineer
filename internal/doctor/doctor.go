@@ -109,8 +109,9 @@ func checkContainer() Check {
 		Name:   "container boundary (DR-3 layer 1)",
 		Level:  Warn,
 		Detail: why,
-		Fix: "The documented default is a container (§4.1). Running on the host is supported for " +
-			"development (scripts/install-bare-metal.sh) but the host-isolation guarantees of §6.2 do not apply.",
+		Fix: "The documented default is a container (§4.1). Host installs are supported for development " +
+			"via scripts/install-bare-metal.sh (§13), but the host-isolation guarantees of §6.2 rest on " +
+			"layer 1 and do not apply without it: nothing bounds the supervisor to the repositories you meant.",
 	}
 }
 
@@ -159,8 +160,9 @@ func checkSandbox(ctx context.Context, cfg *config.Config) (*sandbox.Report, []C
 			detail += "; TCP rules enforced"
 		}
 		checks = append(checks, Check{Name: "landlock (DR-3 layer 2)", Level: lvl, Detail: detail,
-			Fix: map[Level]string{Warn: "Port restrictions degrade to best-effort. Rely on the container network " +
-				"configuration and the allowlisting proxy for egress control (§6.1)."}[lvl]})
+			Fix: map[Level]string{Warn: "Port restrictions degrade to best-effort. Egress control then rests on the " +
+				"container's network configuration alone: run with --network none, or on a user-defined bridge " +
+				"reaching only the inference endpoint (§6.1). The allowlisting proxy §6.1 describes is not built."}[lvl]})
 	}
 
 	// Bubblewrap, the optional layer.
@@ -180,11 +182,55 @@ func checkSandbox(ctx context.Context, cfg *config.Config) (*sandbox.Report, []C
 		Name: "network containment", Level: Warn,
 		Detail: "Landlock TCP rules do not cover Multipath TCP sockets, and Go's net.Listen uses MPTCP by default. " +
 			"Port rules are therefore augmented, not relied on alone (§6.1).",
-		Fix: "Use --network none plus an in-container inference route for fully offline mode, " +
-			"or the allowlisting proxy for the deps and docs lanes.",
+		Fix: "Use --network none plus an in-container inference route for fully offline mode. " +
+			"Provisioning goes through the §6.1 allowlisting proxy, which a task sandbox cannot reach.",
 	})
 
+	checks = append(checks, checkEgress(cfg))
+
 	return &rep, checks
+}
+
+// checkEgress reports the state of §6.1's allowlisting proxy.
+//
+// Three states worth distinguishing, because they are three different
+// machines: no egress at all, egress through an allowlist, and an allowlist
+// wide enough not to be one.
+func checkEgress(cfg *config.Config) Check {
+	if cfg == nil {
+		return Check{Name: "egress proxy (§6.1)", Level: Skipped, Detail: "no configuration loaded"}
+	}
+	if cfg.Offline {
+		return Check{Name: "egress proxy (§6.1)", Level: OK,
+			Detail: "offline: no route out, and the provisioning lanes do not exist"}
+	}
+	if !cfg.Egress.Enabled {
+		return Check{Name: "egress proxy (§6.1)", Level: OK,
+			Detail: "disabled: nothing in this container has a provisioned route out",
+			Fix: "A task sandbox never gets egress either way. Enable egress.enabled in le.yaml " +
+				"only if you need `le deps` or `le docs` to fetch; review egress.allowlist first."}
+	}
+	if err := cfg.Egress.Allowlist.Validate(); err != nil {
+		return Check{Name: "egress proxy (§6.1)", Level: Fail, Detail: err.Error(),
+			Fix: "Fix egress.allowlist in le.yaml, or set egress.enabled to false."}
+	}
+	rules := cfg.Egress.Allowlist.Rules
+	var wildcards int
+	for _, r := range rules {
+		if strings.HasPrefix(strings.TrimSpace(r.Host), "*.") {
+			wildcards++
+		}
+	}
+	detail := fmt.Sprintf("enabled: deps on 127.0.0.1:%d, docs on 127.0.0.1:%d, %d allowlist rule(s)",
+		cfg.Egress.DepsPort, cfg.Egress.DocsPort, len(rules))
+	if wildcards > 0 {
+		// Not a fault, but the thing an operator should look at twice: a
+		// wildcard is the entry most likely to be broader than intended.
+		return Check{Name: "egress proxy (§6.1)", Level: Warn,
+			Detail: fmt.Sprintf("%s, %d of them wildcards", detail, wildcards),
+			Fix:    "Check that each `*.` rule is as narrow as you meant. Exact hosts are preferred."}
+	}
+	return Check{Name: "egress proxy (§6.1)", Level: OK, Detail: detail}
 }
 
 // checkFilesystem covers §5.4: SQLite needs a real filesystem with working

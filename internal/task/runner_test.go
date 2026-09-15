@@ -282,6 +282,79 @@ func TestTheTaskEditsAWorktreeNotTheRepository(t *testing.T) {
 
 // A change outside the declared scope blocks acceptance even when everything
 // verifies.
+// The completion contract is exercised directly here, because these cases are
+// about the rules rather than about running a toolchain.
+func TestAFailingConditionalCheckBlocksAcceptance(t *testing.T) {
+	const cand = "deadbeef"
+	pass := func(k recipe.Kind, headline string) recipe.Result {
+		return recipe.Result{
+			Recipe: string(k), Kind: k, Status: recipe.Pass,
+			Candidate: cand, Summary: recipe.Summary{Headline: headline},
+		}
+	}
+	// Everything `high` demands a result from, all passing.
+	base := []recipe.Result{
+		pass(recipe.KindBuild, "compiles"),
+		pass(recipe.KindVet, "no vet findings"),
+		pass(recipe.KindTest, "3 tests passed"),
+		pass(recipe.KindRace, "no races"),
+		pass(recipe.KindFormat, "formatting is clean"),
+	}
+
+	if ok, reasons := task.Accept(recipe.High, base, cand, nil); !ok {
+		t.Fatalf("a clean run was not accepted: %v", reasons)
+	}
+
+	// recipe.Required(high) does not list analyzer or lint, because both are
+	// conditional. That must not make them decorative: until this rule
+	// existed, a failing semgrep run produced an accepted task.
+	for _, kind := range []recipe.Kind{
+		recipe.KindAnalyzer, recipe.KindLint, recipe.KindGenerate, recipe.KindIntegration,
+	} {
+		results := append(append([]recipe.Result{}, base...), recipe.Result{
+			Recipe: string(kind), Kind: kind, Status: recipe.Fail, Candidate: cand,
+			Summary: recipe.Summary{Headline: "2 findings"},
+		})
+		ok, reasons := task.Accept(recipe.High, results, cand, nil)
+		if ok {
+			t.Errorf("a failing %s check was ignored: %v", kind, reasons)
+		}
+		if !containsSubstr(reasons, string(kind)+" failed") {
+			t.Errorf("reasons do not name the %s failure: %v", kind, reasons)
+		}
+	}
+}
+
+func TestAConditionalCheckThatCouldNotRunDoesNotBlock(t *testing.T) {
+	const cand = "deadbeef"
+	results := []recipe.Result{
+		{Recipe: "go build", Kind: recipe.KindBuild, Status: recipe.Pass, Candidate: cand},
+		{Recipe: "go vet", Kind: recipe.KindVet, Status: recipe.Pass, Candidate: cand},
+		{Recipe: "go test", Kind: recipe.KindTest, Status: recipe.Pass, Candidate: cand},
+		// A tool that is not installed, and one that does not apply here.
+		// Neither says anything about the code, so neither may block.
+		{Recipe: "semgrep", Kind: recipe.KindAnalyzer, Status: recipe.Error, Candidate: cand},
+		{Recipe: "golangci-lint", Kind: recipe.KindLint, Status: recipe.Skipped, Candidate: cand},
+	}
+	if ok, reasons := task.Accept(recipe.Standard, results, cand, nil); !ok {
+		t.Fatalf("a missing optional tool blocked acceptance: %v", reasons)
+	}
+}
+
+func TestAStaleConditionalFailureDoesNotBlock(t *testing.T) {
+	// A failure recorded against code that has since changed is not a verdict
+	// on the code that is there now — the same rule the required kinds get.
+	results := []recipe.Result{
+		{Recipe: "go build", Kind: recipe.KindBuild, Status: recipe.Pass, Candidate: "current"},
+		{Recipe: "go vet", Kind: recipe.KindVet, Status: recipe.Pass, Candidate: "current"},
+		{Recipe: "go test", Kind: recipe.KindTest, Status: recipe.Pass, Candidate: "current"},
+		{Recipe: "semgrep", Kind: recipe.KindAnalyzer, Status: recipe.Fail, Candidate: "older"},
+	}
+	if ok, reasons := task.Accept(recipe.Standard, results, "current", nil); !ok {
+		t.Fatalf("a stale analyzer failure blocked acceptance: %v", reasons)
+	}
+}
+
 func TestOutOfScopeChangeBlocksAcceptance(t *testing.T) {
 	requireGo(t)
 	repo := gitRepo(t, map[string]string{

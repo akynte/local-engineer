@@ -98,7 +98,9 @@ func Guarantees() []Guarantee {
 		{Statement: "Cannot read another workspace's data", Container: true, Landlock: true, Bwrap: true,
 			Note: "container only: by file permissions and per-task Landlock rules; with Landlock: paths outside the task set are denied"},
 		{Statement: "Cannot reach model-management endpoints", Container: true, Landlock: true, Bwrap: true,
-			Note: "container only: via proxy allowlist; with Landlock: TCP port rules"},
+			Note: "container only: via the §6.1 proxy allowlist when egress is enabled, and the container's " +
+				"network configuration otherwise; with Landlock: TCP port rules. A task never gets the " +
+				"proxy port either way"},
 		{Statement: "Cannot see other tasks' processes", Container: false, Landlock: false, Bwrap: true,
 			Note: "requires the PID namespace, which only the bubblewrap layer provides"},
 		{Statement: "Out-of-scope writes in the worktree", Container: true, Landlock: true, Bwrap: true,

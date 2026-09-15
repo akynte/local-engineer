@@ -12,7 +12,7 @@
 // anything the version did not cover. A byte pipe cannot be wrong about a
 // message shape it never inspects.
 //
-// A consequence of DR-5 has to be stated plainly. The design assumed OpenCode
+// A consequence of DR-7 has to be stated plainly. The design assumed OpenCode
 // as the engine and `opencode acp` as the agent; what shipped is a native
 // engine that does not speak ACP. So the bridge has nothing to carry unless an
 // operator configures an agent command. It is off by default for that reason as
@@ -203,9 +203,14 @@ func (b *Bridge) handle(ctx context.Context, conn net.Conn) error {
 
 // Listen opens the bridge's listener. It is separate from Serve so a caller can
 // report the bound address before accepting, and so a test can use port 0.
-func Listen(addr string) (net.Listener, error) {
+//
+// The context covers the bind itself, which is the part that can block — a
+// hostname in the address means a resolver lookup. Once Listen returns, the
+// listener's lifetime is Serve's concern, not this context's.
+func Listen(ctx context.Context, addr string) (net.Listener, error) {
 	if addr == "" {
 		return nil, errors.New("acp: no address to listen on")
 	}
-	return net.Listen("tcp", addr)
+	var lc net.ListenConfig
+	return lc.Listen(ctx, "tcp", addr)
 }

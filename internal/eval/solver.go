@@ -129,7 +129,12 @@ func (s *SystemSolver) indexCopy(ctx context.Context, req SolveRequest) (*store.
 		return nil, nil, fmt.Errorf("eval: opening the run workspace: %w", err)
 	}
 	dir := st.Dir()
-	release := func() {
+	// The suppression below is deliberate: this is cleanup, and cleanup runs
+	// precisely when req's context is already cancelled. Store.Close builds
+	// its own bounded context (a WAL checkpoint on close must not be skipped
+	// because the caller went away), so threading ctx in here would make the
+	// checkpoint cancellable at the one moment it must not be.
+	release := func() { //nolint:contextcheck // cleanup must not inherit a cancelled context
 		if err := st.Close(); err != nil {
 			s.logf("eval: closing the run workspace: %v", err)
 		}

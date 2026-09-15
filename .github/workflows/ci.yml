@@ -99,6 +99,19 @@ jobs:
       - name: Isolation tests
         run: go test -race -v -run 'Isolation|CrossWorkspace|Workspace|Guard|Cache' ./internal/store/...
 
+      # §6.1's proxy and its provisioning lanes are a security boundary, so the
+      # allowlist is tested as attempts to get past it — suffix and prefix
+      # attacks, trailing dots, wildcard apexes, lane crossing — and the lane
+      # spec is tested for granting the proxy port and nothing else.
+      - name: Egress allowlist and provisioning lane confinement
+        run: go test -race -v ./internal/proxy/...
+
+      # §2.2 permits the aggregate to hold "counters, never content". The row
+      # shape is the enforcement, so the column set is asserted: adding a
+      # column is exactly how that would stop being true.
+      - name: The telemetry aggregate carries no content
+        run: go test -race -run 'Aggregate|Content|Forget|DoubleCount' ./internal/telemetry/...
+
       - name: The isolation tests must be able to fail
         # A test that cannot fail protects nothing. The script breaks the
         # cache's workspace binding, requires the suite to notice, and verifies
@@ -300,6 +313,85 @@ jobs:
           docker logs le-ci
           exit 1
 
+      # The TypeScript sidecar has to be IN the image, not merely in the
+      # repository. It was not, and nothing caught it: a missing sidecar is an
+      # ordinary condition the analyzer survives by falling back to the lexical
+      # reading, so the only visible symptom was TypeScript quietly having no
+      # call graph. A `calls` edge is the precise gate — the lexical reader
+      # emits none by design, so this edge exists only if the sidecar ran.
+      - name: The image's TypeScript sidecar produces compiler-backed edges
+        if: matrix.target == 'cpu' && matrix.platform == 'linux/amd64'
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint /bin/bash local-engineer:ci-cpu -euc '
+            export LE_DATA=$(mktemp -d)
+            repo=$(mktemp -d); cd "$repo"
+            git init -q .
+            printf "export function f(): number { return 1; }\nexport function g(): number { return f(); }\n" > app.ts
+            le workspace init >/dev/null
+            le index 2>&1 | tee /tmp/index.log
+            if grep -q "sidecar is not installed" /tmp/index.log; then
+              echo "::error::the image ships Node but no TypeScript sidecar" >&2
+              exit 1
+            fi
+            le graph stats | tee /tmp/stats.txt
+            grep -qE "^  calls " /tmp/stats.txt || {
+              echo "::error::no TypeScript call edges; the sidecar did not run" >&2
+              exit 1
+            }
+          '
+
+      # §4.2 lists golangci-lint and semgrep in the image; neither was there,
+      # so the semgrep recipe skipped on every published image and §10.1's
+      # lint leg had nothing to run. The engine has no shell tool — its only
+      # route to an external program is run_recipe — so a tool missing from
+      # the image is unreachable, not "install it yourself".
+      - name: The image can run the lint and analyzer recipes
+        if: matrix.target == 'cpu' && matrix.platform == 'linux/amd64'
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint /bin/bash local-engineer:ci-cpu -euc '
+            export LE_DATA=$(mktemp -d)
+            repo=$(mktemp -d); cd "$repo"
+            git init -q .
+            printf "module example.test/p\n\ngo 1.26\n" > go.mod
+            printf "package p\n\nfunc F() int { return 1 }\n" > p.go
+            printf "version: \"2\"\n" > .golangci.yml
+            mkdir -p semgrep
+            cat > semgrep/rules.yaml <<YAML
+          rules:
+            - id: never-matches
+              # The regex must not match its own text in this file: semgrep
+              # scans the rule directory too, and a self-matching pattern
+              # makes the fixture fail rather than the check.
+              pattern-regex: le_probe_[0-9]{32}
+              message: placeholder rule so the recipe has something to run
+              languages: [generic]
+              severity: INFO
+          YAML
+            git add -A
+            git -c user.email=ci@local -c user.name=ci commit -qm init
+            le workspace init >/dev/null
+            le task verify --verify high --json > /tmp/verify.json
+            python3 - <<PY
+          import json, sys
+          r = json.load(open("/tmp/verify.json"))
+          kinds = {x["kind"]: x["status"] for x in r["results"]}
+          missing = [k for k in ("lint", "analyzer") if k not in kinds]
+          if missing:
+              print("::error::recipes never ran: %s; kinds present: %s" % (missing, sorted(kinds)))
+              sys.exit(1)
+          bad = {k: v for k, v in kinds.items() if k in ("lint", "analyzer") and v != "pass"}
+          if bad:
+              print("::error::a check did not pass on a clean fixture: %s" % bad)
+              sys.exit(1)
+          if not r["accepted"]:
+              print("::error::clean fixture was not accepted: %s" % r["reasons"])
+              sys.exit(1)
+          print("lint and analyzer recipes ran and passed")
+          PY
+          '
+
   docs:
     name: Documentation commands execute
     runs-on: ubuntu-latest
@@ -314,6 +406,15 @@ jobs:
       # documentation fails the build.
       - name: Execute the documented command blocks
         run: go test -tags=docs -run TestDocumentedCommands ./docs/...
+
+      # §1.1 prefers "a docs/ site built from Markdown over a wiki", and §15
+      # requires one. --strict fails on a broken internal link or a page the
+      # nav does not list, which is how a site view of docs/ drifts from it.
+      - name: The docs site builds
+        run: |
+          python3 -m pip install --quiet mkdocs==1.6.1 mkdocs-material==9.5.49 pymdown-extensions==10.12
+          mkdocs build --strict --site-dir /tmp/site
+          echo "built $(find /tmp/site -name '*.html' | wc -l) pages"
 
   commitlint:
     name: Conventional Commits

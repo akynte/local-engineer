@@ -132,10 +132,14 @@ weakens layer 1 — a trade, not a free upgrade.
 |---|---|---|---|
 | Cannot touch host files outside mounts | yes | yes | yes |
 | Cannot read another workspace's data | by file permissions and per-task rules | yes | yes |
-| Cannot reach model-management endpoints | via proxy allowlist only | yes (TCP port rules) | yes |
+| Cannot reach model-management endpoints | the §6.1 proxy allowlist, or the container's network¹ | yes (TCP port rules) | yes |
 | **Cannot see other tasks' processes** | **no** | **no** | **yes** |
 | Out-of-scope writes in the worktree | detected by diff | detected by diff | detected by diff |
 | Cannot modify policy, ledger, hidden tests | file permissions and Landlock | yes | yes |
+
+¹ With `egress.enabled`, the only provisioned route out is the §6.1 proxy, and
+a task's ruleset never includes its port. With egress off — the default — the
+guarantee rests on the network configuration the container is given.
 
 The honest summary, which is also in the README and in `le doctor`:
 
@@ -148,9 +152,24 @@ The honest summary, which is also in the README and in `le doctor`:
 **Multipath TCP is not covered.** Landlock's TCP rules do not apply to MPTCP
 sockets, and Go's `net.Listen` uses MPTCP by default since Go 1.24. A sandboxed
 Go program can therefore still listen on a port the rules do not list. Network
-containment is the container's network configuration plus the allowlisting
-proxy; the Landlock port rules augment that and are not the boundary. `le
-doctor` prints this warning every run.
+containment is the container's network configuration; the Landlock port rules
+augment that and are not the boundary. `le doctor` prints this warning every
+run.
+
+**Provisioning is a separate lane, and a task cannot enter it.** §6.1's
+allowlisting proxy is the only provisioned route out. Two things keep it away
+from tasks, and they are different mechanisms on purpose:
+
+- **The sandbox bounds who can ask.** The proxy binds loopback, and a task's
+  Landlock ruleset never includes its port. There is no per-task flag that
+  grants it — the only function that builds a spec with the proxy port takes a
+  `proxy.Lane`, and a task runner has no way to construct one.
+- **The allowlist bounds where it can reach.** Exact hosts or one leading
+  wildcard label, never `*`, each with a written reason, scoped per lane, on
+  port 80 or 443 only.
+
+An allowlist is not an access control, and neither is asked to do the other's
+job. The proxy is off by default.
 
 **Out-of-scope writes inside a task's own worktree are detected, not
 prevented.** A task must be able to edit its worktree; the defence is that
@@ -166,4 +185,4 @@ and the shipped compose files do not.
 ## Reporting a problem
 
 If you find a way across a boundary this page claims is closed, see
-[SECURITY.md](../../SECURITY.md) — private reporting, not a public issue.
+[SECURITY.md](https://github.com/akynte/local-engineer/blob/main/SECURITY.md) — private reporting, not a public issue.

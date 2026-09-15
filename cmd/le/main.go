@@ -94,6 +94,11 @@ func newRootCmd() *cobra.Command {
 		newEvalCmd(),
 		newMemoryCmd(),
 		newLessonsCmd(),
+		newDepsCmd(),
+		newDocsCmd(),
+		newTelemetryCmd(),
+		newTUICmd(),
+		newVerifyDeclaredCmd(),
 	)
 	return root
 }

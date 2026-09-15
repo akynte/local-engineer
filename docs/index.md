@@ -17,14 +17,17 @@ matches what you are doing.
 | Page | |
 |---|---|
 | [Install](how-to/install.md) | Prerequisites and the three install shapes |
+| [Install on the host](how-to/install-on-the-host.md) | Without Docker, for developers — and what layer 1 you give up |
 | [Configure models](how-to/configure-models.md) | Pointing at a model, embedded or external |
 | [Choose a hardware profile](how-to/choose-a-profile.md) | Measuring your machine instead of guessing |
 | [Persistent storage](how-to/persistent-storage.md) | Where data lives and what must not host it |
 | [Start, stop and update](how-to/start-stop-update.md) | Lifecycle, including the shutdown contract |
 | [Back up and restore](how-to/backup-and-restore.md) | Before every upgrade |
+| [Fetch a dependency](how-to/fetch-dependencies.md) | The §6.1 provisioning lane, for when a change needs a new module |
 | [Run fully offline](how-to/run-offline.md) | No egress at all |
 | [Add a provider](how-to/add-a-provider.md) | Extending the provider boundary |
 | [Add a language analyzer](how-to/add-a-language-analyzer.md) | Which evidence category, and which direction |
+| [Declare runtime and generation checks](how-to/declare-runtime-checks.md) | `.le/verify.yaml`: integration steps and generator checks |
 | [Write a recipe](how-to/write-a-recipe.md) | A verification command and its summariser |
 | [Write a policy rule](how-to/write-a-policy-rule.md) | What no task may change, whatever it was asked |
 | [Verify a release](how-to/verify-a-release.md) | Signatures, SBOM, provenance |
@@ -56,7 +59,7 @@ matches what you are doing.
 | [Trust boundaries](explanation/trust-boundaries.md) | Who can affect what, and what each boundary does not protect against |
 | [Known limitations](explanation/known-limitations.md) | What this does not do, in one place |
 | [C4 diagrams](architecture/c4-context.md) | Context, container and component views |
-| [Decision records](adr/) | Every architectural decision, in a fixed format |
+| [Decision records](adr/README.md) | Every architectural decision, in a fixed format |
 
 ## A note on the command blocks
 

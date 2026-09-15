@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/akynte/local-engineer/schemas/le.schema.json",
   "title": "local-engineer configuration",
-  "description": "/data/config/le.yaml. Per-hardware tuning belongs in the active profile, not here (design v3 \u00a79.2).",
+  "description": "/data/config/le.yaml. Per-hardware tuning belongs in the active profile, not here (design v3 §9.2).",
   "type": "object",
   "additionalProperties": false,
   "properties": {
@@ -12,7 +12,7 @@
       "properties": {
         "addr": {
           "type": "string",
-          "description": "Bind address. \u00a74.1 publishes 127.0.0.1:7777; the container image sets 0.0.0.0 because Docker cannot reach a loopback bind inside a container, and publishes as -p 127.0.0.1:7777:7777 instead.",
+          "description": "Bind address. §4.1 publishes 127.0.0.1:7777; the container image sets 0.0.0.0 because Docker cannot reach a loopback bind inside a container, and publishes as -p 127.0.0.1:7777:7777 instead.",
           "examples": [
             "127.0.0.1:7777",
             "0.0.0.0:7777"
@@ -21,11 +21,11 @@
         "shutdown_grace_seconds": {
           "type": "integer",
           "minimum": 1,
-          "description": "\u00a74.4 documents 30 seconds."
+          "description": "§4.4 documents 30 seconds."
         },
         "acp_addr": {
           "type": "string",
-          "description": "Binds the ACP-over-TCP bridge (\u00a74.3). Empty leaves it off."
+          "description": "Binds the ACP-over-TCP bridge (§4.3). Empty leaves it off."
         },
         "acp_command": {
           "type": "array",
@@ -66,7 +66,7 @@
           "items": {
             "type": "string"
           },
-          "description": "Appended after the arguments derived from the active profile, so an operator can override any of them \u2014 llama-server takes the last occurrence of a repeated flag. Everything the profile expresses belongs there: \u00a79.3 puts thread counts and offload layers in the profile on purpose."
+          "description": "Appended after the arguments derived from the active profile, so an operator can override any of them — llama-server takes the last occurrence of a repeated flag. Everything the profile expresses belongs there: §9.3 puts thread counts and offload layers in the profile on purpose."
         },
         "port": {
           "type": "integer",
@@ -149,7 +149,67 @@
         },
         "watch_enabled": {
           "type": "boolean",
-          "description": "The \u00a73.4 file watcher. Marks index scopes dirty as files change; le doctor reports the count as index drift."
+          "description": "The §3.4 file watcher. Marks index scopes dirty as files change; le doctor reports the count as index drift."
+        }
+      }
+    },
+    "egress": {
+      "type": "object",
+      "description": "The allowlisting egress proxy of design v3 §6.1. Off by default: a machine whose premise is that it has no egress should not acquire some from a shipped config file. Contradicts `offline`.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Start the proxy with `le api`. Forced off in offline mode."
+        },
+        "deps_port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Loopback port for the deps lane."
+        },
+        "docs_port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Loopback port for the docs lane. Must differ from deps_port."
+        },
+        "allowlist": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "rules": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "host",
+                  "why"
+                ],
+                "properties": {
+                  "host": {
+                    "type": "string",
+                    "description": "An exact host, or one leading wildcard label as in *.example.com. Never `*`."
+                  },
+                  "lanes": {
+                    "type": "array",
+                    "items": {
+                      "enum": [
+                        "deps",
+                        "docs"
+                      ]
+                    },
+                    "description": "Lanes this rule covers. Absent means every lane."
+                  },
+                  "why": {
+                    "type": "string",
+                    "description": "Required. A rule that cannot say why it exists is one nobody can judge later."
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -181,7 +241,7 @@
     },
     "profile": {
       "type": "string",
-      "description": "Names a profile in profiles/ (\u00a79.2)."
+      "description": "Names a profile in profiles/ (§9.2)."
     },
     "data_dir": {
       "type": "string"

@@ -30,6 +30,13 @@ at a TypeScript repository does not fail usefully — it fails confusingly, and 
 confusing failure in verification is worse than a missing check because someone
 has to work out which it was.
 
+It carries a second job for any recipe wrapping a tool the image may not have:
+check `exec.LookPath` too, as `HasGolangciConfig` and `HasSemgrepRules` do. A
+machine without the tool should *skip* the recipe, not fail verification — a
+missing toolchain says nothing about the code. And note that the engine has no
+shell tool, so anything a recipe invokes has to be in the image; see
+[the image manifest](../reference/image-manifest.md).
+
 **`Timeout`** bounds it. A hung test must fail the step, not the system.
 
 **`Summarize`** is the part that matters.

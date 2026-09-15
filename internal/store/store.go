@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -234,6 +235,29 @@ func (s *Store) closeAll() error {
 // ListWorkspaces enumerates the data-side records. It reads only
 // workspaces/<id>/workspace.json and never opens a database, so listing costs
 // nothing and cannot deadlock against a running supervisor.
+// OpenAggregate opens the optional cross-workspace telemetry aggregate of
+// §2.2, in the data directory root rather than under any workspace.
+//
+// This is the ONLY database this package opens outside a workspace directory,
+// and it is allowed for one reason: §2.2 permits "an optional aggregate with
+// workspace ids only", holding "counters, never content". Everything that
+// enforces that lives in internal/telemetry — the row shape has nowhere to put
+// content — and the storescope analyzer still keeps sql.Open inside this
+// package.
+//
+// It is not part of OpenWorkspace and takes no workspace handle, because it is
+// not workspace state. Nothing reads it during a task.
+func (r *Root) OpenAggregate(ctx context.Context, name string) (*DB, error) {
+	if name == "" || strings.ContainsRune(name, filepath.Separator) {
+		return nil, fmt.Errorf("store: %q is not an aggregate file name", name)
+	}
+	path := filepath.Join(r.layout.Root(), name)
+	// The workspace id is empty on purpose: this database belongs to no
+	// workspace, and giving it one would let a workspace-scoped code path
+	// mistake it for workspace state.
+	return openDB(ctx, "", "aggregate", path, DurabilityNormal)
+}
+
 func (r *Root) ListWorkspaces() ([]Record, error) {
 	entries, err := os.ReadDir(r.layout.WorkspacesDir())
 	if err != nil {

@@ -550,7 +550,7 @@ func loadRepoPolicies() (policy.Set, error) {
 	ws, err := workspace.Open(cwd)
 	if err != nil {
 		// Outside a workspace there is no repository to have policies.
-		return policy.Set{}, nil
+		return policy.Set{}, nil //nolint:nilerr // not being in a workspace is not a failure to load
 	}
 	return policy.Load(filepath.Join(ws.Root, "policies"))
 }
@@ -569,7 +569,7 @@ func reviewProvider(root *store.Root) (llm.Provider, error) {
 	}
 	f, err := llm.LoadProvidersFile(root.Layout().ConfigDir())
 	if err != nil {
-		return nil, nil //nolint:nilnil // no providers configured is not a fault
+		return nil, nil //nolint:nilerr // no providers configured is not a fault; review is an addition
 	}
 	router, err := llm.NewRouter(f, cfg.Offline)
 	if err != nil {

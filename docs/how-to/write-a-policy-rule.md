@@ -56,7 +56,7 @@ A change to a protected path is reported as out-of-scope with the reason
 attached, so acceptance refuses it and the gate explains why.
 
 Policy files are validated against
-[`schemas/policy.schema.json`](../../schemas/policy.schema.json) in CI, which is
+[`schemas/policy.schema.json`](https://github.com/akynte/local-engineer/blob/main/schemas/policy.schema.json) in CI, which is
 what §1.2's "all YAML policies validate" gate means. A malformed policy fails the
 build rather than silently protecting nothing.
 

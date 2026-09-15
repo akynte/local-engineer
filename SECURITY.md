@@ -48,8 +48,15 @@ reported by `le doctor`:
   bubblewrap layer is active. Unprivileged user namespaces are usually
   unavailable inside a container, so it is off by default.
 - Landlock's TCP rules do not cover Multipath TCP sockets. Network containment
-  is the container's network configuration plus an allowlisting proxy;
-  Landlock port rules augment it and are not the boundary.
+  is **the container's network configuration**; Landlock port rules augment it
+  and are not the boundary.
+- The §6.1 allowlisting proxy is the only provisioned route out, it is off by
+  default, and **a task sandbox is never granted its port**. That separation is
+  enforced by the sandbox rather than by the proxy: the allowlist bounds where
+  provisioning can reach, and the Landlock ruleset bounds who can ask. An
+  allowlist is not an access control, and neither is relied on to do the
+  other's job. Widening the allowlist is an operator decision with a written
+  reason per rule; `le doctor` warns on wildcard entries.
 - Out-of-scope writes *inside* a task's own worktree are detected by diff, not
   prevented. That is the design: a task must be able to edit its worktree.
 - A remote provider sees the repository content you send it. That is what

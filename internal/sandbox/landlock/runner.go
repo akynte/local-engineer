@@ -14,8 +14,10 @@
 //   - Landlock's TCP rules do not cover Multipath TCP sockets, and Go's
 //     net.Listen has defaulted to MPTCP since Go 1.24, so a sandboxed Go
 //     program can still listen on an unlisted port. Network containment is
-//     therefore augmented by the container's network configuration and the
-//     allowlisting proxy, never relied on alone (§6.1).
+//     therefore augmented by the container's network configuration and, for
+//     provisioning, by the §6.1 allowlisting proxy — never relied on alone. A
+//     task's ruleset never includes the proxy port, which is what keeps the
+//     provisioning lane out of a task's reach.
 package landlock
 
 import (

@@ -54,6 +54,32 @@ func (l *Layout) ModelsDir() string     { return filepath.Join(l.root, "models")
 func (l *Layout) WorkspacesDir() string { return filepath.Join(l.root, "workspaces") }
 func (l *Layout) BackupsDir() string    { return filepath.Join(l.root, "backups") }
 
+// ProvisioningDir holds the §6.1 provisioning lanes' caches — the module cache
+// a `le deps sync` populates, and the lane's tmp.
+//
+// It is in the data directory root rather than under a workspace because a
+// fetched module is not workspace state: two workspaces that need the same
+// module version should not download it twice, and nothing about a downloaded
+// dependency identifies the project that asked for it. A lane never reads any
+// workspace's databases, so this shares no isolation boundary with §2.2.
+func (l *Layout) ProvisioningDir(lane string) string {
+	return filepath.Join(l.root, "provisioning", lane)
+}
+
+// EnsureProvisioning creates a lane's cache and tmp directories, returning
+// both. Creation lives here for the same reason every other directory's does
+// (§2.3): the store owns the data directory's shape.
+func (l *Layout) EnsureProvisioning(lane string) (cache, tmp string, err error) {
+	cache = l.ProvisioningDir(lane)
+	tmp = filepath.Join(cache, "tmp")
+	for _, d := range []string{cache, tmp} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			return "", "", err
+		}
+	}
+	return cache, tmp, nil
+}
+
 // WorkspaceDir is `$LE_DATA/workspaces/<workspace_id>` — the only directory a
 // workspace's state may occupy (§2.2).
 func (l *Layout) WorkspaceDir(id workspace.ID) string {

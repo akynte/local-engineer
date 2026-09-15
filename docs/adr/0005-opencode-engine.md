@@ -1,6 +1,6 @@
 # DR-5: OpenCode as the execution engine
 
-- Status: Accepted
+- Status: Superseded by [DR-7](0007-native-engine.md)
 - Date: 2026-09-14
 
 ## 1. Problem
@@ -54,6 +54,7 @@ outside the engine. Replacing the engine means implementing the adapter
 contract against a different runtime; the isolation and recovery guarantees do
 not move.
 
-**Status note.** The adapter is not implemented yet. The supervisor, storage,
-graph, journal and sandbox are; the engine integration is the next phase. This
-record states the decision, not a completed implementation.
+**Status note (2026-09-15).** This record is superseded. The adapter contract
+it argued for exists and is unchanged; the engine behind it is not OpenCode but
+the native loop of [DR-7](0007-native-engine.md). The text above is left as
+written, because a record edited to match what happened is not a record.

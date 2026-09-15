@@ -88,7 +88,7 @@ away.
 ## Publishing
 
 If you publish results, disclose what
-[`docs/benchmarks/results/README.md`](../benchmarks/results/) requires: exact
+[`docs/benchmarks/results/README.md`](../benchmarks/results/README.md) requires: exact
 hardware, the model and its quantisation, the commit, each task's leak risk, the
 full raw output, confidence intervals, and the false-acceptance rate. A result
 missing any of those cannot be reproduced or disputed, which is the only reason

@@ -57,7 +57,15 @@ const (
 	KindLint     Kind = "lint"
 	KindAnalyzer Kind = "analyzer"
 	KindFormat   Kind = "format"
-	KindCustom   Kind = "custom"
+	// KindGenerate checks that committed generated code is what the generator
+	// produces now (§10.1's "deterministic generation for boilerplate"). It
+	// never leaves the generator's output behind: see declared_run.go.
+	KindGenerate Kind = "generate"
+	// KindIntegration is §10.1's "runtime feedback": a check that exercises
+	// the change against something running, which is the only way to catch
+	// "compiles but wrong".
+	KindIntegration Kind = "integration"
+	KindCustom      Kind = "custom"
 )
 
 // Recipe is one deterministic check.
@@ -225,6 +233,32 @@ func (r *Runner) Run(ctx context.Context, rec Recipe, worktreePath, candidate st
 		res.Status = Error
 		res.Err = fmt.Sprintf("%s could not run: %v", rec.Name, runErr)
 		res.Summary = Summary{Headline: res.Err}
+		return res
+	}
+	// The same thing one level down. The sandbox runner re-executes `le` as a
+	// helper, so a tool the helper could not exec is the *helper* exiting
+	// 126 or 127, not a Go exec error — and a summarizer handed that output
+	// sees garbage and calls it a Fail. That is the one confusion the Error
+	// status exists to prevent: it reports broken code when nothing checked
+	// the code.
+	//
+	// 126 and 127 are the POSIX exec-failure conventions ("found but not
+	// executable", "not found"). No verification tool here uses them as a
+	// verdict: go test exits 1, golangci-lint at most 7, semgrep at most 8.
+	if res.ExitCode == 126 || res.ExitCode == 127 {
+		res.Status = Error
+		hint := "not found on PATH inside the sandbox"
+		if res.ExitCode == 126 {
+			// By far the most common cause, and the least obvious: the binary
+			// exists and PATH finds it, but its real location was never
+			// granted read access, so Landlock denies the exec.
+			hint = "found but not executable inside the sandbox — if it lives " +
+				"outside sandbox.read_only_paths, Landlock denies the exec"
+		}
+		res.Err = fmt.Sprintf("%s could not run (exit %d): %s: %s",
+			rec.Name, res.ExitCode, hint, truncateLine(stderr.String(), 200))
+		res.Summary = Summary{Headline: res.Err}
+		r.persist(&res, stdout.String(), stderr.String())
 		return res
 	}
 

@@ -22,5 +22,6 @@ changes, a new record supersedes the old one and says what changed.
 | [DR-2](0002-graph-in-sqlite.md) | Graph in SQLite edge tables rather than an embedded graph database | Accepted |
 | [DR-3](0003-layered-sandbox.md) | Container boundary plus Landlock, bubblewrap optional | Accepted |
 | [DR-4](0004-openai-compatible-provider.md) | OpenAI-compatible HTTP as the provider boundary | Accepted |
-| [DR-5](0005-opencode-engine.md) | OpenCode as the execution engine | Accepted |
+| [DR-5](0005-opencode-engine.md) | OpenCode as the execution engine | Superseded by DR-7 |
 | [DR-6](0006-workspace-identity.md) | Workspace identity as the isolation key | Accepted |
+| [DR-7](0007-native-engine.md) | A native engine on the provider boundary | Accepted |

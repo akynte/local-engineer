@@ -18,6 +18,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/akynte/local-engineer/internal/proxy"
 )
 
 // InferenceMode selects where inference runs (§4.3).
@@ -41,6 +43,7 @@ type Config struct {
 	Inference InferenceConfig `yaml:"inference"`
 	Sandbox   SandboxConfig   `yaml:"sandbox"`
 	Index     IndexConfig     `yaml:"index"`
+	Egress    EgressConfig    `yaml:"egress"`
 	Offline   bool            `yaml:"offline"`
 
 	// Profile names the active hardware profile in profiles/ (§9.2).
@@ -123,6 +126,25 @@ type SandboxConfig struct {
 	AllowedTCPConnect []int `yaml:"allowed_tcp_connect"`
 }
 
+// EgressConfig configures the allowlisting proxy of §6.1.
+//
+// The proxy is the provisioning lane's only route out, and it is off by
+// default. A machine whose premise is that it has no egress should not acquire
+// some because a config file shipped with it enabled — turning it on is an
+// operator saying "this box may talk to these hosts".
+type EgressConfig struct {
+	// Enabled starts the proxy with `le api`. Off by default, and forced off
+	// in offline mode.
+	Enabled bool `yaml:"enabled"`
+	// DepsPort and DocsPort are the loopback ports for the two lanes of §6.1.
+	// One listener per lane is what keeps the lane out of the request, where
+	// a client could choose it.
+	DepsPort int `yaml:"deps_port"`
+	DocsPort int `yaml:"docs_port"`
+	// Allowlist is the hosts each lane may reach.
+	Allowlist proxy.Allowlist `yaml:"allowlist"`
+}
+
 // IndexConfig tunes indexing.
 type IndexConfig struct {
 	MaxFileBytes int64    `yaml:"max_file_bytes"`
@@ -157,8 +179,28 @@ func Default() Config {
 			Mode: "auto",
 			ReadOnlyPaths: []string{
 				"/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc/ssl", "/etc/ca-certificates",
-				"/opt/le/toolchain", "/usr/local/go",
+				// The installation's own tree: profiles, the Go tools, the
+				// TypeScript sidecar and semgrep's virtualenv all live here,
+				// and all are read-only at run time. Workspace data is under
+				// $LE_DATA and is granted per task, never from this list.
+				//
+				// This said "/opt/le/toolchain" until it was noticed that no
+				// image ever created that directory, so every tool under
+				// /opt/le was denied. Nothing caught it because no recipe
+				// invoked one until semgrep shipped, and the symptom was the
+				// sandbox helper exiting 126.
+				"/opt/le", "/usr/local/go",
 			},
+		},
+		Egress: EgressConfig{
+			// Off by default: see EgressConfig. The ports and the allowlist
+			// are written anyway so `le config init` produces a file an
+			// operator can read and enable, rather than one that hides the
+			// feature until they find the documentation.
+			Enabled:   false,
+			DepsPort:  7780,
+			DocsPort:  7781,
+			Allowlist: proxy.DefaultAllowlist(),
 		},
 		Gates: GateConfig{Breaking: true, OutOfScope: true, Apply: true, Plan: false},
 		Index: IndexConfig{
@@ -317,6 +359,39 @@ func (c Config) Validate() error {
 	}
 	if c.Offline && c.Inference.Mode == ModeExternal && !isLoopback(c.Inference.BaseURL) {
 		return fmt.Errorf("config: offline is set but inference.base_url %q is not local", c.Inference.BaseURL)
+	}
+	// §6.1's offline mode is "--network none plus an in-container inference
+	// route only". An egress proxy is the opposite of that, so the two
+	// settings contradicting each other is an error rather than a precedence
+	// rule: silently winning either way would leave an operator believing
+	// something about their machine that is not true.
+	if c.Offline && c.Egress.Enabled {
+		return errors.New("config: offline and egress.enabled are both set. " +
+			"Offline mode has no route out, so the §6.1 provisioning lanes cannot exist. " +
+			"Set egress.enabled to false, or unset offline / LE_OFFLINE — whichever you " +
+			"actually meant. This is an error rather than a precedence rule because " +
+			"either silent winner would leave you believing something untrue about this machine")
+	}
+	if c.Egress.Enabled {
+		if err := c.Egress.Allowlist.Validate(); err != nil {
+			return fmt.Errorf("config: egress.allowlist: %w", err)
+		}
+		if len(c.Egress.Allowlist.Rules) == 0 {
+			return errors.New("config: egress.enabled is set with an empty allowlist; " +
+				"a proxy that allows nothing is a slower way to have no egress")
+		}
+		if c.Egress.DepsPort == c.Egress.DocsPort {
+			return fmt.Errorf("config: egress.deps_port and egress.docs_port are both %d; "+
+				"one listener per lane is what keeps a client from choosing its own lane", c.Egress.DepsPort)
+		}
+		for name, port := range map[string]int{"deps_port": c.Egress.DepsPort, "docs_port": c.Egress.DocsPort} {
+			if port <= 0 || port > 65535 {
+				return fmt.Errorf("config: egress.%s (%d) is not a port", name, port)
+			}
+			if port == c.Inference.Port {
+				return fmt.Errorf("config: egress.%s (%d) collides with the inference port", name, port)
+			}
+		}
 	}
 	return nil
 }

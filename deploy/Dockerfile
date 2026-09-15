@@ -157,6 +157,20 @@ ARG GO_VERSION=1.26.3
 ARG GO_SHA256_amd64=2b2cfc7148493da5e73981bffbf3353af381d5f93e789c82c79aff64962eb556
 ARG GO_SHA256_arm64=9d89a3ea57d141c2b22d70083f2c8459ba3890f2d9e818e7e933b75614936565
 ARG NODE_MAJOR=22
+ARG GOLANGCI_VERSION=2.13.2
+ARG GOLANGCI_SHA256_amd64=2277d43b98ec0054280f2ac26b53268bae97682444678a59a657dd565da021d6
+ARG GOLANGCI_SHA256_arm64=a2a4e0065aa41be71f7c5ac90f271b61751331e5d04314e62afe4027855f0893
+ARG SEMGREP_VERSION=1.177.0
+# The §4.2 analysis tools a repository can wire into a `check:` step in
+# .le/verify.yaml. Each is pinned; `go install` resolves through the module
+# proxy and the checksum database, which is stronger provenance than a
+# hand-pinned tarball hash.
+ARG GOSEC_VERSION=v2.29.0
+ARG GITLEAKS_VERSION=v8.30.1
+ARG OSV_SCANNER_VERSION=v2.6.0
+ARG BUF_VERSION=v1.73.0
+ARG OASDIFF_VERSION=v1.32.0
+ARG SQUAWK_VERSION=2.65.0
 
 USER root
 
@@ -203,7 +217,126 @@ RUN set -eux; \
     go install golang.org/x/vuln/cmd/govulncheck@latest; \
     go install golang.org/x/perf/cmd/benchstat@latest; \
     chmod -R a+rx /opt/le/gotools; \
-    rm -rf "$GOPATH"/pkg/mod/cache/download || true
+    go clean -cache -modcache -testcache || true; \
+    rm -rf "$GOPATH"/pkg "$HOME"/.cache/go-build || true
+
+# §4.2's analysis tools. None of these has a built-in recipe — which tables a
+# migration may lock, and which proto changes are breaking, are facts about a
+# repository — so a repository reaches them through a `check:` step in
+# .le/verify.yaml. They are in the image because the engine has no shell tool:
+# its only route to an external program is run_recipe, so a tool absent here is
+# unreachable rather than "install it yourself".
+# Each tool is its own `go install` line rather than one chain, so a network
+# hiccup on the fourth does not re-download the first three on retry. buf asks
+# for a newer toolchain than GO_VERSION pins, so Go fetches one here: that is
+# the cost of pinning the base toolchain and letting tools state their own
+# minimum, and it is visible in the build log rather than silent.
+#
+# The cleanup at the end removes the extracted module tree, the build cache and
+# any toolchain Go fetched. Removing only the *download* cache — which is what
+# this did at first — left 3.2 GB of extracted modules behind, and the image
+# went from 710 MB to 3.8 GB without anyone deciding that.
+#
+# Note the comments are here and not inside the RUN: a `#` after a line ending
+# in `\` comments out every line that follows it, cleanup included.
+RUN set -eux; \
+    export HOME=/root; \
+    go install "github.com/securego/gosec/v2/cmd/gosec@${GOSEC_VERSION}"; \
+    go install "github.com/zricethezav/gitleaks/v8@${GITLEAKS_VERSION}"; \
+    go install "github.com/google/osv-scanner/v2/cmd/osv-scanner@${OSV_SCANNER_VERSION}"; \
+    go install "github.com/bufbuild/buf/cmd/buf@${BUF_VERSION}"; \
+    go install "github.com/oasdiff/oasdiff@${OASDIFF_VERSION}"; \
+    chmod -R a+rx /opt/le/gotools; \
+    go clean -cache -modcache -testcache || true; \
+    rm -rf "$GOPATH"/pkg "$HOME"/.cache/go-build || true
+
+# squawk lints Postgres migrations and is Rust, distributed through npm.
+RUN set -eux; \
+    export HOME=/root; \
+    npm install -g --no-audit --no-fund "squawk-cli@${SQUAWK_VERSION}"; \
+    npm cache clean --force
+
+# golangci-lint and semgrep are the two tools `internal/recipe` shells out to
+# that the toolchain does not provide. Both were listed in §4.2's image
+# contents and neither was here, which made the semgrep recipe skip on every
+# published image and left §10.1's lint leg with nothing to run.
+#
+# They are in the image rather than left to the user because the engine has no
+# shell tool: its only route to an external program is `run_recipe`, so a tool
+# absent from the image is not "install it yourself", it is unreachable.
+#
+# Released binaries, verified against the published checksums. `go install`
+# would build golangci-lint from source against this image's Go rather than the
+# one it was released with, which upstream explicitly does not support.
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+      amd64) expected="${GOLANGCI_SHA256_amd64}" ;; \
+      arm64) expected="${GOLANGCI_SHA256_arm64}" ;; \
+      *) echo "no pinned golangci-lint checksum for ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    base="golangci-lint-${GOLANGCI_VERSION}-linux-${TARGETARCH}"; \
+    curl -fsSL "https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_VERSION}/${base}.tar.gz" -o /tmp/gl.tgz; \
+    echo "${expected}  /tmp/gl.tgz" | sha256sum -c -; \
+    tar -xzf /tmp/gl.tgz -C /tmp; \
+    install -m 0755 "/tmp/${base}/golangci-lint" /usr/local/bin/golangci-lint; \
+    rm -rf /tmp/gl.tgz "/tmp/${base}"; \
+    golangci-lint --version
+
+# semgrep is Python and has no released binary, so it gets its own virtualenv
+# rather than being installed into the system interpreter, where its pins would
+# become the image's pins. Only the entry point is exposed on PATH.
+#
+# It is the single largest thing in this image — about 374 MB against a 710 MB
+# base — and that is a deliberate trade recorded in docs/reference/image-manifest.md:
+# §4.2 lists semgrep, §10.1 adopts project-invariant analyzers, and a recipe
+# that skips on every published image is worse than the bytes.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+      python3-venv \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    python3 -m venv /opt/le/semgrep; \
+    /opt/le/semgrep/bin/pip install --no-cache-dir --upgrade pip; \
+    /opt/le/semgrep/bin/pip install --no-cache-dir "semgrep==${SEMGREP_VERSION}"; \
+    ln -s /opt/le/semgrep/bin/semgrep /usr/local/bin/semgrep; \
+    semgrep --version
+
+# The TypeScript sidecar (§3.2). Node above exists for it, and without this
+# layer the image had Node and no sidecar — so every TypeScript repository got
+# the lexical reading and no call graph, silently, because a missing sidecar is
+# an ordinary condition the analyzer is designed to survive.
+#
+# Dependencies are installed from the committed lockfile, in their own layer so
+# a change to analyze.js does not re-resolve them. HOME is /root for this layer
+# for the same reason the Go tools layer does it: npm's cache would otherwise
+# land in /home/le owned by root, and surface much later as a permission error.
+COPY sidecars/typescript/package.json sidecars/typescript/package-lock.json \
+     /opt/le/sidecars/typescript/
+RUN set -eux; \
+    export HOME=/root; \
+    cd /opt/le/sidecars/typescript; \
+    npm ci --omit=dev --no-audit --no-fund; \
+    npm cache clean --force
+
+COPY sidecars/typescript/analyze.js /opt/le/sidecars/typescript/
+
+# LE_TYPESCRIPT_SIDECAR_DIR is checked first by SidecarPath, and naming it
+# explicitly keeps the answer independent of where the binary happens to sit.
+ENV LE_TYPESCRIPT_SIDECAR_DIR=/opt/le/sidecars/typescript
+
+# The sidecar must actually run, not merely be present. An `npm ci` that
+# resolved nothing, or a Node that cannot load the compiler, fails here rather
+# than degrading to the lexical reading in a user's repository.
+RUN set -eux; \
+    mkdir -p /tmp/probe; \
+    printf 'export function f(): number { return 1; }\nexport function g(): number { return f(); }\n' > /tmp/probe/probe.ts; \
+    node /opt/le/sidecars/typescript/analyze.js /tmp/probe > /tmp/probe.json; \
+    grep -q '"kind":"calls"' /tmp/probe.json \
+      || grep -q '"kind": "calls"' /tmp/probe.json \
+      || { echo "the TypeScript sidecar produced no call edges" >&2; cat /tmp/probe.json >&2; exit 1; }; \
+    rm -rf /tmp/probe /tmp/probe.json
 
 RUN { \
       cat /opt/le/image-manifest.txt | sed 's/^variant: slim/variant: cpu/'; \
@@ -214,6 +347,15 @@ RUN { \
       echo "staticcheck: $(staticcheck --version 2>/dev/null)"; \
       echo "govulncheck: present"; \
       echo "benchstat: present"; \
+      echo "golangci-lint: $(golangci-lint --version 2>/dev/null | head -1)"; \
+      echo "gosec: ${GOSEC_VERSION}"; \
+      echo "gitleaks: ${GITLEAKS_VERSION}"; \
+      echo "osv-scanner: ${OSV_SCANNER_VERSION}"; \
+      echo "buf: ${BUF_VERSION}"; \
+      echo "oasdiff: ${OASDIFF_VERSION}"; \
+      echo "squawk: ${SQUAWK_VERSION}"; \
+      echo "semgrep: $(semgrep --version 2>/dev/null | head -1)"; \
+      echo "typescript-sidecar: typescript $(node -p "require('/opt/le/sidecars/typescript/node_modules/typescript/package.json').version")"; \
     } > /opt/le/image-manifest.cpu.txt && mv /opt/le/image-manifest.cpu.txt /opt/le/image-manifest.txt
 
 RUN chown -R le:le /opt/le /home/le
