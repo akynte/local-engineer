@@ -9,6 +9,7 @@ the model manifest disclosed.
 |---|---|
 | [`2026-09-14-storage.md`](2026-09-14-storage.md) | Storage and graph latency on the reference laptop |
 | [`2026-09-14-tasks.md`](2026-09-14-tasks.md) | Task success across four arms, 60 runs, local 35B MoE |
+| [`2026-09-15-packet-cap.md`](2026-09-15-packet-cap.md) | The needle test (§8.3): no retrieval ceiling below the context window |
 
 ## What the task results do and do not show
 

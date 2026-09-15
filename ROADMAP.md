@@ -27,6 +27,20 @@ diff and the findings before anything is applied.
 empty on purpose — §1.2 lists it and v3 defines it nowhere, so it carries a
 README saying so rather than an invented mechanism.
 
+The §8.3 needle test has been run against a local model and the result is
+published in `docs/benchmarks/results/`. It found **no retrieval ceiling**: a
+35B MoE recalled a random code at every depth of every size from 8,000 to
+30,007 measured tokens, which is everything a 32,768-token window leaves room
+to ask. At this context size the packet cap is bounded by the window rather
+than by retrieval, and `max_packet_tokens` was deliberately left where it was —
+the measurement says the current value is safe, not that a larger one is
+warranted.
+
+Getting there took four runs, three of which were wrong by 14%, 5.8% and 3.1%
+in the axis the answer is read off. None of the three was visible without
+looking at the numbers the tool printed beside its own conclusion, which is the
+argument for printing both.
+
 The evaluation harness has been run against a local model — 3 tasks × 4 arms ×
 5 passes, 60 runs, published in `docs/benchmarks/results/`. It settled nothing:
 every arm's interval overlapped every other's and a third of the cells changed

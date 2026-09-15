@@ -19,6 +19,7 @@ interval overlaps every other's.
 |---|---|
 | [`2026-09-14-storage.md`](docs/benchmarks/results/2026-09-14-storage.md) | Storage and graph benchmarks — 2026-09-14 |
 | [`2026-09-14-tasks.md`](docs/benchmarks/results/2026-09-14-tasks.md) | Task-success results — 2026-09-14 |
+| [`2026-09-15-packet-cap.md`](docs/benchmarks/results/2026-09-15-packet-cap.md) | Packet cap by needle test — no retrieval ceiling below the context window |
 
 ## 2026-09-14-storage.md
 
@@ -34,6 +35,18 @@ Full result: [`docs/benchmarks/results/2026-09-14-storage.md`](docs/benchmarks/r
 `le eval run` over 3 tasks × 4 arms, 5 passes, 60 runs, against a local model on the hardware below.
 
 Full result: [`docs/benchmarks/results/2026-09-14-tasks.md`](docs/benchmarks/results/2026-09-14-tasks.md)
+
+## 2026-09-15-packet-cap.md
+
+### Packet cap by needle test — no retrieval ceiling below the context window
+A 35B MoE recalled a random access code at every depth of every packet size
+tested, from 8,000 to 30,007 tokens, on a machine whose per-slot context window
+is 32,768. **No retrieval ceiling was found.** The measurement's own conclusion
+is therefore a negative one: at this context size the packet cap is bounded by
+the window, not by what the model can retrieve from, and
+`max_packet_tokens: 16384` is well inside what the model demonstrably handles.
+
+Full result: [`docs/benchmarks/results/2026-09-15-packet-cap.md`](docs/benchmarks/results/2026-09-15-packet-cap.md)
 
 ---
 
