@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -38,6 +39,21 @@ type ProviderSpec struct {
 	// Capabilities may be declared explicitly for openai_compatible backends
 	// whose feature set the system cannot infer (DR-4).
 	Capabilities *Capabilities `yaml:"capabilities,omitempty"`
+	// TimeoutSeconds bounds one HTTP request to this provider. Zero means
+	// DefaultTimeout.
+	//
+	// It belongs in configuration for the same reason §9.3's other limits do:
+	// how long a request takes is a fact about the model and the machine, not
+	// about this code. A profile's own budgets decide it — prefill of
+	// context_tokens plus decode of reserved_output_tokens, at the rates `le
+	// models bench` measured — and a fixed limit smaller than that makes a
+	// documented, tunable budget unusable against a constant nobody can tune.
+	//
+	// Raising reserved_output_tokens from 8192 to 16384 on a 416 tok/s prefill
+	// and 35 tok/s decode is how this was found: about 10.4 minutes for one
+	// call, against a hardcoded 10, surfacing as a client timeout rather than
+	// as "your budget implies a request longer than the client allows".
+	TimeoutSeconds int `yaml:"timeout_seconds,omitempty"`
 }
 
 // DefaultProvidersFile is the shipped configuration: one local provider, every
@@ -125,6 +141,11 @@ func build(spec ProviderSpec) (Provider, error) {
 	if spec.Capabilities != nil {
 		opts.Caps = *spec.Capabilities
 	}
+	if spec.TimeoutSeconds < 0 {
+		return nil, fmt.Errorf("llm: provider %q has a negative timeout_seconds (%d)",
+			spec.Name, spec.TimeoutSeconds)
+	}
+	opts.Timeout = time.Duration(spec.TimeoutSeconds) * time.Second
 
 	switch spec.Kind {
 	case KindLlamaCPP:

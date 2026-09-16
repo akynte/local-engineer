@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 )
 
 // Role names a job in the system. §9.1 routes roles to providers in
@@ -38,6 +39,15 @@ func AllRoles() []Role {
 	return []Role{RoleOrchestration, RolePlanning, RoleCoding, RoleRepoSearch,
 		RoleSummarization, RoleReview, RoleClassify, RoleRerank, RoleVerification, RoleEmbedding}
 }
+
+// DefaultTimeout bounds one HTTP request when a provider declares none.
+//
+// Ten minutes is generous for a remote API and tight for local generation: a
+// long packet on a small GPU legitimately takes minutes, and a shorter default
+// would read as a provider fault. It is a fallback, not a ceiling — a profile
+// whose budgets imply a longer request sets timeout_seconds in providers.yaml,
+// and `le doctor` says so when they do.
+const DefaultTimeout = 10 * time.Minute
 
 // Kind enumerates the provider kinds supported at 1.0 (§9.1).
 type Kind string

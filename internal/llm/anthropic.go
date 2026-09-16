@@ -51,8 +51,8 @@ const DefaultAnthropicMaxTokens = 16000
 // NewAnthropic builds an Anthropic provider.
 func NewAnthropic(o Options) *Anthropic {
 	timeout := o.Timeout
-	if timeout == 0 {
-		timeout = 10 * time.Minute
+	if timeout <= 0 {
+		timeout = DefaultTimeout
 	}
 	base := o.BaseURL
 	if base == "" {

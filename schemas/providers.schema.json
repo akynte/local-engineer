@@ -27,6 +27,11 @@
             "type": "string",
             "description": "Names an environment variable rather than holding a secret, so this file stays safe to commit and to attach to a bug report."
           },
+          "timeout_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Bounds one HTTP request to this provider. Omit for the 10-minute default. A profile whose budgets imply a longer request needs this raised: prefill of context_tokens plus decode of reserved_output_tokens, at the rates le models bench measured, is how long one call can take."
+          },
           "capabilities": {
             "type": "object",
             "description": "DR-4 makes these a promise callers rely on: the engine refuses a provider that cannot call tools, and ChatStructured refuses rather than degrading. Declare only what this server actually does — `le models conformance` checks.",

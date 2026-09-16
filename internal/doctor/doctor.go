@@ -18,6 +18,7 @@ import (
 
 	"github.com/akynte/local-engineer/internal/config"
 	"github.com/akynte/local-engineer/internal/graph"
+	"github.com/akynte/local-engineer/internal/llm"
 	"github.com/akynte/local-engineer/internal/sandbox"
 	"github.com/akynte/local-engineer/internal/sandbox/bwrap"
 	"github.com/akynte/local-engineer/internal/sandbox/landlock"
@@ -73,6 +74,9 @@ type Options struct {
 	Profile   *config.Profile
 	Root      *store.Root
 	Workspace *workspace.Workspace
+	// Providers is the parsed providers.yaml, used to check that a request
+	// the profile's budgets imply actually fits the provider's timeout.
+	Providers *llm.ProvidersFile
 	// Deep runs PRAGMA integrity_check, which is slow on a large index (§5.4).
 	Deep bool
 }
@@ -89,6 +93,7 @@ func Run(ctx context.Context, opts Options) Report {
 		add(c)
 	}
 	add(checkFilesystem(opts.Root))
+	add(checkRequestBudget(opts.Profile, opts.Providers))
 	for _, c := range checkProfile(ctx, opts.Profile) {
 		add(c)
 	}
@@ -283,6 +288,50 @@ func checkProfile(ctx context.Context, p *config.Profile) []Check {
 			Detail: fmt.Sprintf("measured peak %d MB VRAM, %d MB RAM", p.PeakVRAMMB, p.PeakRAMMB)})
 	}
 	return checks
+}
+
+// checkRequestBudget compares the longest request the profile permits against
+// the timeout that would cut it off.
+//
+// The two are configured independently and neither knows about the other, so a
+// budget raised for good reasons can quietly exceed a limit nobody thought
+// about. When that happens the symptom is a client timeout — a network-shaped
+// error for an arithmetic problem — and the numbers needed to see it are
+// already recorded: the profile's own measurement has the rates.
+func checkRequestBudget(p *config.Profile, providers *llm.ProvidersFile) Check {
+	const name = "request budget vs timeout"
+	if p == nil || p.Measured == nil ||
+		p.Measured.PrefillTokensSec <= 0 || p.Measured.DecodeTokensSec <= 0 {
+		return Check{Name: name, Level: Skipped,
+			Detail: "no measured throughput; run `le models bench` to make this checkable"}
+	}
+	prefill := time.Duration(float64(p.ContextTokens)/p.Measured.PrefillTokensSec) * time.Second
+	decode := time.Duration(float64(p.ReservedOutput)/p.Measured.DecodeTokensSec) * time.Second
+	worst := prefill + decode
+
+	timeout := llm.DefaultTimeout
+	source := "the default"
+	if providers != nil {
+		for _, spec := range providers.Providers {
+			if spec.TimeoutSeconds > 0 {
+				d := time.Duration(spec.TimeoutSeconds) * time.Second
+				if d < timeout || source == "the default" {
+					timeout, source = d, "provider "+spec.Name
+				}
+			}
+		}
+	}
+	detail := fmt.Sprintf("a full request is about %s (prefill %s + decode %s); the timeout is %s (%s)",
+		worst.Round(time.Second), prefill.Round(time.Second), decode.Round(time.Second),
+		timeout.Round(time.Second), source)
+	if worst >= timeout {
+		return Check{Name: name, Level: Warn, Detail: detail,
+			Fix: fmt.Sprintf("Raise timeout_seconds above %d in providers.yaml, or lower "+
+				"context_tokens or reserved_output_tokens in the profile. Left as it is, a long "+
+				"step fails as a client timeout rather than as a budget that does not fit.",
+				int(worst.Seconds()))}
+	}
+	return Check{Name: name, Level: OK, Detail: detail}
 }
 
 func checkWorkspace(ctx context.Context, opts Options) []Check {

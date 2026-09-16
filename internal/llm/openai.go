@@ -41,10 +41,8 @@ type Options struct {
 // vLLM, SGLang, Ollama, LM Studio, TGI or a cloud gateway (§9.1).
 func NewOpenAICompatible(o Options) *OpenAICompatible {
 	timeout := o.Timeout
-	if timeout == 0 {
-		// Local generation on an 8 GB GPU can legitimately take minutes for a
-		// long packet; a short default would look like a provider fault.
-		timeout = 10 * time.Minute
+	if timeout <= 0 {
+		timeout = DefaultTimeout
 	}
 	if o.Caps.Kind == "" {
 		o.Caps.Kind = KindOpenAICompatible

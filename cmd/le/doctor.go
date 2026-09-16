@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/akynte/local-engineer/internal/doctor"
+	"github.com/akynte/local-engineer/internal/llm"
 	"github.com/akynte/local-engineer/internal/workspace"
 )
 
@@ -34,6 +35,9 @@ func newDoctorCmd() *cobra.Command {
 				if cerr == nil {
 					opts.Config = &cfg
 					opts.Profile = loadProfile(root, cfg)
+					if f, perr := llm.LoadProvidersFile(root.Layout().ConfigDir()); perr == nil {
+						opts.Providers = &f
+					}
 				}
 			}
 			if cwd, err := os.Getwd(); err == nil {
