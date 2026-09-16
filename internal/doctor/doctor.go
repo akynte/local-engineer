@@ -393,6 +393,16 @@ func checkIndexFreshness(ctx context.Context, st *store.Store) Check {
 			Fix: "Run `le index` to build the source index and graph."}
 	}
 	age := time.Since(time.Unix(updatedAt, 0)).Round(time.Minute)
+	// A timestamp from the future is a bug in whatever wrote it, and printing
+	// a negative age hides that behind something that merely looks odd. Say
+	// what is actually wrong instead.
+	if age < 0 {
+		return Check{Name: "index freshness", Level: Warn,
+			Detail: fmt.Sprintf("the index timestamp is %s in the future (%d)",
+				(-age).Round(time.Minute), updatedAt),
+			Fix: "Run `le index` to rewrite it. If it returns, the value is being written " +
+				"in the wrong unit by whatever last updated index_keys."}
+	}
 	g := graph.New(st)
 	stats, err := g.Stats(ctx)
 	if err != nil {

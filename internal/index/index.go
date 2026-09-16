@@ -681,7 +681,11 @@ func (ix *Indexer) MarkDirty(ctx context.Context, scope, scopeID string) error {
 			                        build_mode, index_version, dirty, updated_at)
 			VALUES (?, ?, '', '', '', '', ?, 1, ?)
 			ON CONFLICT(scope, scope_id) DO UPDATE SET dirty = 1, updated_at = excluded.updated_at`,
-			scope, scopeID, version.IndexerVersion, time.Now().UnixMilli())
+			// Seconds, matching recordIndexKey. This wrote milliseconds into
+			// the same column, and the reader — which treats the value as
+			// seconds — turned a freshly dirtied scope into the year 58,700
+			// and reported "last indexed -2562047h47m0s ago".
+			scope, scopeID, version.IndexerVersion, time.Now().Unix())
 		return err
 	})
 }
@@ -774,4 +778,19 @@ func (ix *Indexer) clearGraph(ctx context.Context, repositoryID string) error {
 		_, err := tx.ExecContext(ctx, `DELETE FROM nodes WHERE repository_id = ?`, repositoryID)
 		return err
 	})
+}
+
+// LastIndexedAt reports the newest index_keys timestamp, in seconds, or zero
+// when nothing has been indexed.
+//
+// It is exported so `le doctor` and the tests read the value through one
+// accessor rather than each spelling the query — which is how the column came
+// to hold two different units.
+func (ix *Indexer) LastIndexedAt(ctx context.Context) int64 {
+	var at int64
+	if err := ix.st.Index().SQL().QueryRowContext(ctx,
+		`SELECT COALESCE(MAX(updated_at),0) FROM index_keys`).Scan(&at); err != nil {
+		return 0
+	}
+	return at
 }
