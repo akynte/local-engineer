@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"text/tabwriter"
@@ -114,37 +115,7 @@ func newGateShowCmd() *cobra.Command {
 					fmt.Fprintf(w, "note:     %s\n", g.Note)
 				}
 			}
-			if ev.Summary != "" {
-				fmt.Fprintf(w, "\n%s\n", ev.Summary)
-			}
-			if len(ev.Findings) > 0 {
-				fmt.Fprintln(w, "\nVerification:")
-				for _, f := range ev.Findings {
-					fmt.Fprintf(w, "  %s\n", f)
-				}
-			}
-			if ev.Impact != nil {
-				fmt.Fprintf(w, "\nImpact: %s\n", ev.Impact.Summary())
-				for _, c := range ev.Impact.Consumers {
-					if c.Verdict == "breaking" {
-						fmt.Fprintf(w, "  breaking  %s\n", c.Node.FQN)
-					}
-				}
-				fmt.Fprintf(w, "\n%s\n", ev.Impact.Caveat)
-			}
-			if len(ev.OutOfScope) > 0 {
-				fmt.Fprintln(w, "\nChanged outside the declared scope:")
-				for _, f := range ev.OutOfScope {
-					fmt.Fprintf(w, "  %s\n", f)
-				}
-			}
-			if ev.Diff != "" {
-				if showDiff {
-					fmt.Fprintf(w, "\n--- diff ---\n%s\n", ev.Diff)
-				} else {
-					fmt.Fprintf(w, "\n(%d bytes of diff; pass --diff to see it)\n", len(ev.Diff))
-				}
-			}
+			writeEvidence(w, ev, showDiff)
 			if g.Open() {
 				fmt.Fprintf(w, "\nAnswer with:\n  le gate approve %s --note \"...\"\n  le gate reject %s --note \"...\"\n",
 					g.ID, g.ID)
@@ -200,4 +171,66 @@ func decideCmd(verb string, decision broker.Decision) *cobra.Command {
 	cmd.Flags().StringVar(&note, "note", "",
 		"why. The reasoning is what this gate is worth six months from now, not the verdict")
 	return cmd
+}
+
+// writeEvidence renders everything a gate carries.
+//
+// It is a function rather than a block inside the command because that is how
+// this went wrong: the rendering lived inline and untested, two fields were
+// added to broker.Evidence with doc comments explaining why an operator needs
+// them, and neither was ever printed. A fresh-context review found three real
+// defects in one change — including the one that made the fix a no-op — and
+// nobody could see them. TestEveryEvidenceFieldIsRendered now fails when a
+// field is added here and not shown.
+func writeEvidence(w io.Writer, ev broker.Evidence, showDiff bool) {
+	if ev.Summary != "" {
+		fmt.Fprintf(w, "\n%s\n", ev.Summary)
+	}
+	if len(ev.Findings) > 0 {
+		fmt.Fprintln(w, "\nVerification:")
+		for _, f := range ev.Findings {
+			fmt.Fprintf(w, "  %s\n", f)
+		}
+	}
+	if ev.Impact != nil {
+		fmt.Fprintf(w, "\nImpact: %s\n", ev.Impact.Summary())
+		for _, c := range ev.Impact.Consumers {
+			if c.Verdict == "breaking" {
+				fmt.Fprintf(w, "  breaking  %s\n", c.Node.FQN)
+			}
+		}
+		fmt.Fprintf(w, "\n%s\n", ev.Impact.Caveat)
+	}
+	if len(ev.OutOfScope) > 0 {
+		fmt.Fprintln(w, "\nChanged outside the declared scope:")
+		for _, f := range ev.OutOfScope {
+			fmt.Fprintf(w, "  %s\n", f)
+		}
+	}
+	// A protected path is a path someone wrote a rule about, and the
+	// rule says why. Showing the path without the reason asks the
+	// operator to judge a violation with nothing to judge on.
+	if len(ev.PolicyReasons) > 0 {
+		fmt.Fprintln(w, "\nProtected by repository policy:")
+		for _, p := range ev.PolicyReasons {
+			fmt.Fprintf(w, "  %s\n", p)
+		}
+	}
+	// Last and labelled, as broker.Evidence says: everything above is
+	// deterministic evidence and this is a model's opinion about work
+	// a model did. It goes before the diff because a note printed
+	// after forty thousand bytes of diff is a note nobody reads.
+	if len(ev.ReviewConcerns) > 0 {
+		fmt.Fprintln(w, "\nReview concerns (advisory — a model's reading, not evidence):")
+		for _, c := range ev.ReviewConcerns {
+			fmt.Fprintf(w, "  %s\n", c)
+		}
+	}
+	if ev.Diff != "" {
+		if showDiff {
+			fmt.Fprintf(w, "\n--- diff ---\n%s\n", ev.Diff)
+		} else {
+			fmt.Fprintf(w, "\n(%d bytes of diff; pass --diff to see it)\n", len(ev.Diff))
+		}
+	}
 }
