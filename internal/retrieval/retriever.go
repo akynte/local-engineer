@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/akynte/local-engineer/internal/graph"
+	"github.com/akynte/local-engineer/internal/memory"
 	"github.com/akynte/local-engineer/internal/store"
 	"github.com/akynte/local-engineer/internal/version"
 	"github.com/akynte/local-engineer/internal/workspace"
@@ -20,12 +21,31 @@ import (
 //  3. mandatory slots filled by impact analysis so consumers and contracts are
 //     never dropped.
 type Retriever struct {
-	st *store.Store
-	g  graph.Graph
+	st  *store.Store
+	g   graph.Graph
+	mem *memory.Store
 }
 
 // New binds a retriever to a workspace store.
 func New(s *store.Store) *Retriever { return &Retriever{st: s, g: graph.New(s)} }
+
+// WithMemory attaches the repository's durable notes (§8.2, §11).
+//
+// They live in the repository rather than the data directory so they travel
+// with it, which is why the retriever cannot find them on its own: it knows a
+// workspace, and the notes belong to a checkout.
+func (r *Retriever) WithMemory(m *memory.Store) *Retriever {
+	r.mem = m
+	return r
+}
+
+// MemoryBudgetFraction is the share of a packet that durable notes may take.
+//
+// §8.2 adopts this memory at "low" cost and §11 flags the pattern as "good,
+// easy to abuse": notes accumulate, and a playbook that grows until it crowds
+// out the code is the failure mode. A note that does not fit is dropped and
+// counted rather than silently trimmed, so the cap is visible when it bites.
+const MemoryBudgetFraction = 0.15
 
 // WorkspaceID reports the workspace this retriever serves.
 func (r *Retriever) WorkspaceID() workspace.ID { return r.st.ID() }
@@ -72,6 +92,15 @@ type Packet struct {
 	// Impact is attached when the request asked for it, so the planner and the
 	// human gate see the same report (§3.3).
 	Impact *graph.Impact `json:"impact,omitempty"`
+	// Notes are the repository's durable memory (§8.2): intent explaining why
+	// work is being done, observations of what was seen, advice meant to steer
+	// it. They are carried separately from Slices because they are not code and
+	// must not be read as if they were.
+	Notes []memory.Note `json:"notes,omitempty"`
+	// NotesDropped counts notes that did not fit the memory budget. A playbook
+	// quietly losing its tail is how advice stops matching what people think
+	// the system was told.
+	NotesDropped int `json:"notes_dropped,omitempty"`
 }
 
 // Build assembles a packet. Every slice that leaves this function has passed
@@ -148,6 +177,12 @@ func (r *Retriever) Build(ctx context.Context, req Request) (*Packet, error) {
 	for _, err := range rejected {
 		pkt.Rejected = append(pkt.Rejected, err.Error())
 	}
+
+	// Notes first: they are the stable part of the packet and §8.2 puts the
+	// stable prefix first so the provider's prompt cache survives the loop.
+	// Their cost comes out of the budget before code competes for it, bounded
+	// so they can never be most of the packet.
+	r.addNotes(pkt, int(float64(budget)*MemoryBudgetFraction))
 
 	seen := map[int64]bool{}
 	for _, s := range kept {
@@ -296,4 +331,47 @@ func (r *Retriever) CountForeignRows(ctx context.Context) (int, error) {
 		return nil
 	})
 	return total, err
+}
+
+// addNotes fills the packet's memory section within its own sub-budget.
+//
+// Kinds are kept in the order memory.Kinds gives, which is the order a reader
+// should see them: intent explains why, observation records what was seen,
+// advice tries to steer. Mixing them would let a one-off read as a rule, which
+// is the drift the three kinds exist to prevent.
+func (r *Retriever) addNotes(pkt *Packet, budget int) {
+	if r.mem == nil || budget <= 0 {
+		return
+	}
+	all, err := r.mem.All()
+	if err != nil {
+		// A repository with no notes is the common case and not a failure. A
+		// malformed one should not take the task down either: the packet is
+		// still usable without them, and `le memory list` is where a broken
+		// file gets reported.
+		return
+	}
+	spent := 0
+	for _, kind := range memory.Kinds() {
+		notes := all[kind]
+		// Newest first: the caps drop the oldest, so the newest are the ones a
+		// reader has not already seen play out.
+		for i := len(notes) - 1; i >= 0; i-- {
+			cost := noteTokens(notes[i])
+			if spent+cost > budget {
+				pkt.NotesDropped++
+				continue
+			}
+			pkt.Notes = append(pkt.Notes, notes[i])
+			spent += cost
+			pkt.Tokens += cost
+		}
+	}
+}
+
+// noteTokens estimates a note the same way a slice is estimated, counting the
+// provenance because that is rendered too — a rule whose source is invisible
+// cannot be judged (§11).
+func noteTokens(n memory.Note) int {
+	return (len(n.Text)+len(n.Provenance.Source)+len(n.Kind))/4 + 8
 }

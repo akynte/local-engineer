@@ -353,6 +353,24 @@ func (e *Engine) brief(req engine.Request) string {
 		fmt.Fprintf(&b, "\nThis is attempt %d. The previous attempt did not pass verification.\n", req.Attempt)
 	}
 
+	// Before the code, because these say why the work is being done and what
+	// this repository has already learned — and because §8.2 wants the stable
+	// part of the packet first, where the prompt cache can keep it.
+	if req.Packet != nil && len(req.Packet.Notes) > 0 {
+		b.WriteString("\nWhat this repository has recorded. These are notes, not code, " +
+			"and each says where it came from:\n")
+		for _, n := range req.Packet.Notes {
+			src := n.Provenance.Source
+			if src == "" {
+				src = "unattributed"
+			}
+			fmt.Fprintf(&b, "  [%s, from %s] %s\n", n.Kind, src, n.Text)
+		}
+		if req.Packet.NotesDropped > 0 {
+			fmt.Fprintf(&b, "  (%d more note(s) did not fit)\n", req.Packet.NotesDropped)
+		}
+	}
+
 	if req.Packet != nil && len(req.Packet.Slices) > 0 {
 		b.WriteString("\nRelevant code found by the supervisor's retrieval:\n")
 		for _, s := range req.Packet.Slices {

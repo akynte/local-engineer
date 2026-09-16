@@ -20,6 +20,7 @@ import (
 	"github.com/akynte/local-engineer/internal/engine/native"
 	"github.com/akynte/local-engineer/internal/ledger"
 	"github.com/akynte/local-engineer/internal/llm"
+	"github.com/akynte/local-engineer/internal/memory"
 	"github.com/akynte/local-engineer/internal/policy"
 	"github.com/akynte/local-engineer/internal/recipe"
 	"github.com/akynte/local-engineer/internal/retrieval"
@@ -48,7 +49,7 @@ func newTaskCmd() *cobra.Command {
 // When no provider is reachable the verification-only engine is used instead,
 // and the caller is told which it got. Silently falling back would let someone
 // believe a model had looked at their code when nothing had.
-func engineFor(cmd *cobra.Command, root *store.Root, st *store.Store) (engine.Engine, error) {
+func engineFor(cmd *cobra.Command, root *store.Root, st *store.Store, ws *workspace.Workspace) (engine.Engine, error) {
 	cfg, err := loadConfig(root)
 	if err != nil {
 		return nil, err
@@ -79,7 +80,7 @@ func engineFor(cmd *cobra.Command, root *store.Root, st *store.Store) (engine.En
 	profile := loadProfile(root, cfg)
 	opts := native.Options{
 		Provider:  provider,
-		Retriever: retrieval.New(st),
+		Retriever: retrieverFor(st, ws),
 		Graph:     graphFor(st),
 		Logf:      func(f string, a ...any) { fmt.Fprintf(cmd.ErrOrStderr(), f+"\n", a...) },
 	}
@@ -251,7 +252,7 @@ func newTaskRunCmd() *cobra.Command {
 			}
 			defer closeRoot(cmd, root)
 
-			eng, err := engineFor(cmd, root, st)
+			eng, err := engineFor(cmd, root, st, ws)
 			if err != nil {
 				return err
 			}
@@ -681,4 +682,18 @@ func newTaskRetryCmd() *cobra.Command {
 	cmd.Flags().StringVar(&reason, "reason", "",
 		"what you changed so this run goes differently. Recorded in the journal")
 	return cmd
+}
+
+// retrieverFor builds the retriever, attaching the repository's durable notes
+// when there is a checkout to read them from.
+//
+// The notes live under `.le/memory/` inside the repository (§2.2) so they
+// travel with it, which is why this needs the workspace: a store knows a
+// workspace id, not where the code is.
+func retrieverFor(st *store.Store, ws *workspace.Workspace) *retrieval.Retriever {
+	r := retrieval.New(st)
+	if ws == nil {
+		return r
+	}
+	return r.WithMemory(memory.Open(ws.Root, memory.DefaultCaps()))
 }
