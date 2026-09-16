@@ -12,8 +12,6 @@ and evidence-backed verification.
 
 ## 60 seconds
 
-[![asciicast](https://asciinema.org/a/local-engineer-demo.svg)](docs/demo.cast)
-
 ```console
 $ le workspace init          # pin this repository's identity
 $ le index                   # build the source index, symbol index and graph
@@ -35,8 +33,9 @@ go test   test   pass    no test packages ran
 ```
 
 [`docs/demo.cast`](docs/demo.cast) is an asciicast v2 recording of exactly
-that, **generated** by [`scripts/record-demo.sh`](scripts/record-demo.sh) from
-real command output inside the image — never hand-written. A hand-written demo
+that. Play it with `asciinema play docs/demo.cast`. It is **generated** by
+[`scripts/record-demo.sh`](scripts/record-demo.sh) from real command output
+inside the image — never hand-written. A hand-written demo
 is a screenshot of a system that may no longer exist, and the whole argument
 here is that claims are checkable. Regenerate it after any change that alters
 what these commands print.

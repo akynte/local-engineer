@@ -14,8 +14,14 @@ Thank you for considering a contribution.
 ## Development setup
 
 The fastest path is the Dev Container (`.devcontainer/`), which pins the same
-toolchain CI uses. Otherwise you need Go 1.26+, Docker, and Node LTS for the
+toolchain CI uses. Otherwise you need Go, Docker, and Node LTS for the
 sidecars.
+
+`go.mod` carries a `toolchain` directive naming the minimum patch release,
+because earlier ones in the same series ship a standard library `govulncheck`
+reports against this code. A default Go installation fetches that toolchain on
+its own; if you have set `GOTOOLCHAIN=local`, install at least the version
+`go.mod` names or the build will refuse to start.
 
 The two linters are pinned, and the pins matter: `staticcheck` before v0.8 does
 not build under Go 1.26, and `golangci-lint` v1 cannot read this repository's
