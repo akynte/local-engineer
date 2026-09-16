@@ -99,6 +99,10 @@ git commit -s -m "feat(graph): ..."
   the how-to pages are executed by CI, so a wrong command block fails the build.
 - If you change behaviour described in a decision record, update the record or
   add a new one superseding it.
+- If your change alters what the commands in the README's demo print, regenerate
+  `docs/demo.cast` with `scripts/record-demo.sh`. It is recorded from a live run
+  for a reason: a hand-written demo is a screenshot of a system that may no
+  longer exist.
 
 ## What gets rejected
 

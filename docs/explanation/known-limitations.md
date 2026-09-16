@@ -66,6 +66,9 @@ measurable rather than measured.** See
   as a database call, but naming a table would be guessing.
 - **Computed routes and URLs produce no edge.** A literal is required, because a
   guessed endpoint is worse than a missing one.
+- **Helm templates are recorded, not parsed.** Rendering a chart needs values
+  the analyzer does not have, and a half-rendered template read as YAML
+  produces confident nonsense.
 
 ## Models
 
@@ -74,6 +77,9 @@ measurable rather than measured.** See
   rather than as the model deciding to stop, but the budget is yours to set.
 - **A provider that misdeclares its capabilities breaks things at run time.**
   `le models conformance` checks; nothing forces you to run it.
+- **The shipped hardware profiles are starting points, not measurements.** They
+  were written for named hardware, not yours. `le models bench --write` measures
+  your machine and writes a profile from it; `le doctor` warns until you do.
 
 ## Runtime and generation checks
 
