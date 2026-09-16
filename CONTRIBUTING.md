@@ -35,11 +35,15 @@ go install honnef.co/go/tools/cmd/staticcheck@v0.8.1
 ```bash
 git clone https://github.com/akynte/local-engineer
 cd local-engineer
-make check      # exactly what CI runs
+make check      # the CI gates that need only Go and Docker
 ```
 
 `make check` must pass before you open a pull request. If it passes locally and
-fails in CI, that is a bug in `make check` and we want to hear about it.
+one of the gates it covers fails in CI, that is a bug in `make check` and we
+want to hear about it. CI runs more than this — the image builds, the sidecar
+tests, the documentation command blocks, a longer fuzz and the vulnerability
+scanners — and `make image-smoke`, `make sidecar-test`, `make docs-test` and
+`make vuln` run those individually.
 
 ## The rules that are enforced by the build
 

@@ -1,5 +1,8 @@
-# `make check` reproduces the CI gates locally (design v3 §1.1).
-# If this passes and CI fails, that is a bug in this file.
+# `make check` reproduces the CI gates that need nothing but Go and a local
+# Docker daemon (design v3 §1.1). CI additionally builds the images, runs the
+# Node sidecar's tests, executes the documentation command blocks, fuzzes for
+# longer and runs govulncheck and osv-scanner; those have their own targets.
+# If `make check` passes and the gates it covers fail in CI, that is a bug here.
 
 SHELL := /usr/bin/env bash
 .SHELLFLAGS := -eu -o pipefail -c
@@ -38,7 +41,7 @@ fmt: ## Format all Go source
 	gofmt -w $$(find . -name '*.go' -not -path './vendor/*')
 
 .PHONY: check
-check: fmt-check vet storescope lint staticcheck test isolation schemas taskset ## Everything CI runs
+check: fmt-check vet storescope lint staticcheck test isolation schemas taskset ## Format, vet, lint, test, isolation, schemas, task set
 
 .PHONY: fmt-check
 fmt-check: ## Fail if anything is not gofmt'd
