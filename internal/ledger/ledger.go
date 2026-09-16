@@ -127,6 +127,39 @@ type Handle struct {
 func (h *Handle) ID() int64  { return h.id }
 func (h *Handle) Seq() int64 { return h.seq }
 
+// recordTimeout bounds a detached journal write. It is short because the write
+// is one small UPDATE against a local file, and because this runs on the
+// shutdown path: a dead database must not be able to hang an exit.
+const recordTimeout = 10 * time.Second
+
+// recording detaches a journal write from the context of the work it describes.
+//
+// §7.1 puts the outcome in the journal *after* the side effect, which means
+// the write happens exactly when the operation is ending — including when it
+// is ending *because* its context was cancelled, timed out, or the process
+// caught a signal. Using that context for the write makes the record
+// impossible precisely when it matters most: the operation is left uncertain
+// with no cause beside it, and §7.2's recovery has to reconstruct from the
+// worktree alone with nothing to say why.
+//
+// Cancellation is dropped and values are kept, so tracing and any request
+// identifiers further out still resolve. The bounded timeout replaces the
+// inherited deadline rather than inheriting a dead one.
+//
+// It applies to Interrupted and to nothing else. Interrupted leaves the
+// outcome NULL by design, so a detached write can only add the cause to an
+// operation that stays uncertain — it can never make one look finished.
+//
+// Complete and Fail deliberately keep the caller's context. Writing an outcome
+// makes an operation *certain*, and recovery skips inspection for certain
+// operations; under a cancelled context the side effect is precisely what
+// nobody knows, so refusing the write is what keeps an interrupted operation
+// uncertain. Begin keeps it too: there is no point writing the intent of an
+// operation whose context is already gone.
+func recording(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
+}
+
 // Complete writes the outcome after the side effect has happened.
 func (h *Handle) Complete(ctx context.Context, outcome any, candidateAfter, evidenceID string) error {
 	return h.finish(ctx, outcome, candidateAfter, evidenceID)
@@ -162,6 +195,8 @@ func (h *Handle) Interrupted(ctx context.Context, cause error) error {
 	if cause == nil {
 		cause = errors.New("interrupted")
 	}
+	ctx, cancel := recording(ctx)
+	defer cancel()
 	err := h.l.db.Tx(ctx, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, `
 			UPDATE operations SET error = ?, finished_at = ? WHERE id = ?`,
