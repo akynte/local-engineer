@@ -2,7 +2,10 @@
 /bin/
 /dist/
 coverage.out
+coverage.html
 *.test
+*.prof
+*.pprof
 
 # Local data directories
 /le-data/
@@ -10,15 +13,34 @@ coverage.out
 *.db-wal
 *.db-shm
 
-# The workspace pin of this repository's own dogfooding, if any
-/.le/
+# A workspace pin is machine-specific: it records the absolute path the id was
+# derived from. Every project runs `le workspace init` for itself, including
+# the examples in this repository.
+.le/
 
-# Editors
+# Task transcripts written by `le task run --log`.
+.run-*.log
+
+# Editors and local tool state
 .idea/
 .vscode/
 !.vscode/extensions.json
 *.swp
+*~
 .DS_Store
+
+# Local AI-assistant configuration. It holds absolute paths from one machine
+# and is never useful to another contributor.
+.claude/
+
+# The generated documentation site (`mkdocs build`).
+/site/
+
+# Secrets and local environment. Nothing in this repository reads a .env file;
+# the entry exists so an experiment cannot leave one behind.
+.env
+.env.*
+!.env.example
 
 # Fuzz crashers are kept; the working corpus is not.
 # (Regression seeds under testdata/fuzz/ ARE committed on purpose.)

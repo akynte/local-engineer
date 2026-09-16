@@ -794,3 +794,58 @@ func (ix *Indexer) LastIndexedAt(ctx context.Context) int64 {
 	}
 	return at
 }
+
+// Refresh re-analyses every repository whose index key is marked dirty.
+//
+// §3.4 requires this before any task step that needs the graph. The watcher
+// marks a scope dirty when a file under it changes; until something acts on
+// that mark, a task asks the graph about code as it was when it was last
+// indexed. A stale graph is worse than a thin one — §3.3 can say a missing
+// edge means "not discovered", but a node for code that has since changed is
+// confidently wrong.
+//
+// Re-analysis is a full pass over the dirty repository rather than a
+// file-level patch. That is honest about what the analyzers can do: they type
+// check a package at a time and derive a call graph across packages, so the
+// unit that can be recomputed correctly is the repository. The analyzer cache
+// is what makes it affordable — everything whose inputs are unchanged is
+// reused, so the cost is the analyzers whose files actually moved.
+func (ix *Indexer) Refresh(ctx context.Context, root string) error {
+	ids, err := ix.dirtyRepositories(ctx)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if _, err := ix.Repository(ctx, id, root); err != nil {
+			return fmt.Errorf("index: re-analysing %s: %w", id, err)
+		}
+	}
+	return nil
+}
+
+// dirtyRepositories lists the repository scopes the watcher has marked.
+//
+// The rows are drained into a slice before any re-analysis runs: Repository
+// writes to the same database, and holding a read cursor open across it is how
+// a re-analysis deadlocks against the statement that found the work for it.
+func (ix *Indexer) dirtyRepositories(ctx context.Context) ([]string, error) {
+	rows, err := ix.st.Index().SQL().QueryContext(ctx,
+		`SELECT scope_id FROM index_keys WHERE dirty = 1 AND scope = 'repository'`)
+	if err != nil {
+		return nil, fmt.Errorf("index: reading dirty scopes: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("index: reading dirty scopes: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("index: reading dirty scopes: %w", err)
+	}
+	return ids, nil
+}

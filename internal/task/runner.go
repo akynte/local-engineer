@@ -29,7 +29,15 @@ import (
 // at any point leaves a state recovery can reconcile rather than guess at
 // (§7.1).
 type Runner struct {
-	Store     *Store
+	Store *Store
+	// Freshener re-analyses the repository when the watcher has marked it
+	// dirty. §3.4 requires that before any step that needs the graph: an
+	// operator who edits between tasks otherwise gets answers about the code
+	// as it was when it was last indexed, and a stale graph is worse than a
+	// thin one because it is confidently wrong. Nil disables the check, which
+	// is what `le task verify` and the evaluation want — neither consults the
+	// graph.
+	Freshener Freshener
 	Ledger    *ledger.Ledger
 	Worktrees *worktree.Manager
 	Retriever *retrieval.Retriever
@@ -78,6 +86,10 @@ type Runner struct {
 	lastPacket *retrieval.Packet
 	// Logf reports progress. Nil discards it.
 	Logf func(format string, args ...any)
+
+	// repoRoot is the repository this run is against. The index describes it,
+	// not the task's worktree, so it is what a refresh re-analyses.
+	repoRoot string
 
 	// store and dirs let the runner ask for directories rather than creating
 	// them: §2.3 confines that to internal/store.
@@ -165,6 +177,7 @@ type Outcome struct {
 
 // Run executes a task against a repository.
 func (r *Runner) Run(ctx context.Context, taskID, repoPath string) (*Outcome, error) {
+	r.repoRoot = repoPath
 	t, err := r.Store.Get(ctx, taskID)
 	if err != nil {
 		return nil, err
@@ -464,6 +477,11 @@ func (r *Runner) run(ctx context.Context, t *Task, wt *worktree.Worktree) (*Outc
 // step runs one engine attempt, journalled intent-first.
 func (r *Runner) step(ctx context.Context, t *Task, wt *worktree.Worktree,
 	attempt int, before string, feedback []recipe.Result) (int, error) {
+
+	// §3.4: dirty scopes are re-analysed before a step that needs the graph.
+	// The check is one COUNT when nothing changed, so a clean repository pays
+	// almost nothing for it.
+	r.freshen(ctx, r.repoRoot)
 
 	pkt, err := r.Retriever.Build(ctx, retrieval.Request{
 		Query:       t.Title,
@@ -1086,4 +1104,38 @@ func (r *Runner) recordMisses(ctx context.Context, t *Task, out *Outcome, failur
 			})
 		}
 	}
+}
+
+// Freshener re-analyses a repository whose index the watcher has marked dirty.
+//
+// It is an interface rather than *index.Indexer so the task package does not
+// depend on the indexer, and so a caller that has no index — the evaluation
+// runs against scratch copies it indexes itself — can leave it nil.
+type Freshener interface {
+	// Dirty reports how many scopes are marked dirty.
+	Dirty(ctx context.Context) (int, error)
+	// Refresh re-analyses everything marked dirty, from the repository root
+	// the index was built from.
+	Refresh(ctx context.Context, root string) error
+}
+
+// freshen brings the graph up to date when the watcher has marked it dirty.
+//
+// A failure here is logged and not fatal. The graph being stale is a degraded
+// answer; refusing to run the task at all is a worse one, and the operator has
+// `le doctor` and `le index` for the case where re-indexing genuinely cannot
+// happen.
+func (r *Runner) freshen(ctx context.Context, root string) {
+	if r.Freshener == nil || root == "" {
+		return
+	}
+	n, err := r.Freshener.Dirty(ctx)
+	if err != nil || n == 0 {
+		return
+	}
+	if err := r.Freshener.Refresh(ctx, root); err != nil {
+		r.logf("index: re-analysing %d dirty scope(s) failed: %v", n, err)
+		return
+	}
+	r.logf("index: re-analysed %d dirty scope(s) before using the graph (§3.4)", n)
 }

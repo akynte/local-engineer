@@ -18,6 +18,7 @@ import (
 	"github.com/akynte/local-engineer/internal/critic"
 	"github.com/akynte/local-engineer/internal/engine"
 	"github.com/akynte/local-engineer/internal/engine/native"
+	"github.com/akynte/local-engineer/internal/index"
 	"github.com/akynte/local-engineer/internal/ledger"
 	"github.com/akynte/local-engineer/internal/llm"
 	"github.com/akynte/local-engineer/internal/memory"
@@ -137,6 +138,16 @@ func runnerFor(cmd *cobra.Command, root *store.Root, st *store.Store, eng engine
 			len(policies.Policies), len(policies.Paths()))
 	}
 	r.Policies = policies
+
+	// §3.4: a repository the watcher has marked dirty is re-analysed before a
+	// step consults the graph. The indexer is given the same analyzers `le
+	// index` uses, so a refresh produces the graph a full index would.
+	r.Freshener = index.New(st, index.Options{
+		MaxFileBytes: cfg.Index.MaxFileBytes,
+		Excludes:     cfg.Index.Excludes,
+		ChunkLines:   cfg.Index.ChunkLines,
+		Analyzers:    analyzers(cmd),
+	})
 
 	// §10.1's out-of-conversation calls. They need structured output, so a
 	// provider that cannot constrain its answers simply does not get them —
