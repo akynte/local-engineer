@@ -2,6 +2,12 @@ module github.com/akynte/local-engineer
 
 go 1.26.0
 
+// Minimum patch release, not a language requirement: the standard library in
+// 1.26.0 through 1.26.5 carries advisories that govulncheck reports against
+// this code (net/http, crypto/tls, crypto/x509, net/url, encoding/asn1).
+// Building with an older toolchain reintroduces them.
+toolchain go1.26.6
+
 require (
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/hashicorp/hcl/v2 v2.24.0
@@ -28,7 +34,7 @@ require (
 	golang.org/x/mod v0.41.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
-	golang.org/x/text v0.25.0 // indirect
+	golang.org/x/text v0.39.0 // indirect
 	kernel.org/pub/linux/libs/security/libcap/psx v1.2.77 // indirect
 	modernc.org/libc v1.75.6 // indirect
 	modernc.org/mathutil v1.7.1 // indirect

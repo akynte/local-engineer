@@ -149,13 +149,13 @@ ARG COMMIT=unknown
 ARG TARGETARCH
 # Renovate keeps these pinned versions current; each is also listed in the
 # generated image manifest.
-ARG GO_VERSION=1.26.3
+ARG GO_VERSION=1.26.6
 # Pinned checksums from the Go release index. Deliberately pinned rather than
 # fetched alongside the tarball: downloading a checksum from the same server as
 # the artifact only checks that server against itself. Update both when
 # GO_VERSION moves — the build fails loudly if they do not match.
-ARG GO_SHA256_amd64=2b2cfc7148493da5e73981bffbf3353af381d5f93e789c82c79aff64962eb556
-ARG GO_SHA256_arm64=9d89a3ea57d141c2b22d70083f2c8459ba3890f2d9e818e7e933b75614936565
+ARG GO_SHA256_amd64=708effb774be8237570d0add163225abbdfaf4fca28b2611df167beba4feef89
+ARG GO_SHA256_arm64=d0507e9e9d7fe012aae570108cbd76c15de879e17130ab8cb90d4d7445cb1f2e
 ARG NODE_MAJOR=22
 ARG GOLANGCI_VERSION=2.13.2
 ARG GOLANGCI_SHA256_amd64=2277d43b98ec0054280f2ac26b53268bae97682444678a59a657dd565da021d6
