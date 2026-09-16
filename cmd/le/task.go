@@ -39,7 +39,7 @@ func newTaskCmd() *cobra.Command {
 			"than assuming either success or failure.",
 	}
 	cmd.AddCommand(newTaskListCmd(), newTaskJournalCmd(), newTaskRecoverCmd(),
-		newTaskCreateCmd(), newTaskRunCmd(), newTaskVerifyCmd())
+		newTaskCreateCmd(), newTaskRunCmd(), newTaskVerifyCmd(), newTaskRetryCmd())
 	return cmd
 }
 
@@ -615,4 +615,70 @@ func servicePorts(cfg config.Config) []uint16 {
 	add(cfg.Egress.DepsPort)
 	add(cfg.Egress.DocsPort)
 	return out
+}
+
+func newTaskRetryCmd() *cobra.Command {
+	var reason string
+	cmd := &cobra.Command{
+		Use:   "retry <task-id>",
+		Short: "Return a failed task to pending so it can be run again",
+		Long: "A failed task is not always work that could not be done. An output budget too\n" +
+			"small for the model's reasoning, a request longer than the provider's timeout,\n" +
+			"or a machine under memory pressure all produce a failed task whose work was\n" +
+			"never really attempted — and fixing the cause does not help, because the task\n" +
+			"refuses to run. Retry returns it to pending, keeping its id, its journal and\n" +
+			"its worktree, so the record of what was already tried survives.\n\n" +
+			"An accepted task is refused: its change has been through the completion\n" +
+			"contract and may already be merged.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			_, root, st, err := openWorkspace(ctx)
+			if err != nil {
+				return err
+			}
+			defer closeRoot(cmd, root)
+
+			store := task.NewStore(st)
+			before, err := store.Get(ctx, args[0])
+			if err != nil {
+				return err
+			}
+
+			// Journalled before the transition, like every other decision that
+			// changes what the system will do (§7.1). A retry with no record
+			// leaves a task whose history says it failed and whose state says
+			// otherwise.
+			by := os.Getenv("USER")
+			if by == "" {
+				by = "operator"
+			}
+			h, err := ledger.New(st).Begin(ctx, before.ID, ledger.KindDecision, map[string]any{
+				"decision": "retry", "from_state": string(before.State),
+				"by": by, "reason": reason,
+			}, "")
+			if err != nil {
+				return err
+			}
+
+			t, err := store.Reopen(ctx, args[0])
+			if err != nil {
+				// The decision was recorded and did not take effect; say so
+				// rather than leaving an open operation implying it did.
+				_ = h.Fail(ctx, err)
+				return err
+			}
+			if err := h.Complete(ctx, map[string]any{"state": string(t.State)}, "", ""); err != nil {
+				return err
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "%s: %s -> %s\n", t.ID, before.State, t.State)
+			fmt.Fprintf(cmd.ErrOrStderr(),
+				"\nThe journal and worktree are kept. Run it with: le task run %s\n", t.ID)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&reason, "reason", "",
+		"what you changed so this run goes differently. Recorded in the journal")
+	return cmd
 }

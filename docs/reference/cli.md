@@ -126,6 +126,27 @@ months from now.
 | `list` | Tasks in this workspace |
 | `journal <task-id>` | The operation journal; `UNCERTAIN` marks a missing outcome |
 | `recover` | Reconcile every non-terminal task and report resumable state |
+| `retry <task-id>` | Return a failed task to pending, keeping its id, journal and worktree |
+
+### `le task retry`
+
+A failed task is not always work that could not be done. An output budget too
+small for the model's reasoning, a request longer than the provider's timeout,
+or a machine under memory pressure all produce a failed task whose work was
+never really attempted — and fixing the cause does not help on its own, because
+`le task run` refuses a task in a terminal state.
+
+Retry returns it to `pending`. The id, the journal and the worktree are kept, so
+the record of what was already tried survives; creating a new task with the same
+description loses it.
+
+An accepted task is refused: its change has been through the completion contract
+and may already be merged, so running it again would redo approved work against
+evidence that no longer describes the worktree.
+
+| Flag | |
+|---|---|
+| `--reason` | What you changed so this run goes differently. Recorded in the journal as a decision |
 
 ### `le task verify`
 
@@ -136,7 +157,7 @@ reports whether the completion contract is met.
 
 | Flag | |
 |---|---|
-| `--verify` | `low` (build only), `standard` (build, vet, test), `high` (adds race, format, and — where the repository declared them — lint, semgrep, generator checks and integration steps) |
+| `--verify` | `low` (build only), `standard` (build, vet, test, format), `high` (adds race and — where the repository declared them — lint, semgrep, generator checks and integration steps) |
 | `--committed` | Verify the last commit instead of your working tree |
 | `--json` | Machine-readable outcome |
 

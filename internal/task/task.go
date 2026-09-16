@@ -265,6 +265,50 @@ func (s *Store) SetState(ctx context.Context, id string, state State) error {
 	})
 }
 
+// ErrNotRetryable is returned when a task cannot be reopened.
+var ErrNotRetryable = errors.New("task: not retryable")
+
+// Reopen returns a terminal task to pending so it can be run again.
+//
+// A failed task is not always a task that was tried and could not be done. In
+// this repository, three separate harness misconfigurations — an output budget
+// too small for the model's reasoning, a request longer than the provider's
+// timeout, and memory pressure — each produced a failed task whose work had
+// never really been attempted. Fixing the configuration did not help: the
+// task refused to run, so its journal, its attempt history and its id were
+// abandoned and the same description had to be typed again as a new task.
+// That loses the one record of what was tried.
+//
+// Accepted is refused rather than reopened. Its change has been through the
+// completion contract and may already be merged, so running it again would
+// redo work someone approved on evidence that no longer describes the
+// worktree. Abandoning it explicitly and creating a new task says what is
+// actually happening.
+//
+// The worktree is deliberately left alone. A retry is a continuation, and
+// §7.2's premise is that an interrupted task's checkout is inspected rather
+// than assumed about — Run reopens an existing worktree, and recovery
+// classifies what it finds.
+func (s *Store) Reopen(ctx context.Context, id string) (Task, error) {
+	t, err := s.Get(ctx, id)
+	if err != nil {
+		return Task{}, err
+	}
+	switch {
+	case t.State == StateAccepted:
+		return t, fmt.Errorf("%w: %s was accepted, and its change may already be applied; "+
+			"create a new task rather than redoing approved work", ErrNotRetryable, id)
+	case !t.State.Terminal():
+		return t, fmt.Errorf("%w: %s is %s, which is already runnable", ErrNotRetryable, id, t.State)
+	}
+	if err := s.SetState(ctx, id, StatePending); err != nil {
+		return t, err
+	}
+	reopened := t
+	reopened.State = StatePending
+	return reopened, nil
+}
+
 // SetWorktree records which checkout a task owns.
 func (s *Store) SetWorktree(ctx context.Context, id, worktreeID string) error {
 	return s.db.Tx(ctx, func(tx *sql.Tx) error {

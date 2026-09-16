@@ -170,6 +170,14 @@ func (r *Runner) Run(ctx context.Context, taskID, repoPath string) (*Outcome, er
 		return nil, err
 	}
 	if t.State.Terminal() {
+		// A failed task is often a task the machine could not run rather than
+		// one the work defeated, so the way back is worth naming here: the
+		// alternative is retyping the description as a new task and losing the
+		// journal that says what was already tried.
+		if t.State == StateFailed || t.State == StateAbandoned {
+			return nil, fmt.Errorf("task %s is %s; `le task retry %s` returns it to pending "+
+				"if you have fixed what stopped it", t.ID, t.State, t.ID)
+		}
 		return nil, fmt.Errorf("task %s is already %s", t.ID, t.State)
 	}
 	if r.Engine == nil {
