@@ -284,9 +284,11 @@ ground truth, so "claimed success and was wrong" is its own number rather than
 something averaged away — read a solved rate without the false-acceptance rate
 beside it and you are reading half the result.
 
-`--repeat` exists because one run of a cell is a sample rather than a
-measurement. The first real run of this harness changed verdict on 4 of 12
-task/arm cells between passes; see
+`--repeat` **defaults to 3** because one run of a cell is a sample rather than
+a measurement. The first real run of this harness changed verdict on 4 of 12
+task/arm cells between passes, which is why repetition is the default rather
+than something to remember. `--repeat 1` is still accepted, and the report says
+plainly that a single pass measures nothing. See
 [the published results](../benchmarks/results/2026-09-14-tasks.md) and
 [the methodology](../benchmarks/METHODOLOGY.md).
 

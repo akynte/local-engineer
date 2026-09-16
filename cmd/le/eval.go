@@ -244,7 +244,13 @@ func newEvalRunCmd() *cobra.Command {
 	cmd.Flags().StringSliceVar(&armList, "arms", []string{"unsupervised", "supervised"},
 		"configurations to compare; `le eval arms` describes them")
 	cmd.Flags().StringSliceVar(&only, "task", nil, "run only these task ids")
-	cmd.Flags().IntVar(&repeat, "repeat", 1,
+	// Three, not one. The first real run of this harness changed verdict on 4
+	// of 12 task/arm cells between passes, so a single pass cannot tell a
+	// result from noise — and a default of 1 meant the honest thing was the
+	// thing you had to remember to ask for. Three is the smallest number that
+	// can show a cell disagreeing with itself; --repeat 1 is still there for
+	// a quick check that the harness runs at all.
+	cmd.Flags().IntVar(&repeat, "repeat", 3,
 		"run the whole set this many times; one run of a cell is a sample, not a measurement")
 	cmd.Flags().StringVar(&out, "out", "", "write the report as JSON to this path")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON to stdout")

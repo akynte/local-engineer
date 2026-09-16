@@ -133,6 +133,12 @@ $ le eval run --arms unsupervised,supervised --out results.json
 $ le eval report results.json
 ```
 
+`--repeat` defaults to 3. A single pass of a cell is one sample, and the first
+real run changed verdict on 4 of 12 cells between passes, so a one-pass table
+reports a stability it never measured. Budget accordingly: one supervised task
+on the 2,075-line fixture took 7m23s on the reference hardware, so a set of *n*
+tasks over *a* arms at *r* repetitions is roughly `n × a × r × 7` minutes.
+
 ### The task set
 
 Tasks live in `evals/tasks/` as `*.task.yaml` with a fixture directory. Each
@@ -150,15 +156,25 @@ A task with no reference solution fails the suite. It also checks that fixtures
 start green on their own visible tests, and that objectives do not name the
 fix — an objective that says what to change measures typing, not engineering.
 
-### Status: no results are published
+### Status: run once, and the run settled nothing
 
-**The harness is built and tested. No task-success numbers exist yet**, because
-producing them needs a local model running on disclosed hardware, and that run
-has not been done.
+**Task-success numbers exist and are published**:
+[2026-09-14-tasks.md](results/2026-09-14-tasks.md), 60 runs against a local 35B
+MoE on disclosed hardware. Read them with what they do not show attached.
 
-Until `results/` contains them, the README claims nothing about success rates,
-and neither does anything else in this repository. The harness existing is not
-a result.
+The run's own conclusion is that the task set was not up to the job. Every arm's
+confidence interval overlapped every other's; 4 of 12 task/arm cells changed
+verdict between passes; and two of the three tasks were solved by every arm on
+every pass, including the bare baseline, so they carried no information. The
+fixtures were 17 to 87 lines of Go — small enough that reading the whole
+repository fits in one packet, which leaves retrieval and the graph nothing to
+contribute by construction.
+
+So the README still claims no success rate, and **the graph's contribution
+remains measurable rather than measured**. A 2,075-line fixture and five tasks
+over it now exist to answer that; whether they discriminate has not been
+measured yet. A harness that has produced numbers is not the same as a harness
+that has produced evidence, and this section will say so until it is.
 
 ## Model throughput
 
