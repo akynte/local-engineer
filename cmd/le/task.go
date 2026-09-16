@@ -153,14 +153,17 @@ func runnerFor(cmd *cobra.Command, root *store.Root, st *store.Store, eng engine
 			"review and diagnosis are off: %s does not declare structured output\n", provider.Name())
 	}
 
-	tmp := st.TmpDir()
+	dirs, err := st.TaskDirs()
+	if err != nil {
+		return nil, err
+	}
 	r.SandboxSpec = sandbox.Spec{
 		ReadOnly: cfg.Sandbox.ReadOnlyPaths,
-		TmpDir:   tmp,
+		TmpDir:   dirs.Tmp,
 		Env: recipe.GoEnv(
-			filepath.Join(st.CacheDir(), "go-build"),
-			filepath.Join(st.CacheDir(), "go-mod"),
-			tmp),
+			dirs.GoBuildCache,
+			dirs.GoModCache,
+			dirs.Tmp),
 	}
 	for _, port := range cfg.Sandbox.AllowedTCPConnect {
 		r.SandboxSpec.TCPConnect = append(r.SandboxSpec.TCPConnect, uint16(port)) //nolint:gosec // operator-configured port
