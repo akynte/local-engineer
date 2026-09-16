@@ -1,0 +1,148 @@
+# Two discount rules that each compute against the untouched subtotal. Neither
+# is wrong alone; together they take off more than the order is worth, and
+# Money.Sub permits the negative. The fix is in pricing.Price, but the evidence
+# that it is right is in the breakdown, which is what the API returns and the
+# customer reads.
+id: discount-floor-001
+category: bug_fix
+objective: >-
+  A customer with a loyalty credit on a small order was quoted a total below
+  zero, and our payment provider rejected the charge outright. Pricing must
+  never come back with less than nothing to pay. The breakdown we show has to
+  keep adding up too: whatever we say we took off is what we actually took off.
+fixture: fixtures/warehouse
+scope:
+  - internal/pricing
+  - internal/domain
+leak_risk: none
+verification: standard
+notes: >-
+  Each rule receives the original subtotal, so two rules can each return a
+  legitimate amount whose sum exceeds it. The wrong-but-passing solution clamps
+  only the final total: the number stops being negative while the discount
+  lines still claim more than the order was worth, so the breakdown no longer
+  reconciles. Clamping each rule against the subtotal independently fails the
+  same way for a different reason. The second hidden test is the one that
+  separates them.
+budget:
+  max_attempts: 3
+  max_wall_seconds: 900
+acceptance:
+  argv: ["go", "test", "./..."]
+  timeout_seconds: 300
+  must_not_change:
+    - internal/pricing/hidden_acceptance_test.go
+  files:
+    internal/pricing/hidden_acceptance_test.go: |
+      package pricing
+
+      import (
+        "context"
+        "testing"
+
+        "example.com/warehouse/internal/domain"
+        "example.com/warehouse/internal/store"
+      )
+
+      // flatRule takes a fixed amount off, whatever the order.
+      type flatRule struct {
+        name  string
+        minor int64
+      }
+
+      func (r flatRule) Name() string { return r.name }
+
+      func (r flatRule) Discount(_ context.Context, _ domain.Order, subtotal domain.Money) (domain.Money, error) {
+        return domain.Money{Minor: r.minor, Currency: subtotal.Currency}, nil
+      }
+
+      func floorOrder(units int, unitMinor int64) domain.Order {
+        return domain.Order{
+          ID: "floor-1", CustomerID: "c1", Currency: domain.GBP,
+          Lines: []domain.OrderLine{{
+            SKU: "AB-1234", Quantity: units, UnitPrice: domain.NewMoney(unitMinor, domain.GBP),
+          }},
+        }
+      }
+
+      func discountsTaken(b Breakdown) int64 {
+        var n int64
+        for _, d := range b.Discounts {
+          n += d.Amount.Minor
+        }
+        return n
+      }
+
+      // Two rules that are each reasonable alone take off more than the order
+      // is worth. Nothing may be charged below zero.
+      func TestDiscountsCannotTakeAnOrderBelowZero(t *testing.T) {
+        c := New(store.NewMemory(), 2000,
+          flatRule{name: "loyalty", minor: 800},
+          flatRule{name: "bulk", minor: 700},
+        )
+        b, err := c.Price(context.Background(), floorOrder(1, 1000), domain.NewMoney(0, domain.GBP))
+        if err != nil {
+          t.Fatal(err)
+        }
+        if b.Total.Minor < 0 {
+          t.Fatalf("total = %d: pricing returned less than nothing to pay", b.Total.Minor)
+        }
+      }
+
+      // The breakdown is what the customer reads. Whatever it says was taken
+      // off must be what was actually taken off, or clamping the total alone
+      // has produced a number that does not reconcile with its own lines.
+      func TestBreakdownReconcilesAfterClamping(t *testing.T) {
+        c := New(store.NewMemory(), 2000,
+          flatRule{name: "loyalty", minor: 800},
+          flatRule{name: "bulk", minor: 700},
+        )
+        shipping := domain.NewMoney(300, domain.GBP)
+        b, err := c.Price(context.Background(), floorOrder(1, 1000), shipping)
+        if err != nil {
+          t.Fatal(err)
+        }
+        if got := discountsTaken(b); got > b.Subtotal.Minor {
+          t.Errorf("the breakdown claims %d taken off a subtotal of %d", got, b.Subtotal.Minor)
+        }
+        want := b.Subtotal.Minor - discountsTaken(b) + b.Shipping.Minor + b.Tax.Minor
+        if b.Total.Minor != want {
+          t.Errorf("total = %d but its own lines sum to %d: the breakdown does not reconcile",
+            b.Total.Minor, want)
+        }
+      }
+
+      // Tax is charged on what is actually payable. A fully discounted order
+      // still pays for delivery, and the tax on it must not be computed from a
+      // negative base.
+      func TestTaxIsNotChargedOnANegativeBase(t *testing.T) {
+        c := New(store.NewMemory(), 2000, flatRule{name: "loyalty", minor: 5000})
+        shipping := domain.NewMoney(500, domain.GBP)
+        b, err := c.Price(context.Background(), floorOrder(1, 1000), shipping)
+        if err != nil {
+          t.Fatal(err)
+        }
+        if b.Tax.Minor < 0 {
+          t.Fatalf("tax = %d on a fully discounted order", b.Tax.Minor)
+        }
+        // 0 payable + 500 shipping, taxed at 20% = 100, total 600.
+        if b.Total.Minor != 600 {
+          t.Fatalf("total = %d, want 600 (shipping plus its tax)", b.Total.Minor)
+        }
+      }
+
+      // An order that was never near the floor must price exactly as before.
+      func TestOrdinaryPricingIsUnchanged(t *testing.T) {
+        c := New(store.NewMemory(), 2000, flatRule{name: "loyalty", minor: 200})
+        b, err := c.Price(context.Background(), floorOrder(2, 1000), domain.NewMoney(500, domain.GBP))
+        if err != nil {
+          t.Fatal(err)
+        }
+        // 2000 - 200 = 1800, + 500 shipping = 2300, tax 460, total 2760.
+        if b.Total.Minor != 2760 {
+          t.Fatalf("total = %d, want 2760", b.Total.Minor)
+        }
+        if got := discountsTaken(b); got != 200 {
+          t.Fatalf("discounts = %d, want 200: an unrelated order was clamped", got)
+        }
+      }

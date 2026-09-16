@@ -81,8 +81,8 @@ every arm's interval overlapped every other's and a third of the cells changed
 verdict between passes. The run's own conclusion was that the fixtures were too
 small — at 17 to 87 lines of Go, reading the whole repository fits in one packet,
 so retrieval and the graph had nothing to contribute by construction. A
-2,075-line fixture and five tasks over it now exist to answer that; whether they
-discriminate is being measured, not asserted.
+2,075-line fixture and seven tasks over it now exist to answer that; whether
+they discriminate is being measured, not asserted.
 
 ---
 
@@ -239,12 +239,21 @@ to arms that could not run it. Fixed with regression tests in `dfaf21b`.
 
 What is genuinely open after the run:
 
+- [x] **Repetitions as standard.** `le eval run --repeat` defaults to 3. With
+      the default at 1 the invocation that produced a publishable-looking table
+      was the one that measured nothing, and the honest setting was the one an
+      operator had to remember.
 - [ ] A task set large enough to discriminate — 30+ tasks, with fixtures big
-      enough that reading the whole repository is not a strategy
-- [ ] Repetitions as standard, since single-run cells proved unstable
+      enough that reading the whole repository is not a strategy. **10 today,
+      7 of them on the 2,075-line fixture**, up from 8 and 5. Each new task is
+      mutation-checked: the wrong-but-passing answer it names is applied and
+      required to fail.
 - [ ] The graph's contribution, still *measurable* rather than *measured*: on
-      this set it added zero points and roughly doubled the tokens spent on the
-      only task that discriminated
+      the published set it added zero points and roughly doubled the tokens
+      spent on the only task that discriminated. A run over the large-fixture
+      tasks at 4 arms × 5 repetitions is what would change that, and one
+      supervised task on that fixture takes about 7 minutes on the reference
+      hardware — so the answer costs GPU-hours, not a code change.
 
 The distinction still matters because a repository containing an evaluation
 harness looks like one with evaluation results — and now, one containing

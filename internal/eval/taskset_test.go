@@ -143,6 +143,8 @@ func TestKnownGoodSolutionsPass(t *testing.T) {
 		"perishable-zone-001":           solverFunc(solvePerishableZone),
 		"damaged-stock-001":             solverFunc(solveDamagedStock),
 		"reserve-idempotent-001":        solverFunc(solveReserveIdempotent),
+		"discount-floor-001":            solverFunc(solveDiscountFloor),
+		"restock-silence-001":           solverFunc(solveRestockSilence),
 	}
 
 	for _, task := range loadSet(t) {
@@ -461,6 +463,91 @@ func solveReserveIdempotent(_ context.Context, req eval.SolveRequest) (eval.Solv
 	} {
 		to := strings.Replace(from, "\"AB-1234\", ", "\"AB-1234\", \"t\", ", 1)
 		if err := replaceIn(req.Worktree, "internal/inventory/inventory_test.go", from, to); err != nil {
+			return eval.SolveResult{}, err
+		}
+	}
+	return eval.SolveResult{Claimed: true, Attempts: 1}, nil
+}
+
+// solveDiscountFloor caps each discount at what is still owed, and records the
+// capped amount rather than the amount the rule asked for. Clamping only the
+// final total leaves the breakdown claiming more was taken off than the order
+// was worth, which is the wrong-but-passing answer the second hidden test
+// exists to reject.
+func solveDiscountFloor(_ context.Context, req eval.SolveRequest) (eval.SolveResult, error) {
+	path := filepath.Join(req.Worktree, "internal/pricing/pricing.go")
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return eval.SolveResult{}, err
+	}
+	const before = `		if amount.IsZero() {
+			continue
+		}
+		next, err := running.Sub(amount)`
+	const after = `		if amount.Minor > running.Minor {
+			amount.Minor = running.Minor
+		}
+		if amount.IsZero() {
+			continue
+		}
+		next, err := running.Sub(amount)`
+	if !strings.Contains(string(body), before) {
+		return eval.SolveResult{}, fmt.Errorf("reference solution: pricing.go does not contain the discount loop")
+	}
+	fixed := strings.Replace(string(body), before, after, 1)
+	return eval.SolveResult{Claimed: true, Attempts: 1},
+		os.WriteFile(path, []byte(fixed), 0o644)
+}
+
+// solveRestockSilence stops both silent failures: a SKU whose item record
+// cannot be read is reported as an error rather than skipped, and an alert the
+// log refused is not counted as delivered. Fixing either one alone leaves one
+// of the two hidden tests failing, which is what makes the task measure
+// whether the caller in the other package was found at all.
+func solveRestockSilence(_ context.Context, req eval.SolveRequest) (eval.SolveResult, error) {
+	edits := map[string][2]string{
+		"internal/inventory/inventory.go": {
+			`		item, err := s.items.GetItem(ctx, row.SKU)
+		if err != nil {
+			continue
+		}`,
+			`		item, err := s.items.GetItem(ctx, row.SKU)
+		if err != nil {
+			return nil, fmt.Errorf("inventory: reorder report: %s: %w", row.SKU, err)
+		}`,
+		},
+		"internal/worker/restock.go": {
+			`	for _, sku := range skus {
+		_ = w.audit.Record(ctx, audit.Event{
+			Actor: "restock", Action: "restock.needed", Subject: sku.String(),
+			Detail: map[string]string{"threshold": fmt.Sprint(w.threshold)},
+		})
+	}
+	return len(skus), nil`,
+			`	recorded := 0
+	for _, sku := range skus {
+		if err := w.audit.Record(ctx, audit.Event{
+			Actor: "restock", Action: "restock.needed", Subject: sku.String(),
+			Detail: map[string]string{"threshold": fmt.Sprint(w.threshold)},
+		}); err != nil {
+			return recorded, fmt.Errorf("worker: recording restock alert for %s: %w", sku, err)
+		}
+		recorded++
+	}
+	return recorded, nil`,
+		},
+	}
+	for rel, pair := range edits {
+		path := filepath.Join(req.Worktree, rel)
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return eval.SolveResult{}, err
+		}
+		if !strings.Contains(string(body), pair[0]) {
+			return eval.SolveResult{}, fmt.Errorf("reference solution: %s does not contain the expected text", rel)
+		}
+		fixed := strings.Replace(string(body), pair[0], pair[1], 1)
+		if err := os.WriteFile(path, []byte(fixed), 0o644); err != nil {
 			return eval.SolveResult{}, err
 		}
 	}

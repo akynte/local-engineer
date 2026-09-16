@@ -1,0 +1,144 @@
+# Two silent failures on the same path, in different packages. ReorderReport
+# treats every item-lookup error as "skip", so a SKU with stock but no item
+# record disappears from the report; RunOnce discards the error from the audit
+# write, which is the only thing that actually tells anyone. The watcher's own
+# doc comment says it exists "to make sure the human is told".
+id: restock-silence-001
+category: bug_fix
+objective: >-
+  We ran out of a part and the restock report had never flagged it. The
+  warehouse team say they were never alerted, and we cannot tell from the logs
+  whether the alert was sent and missed or never sent at all. Stop the restock
+  pass from reporting success it did not achieve: if we cannot tell whether a
+  SKU needs reordering, that is not the same as deciding it does not, and an
+  alert we failed to record is not an alert anyone received.
+fixture: fixtures/warehouse
+scope:
+  - internal/inventory
+  - internal/worker
+leak_risk: none
+verification: standard
+notes: >-
+  The only caller of ReorderReport is RestockWatcher.RunOnce, in another
+  package, so the impact of changing its contract is not visible from the file
+  being edited. A wrong-but-passing solution fixes the audit error and leaves
+  the lookup skip alone, or the reverse; the two hidden tests fail
+  independently so half a fix cannot pass. A solution that drops the
+  discontinued check to make the first test pass is caught by the third.
+budget:
+  max_attempts: 3
+  max_wall_seconds: 900
+acceptance:
+  argv: ["go", "test", "./..."]
+  timeout_seconds: 300
+  must_not_change:
+    - internal/worker/hidden_acceptance_test.go
+  files:
+    internal/worker/hidden_acceptance_test.go: |
+      package worker
+
+      import (
+        "context"
+        "errors"
+        "testing"
+
+        "example.com/warehouse/internal/audit"
+        "example.com/warehouse/internal/domain"
+        "example.com/warehouse/internal/inventory"
+        "example.com/warehouse/internal/store"
+      )
+
+      // failingLog accepts nothing. It stands for a log that is full, locked or
+      // unreachable — the cases where an alert is not delivered.
+      type failingLog struct{ audit.Log }
+
+      var errLogUnavailable = errors.New("audit log unavailable")
+
+      func (failingLog) Record(context.Context, audit.Event) error { return errLogUnavailable }
+
+      func lowStock(t *testing.T, withItem bool) *store.Memory {
+        t.Helper()
+        ctx := context.Background()
+        mem := store.NewMemory()
+        if withItem {
+          if err := mem.PutItem(ctx, domain.Item{
+            SKU: "AB-1234", Name: "Widget", Category: domain.CategoryGeneral,
+            UnitPrice: domain.NewMoney(1000, domain.GBP), WeightGram: 500,
+          }); err != nil {
+            t.Fatal(err)
+          }
+        }
+        if err := mem.PutStock(ctx, store.Stock{SKU: "AB-1234", OnHand: 1}); err != nil {
+          t.Fatal(err)
+        }
+        return mem
+      }
+
+      // An alert that could not be recorded was not delivered, and the pass
+      // must not return as though it were.
+      func TestAFailedAlertIsNotReportedAsDelivered(t *testing.T) {
+        mem := lowStock(t, true)
+        w := NewRestockWatcher(inventory.New(mem, mem), failingLog{}, 5)
+
+        n, err := w.RunOnce(context.Background())
+        if err == nil {
+          t.Fatalf("RunOnce reported %d alert(s) and no error, but every write to the log failed", n)
+        }
+      }
+
+      // Stock exists for a SKU whose item record does not. Not being able to
+      // tell whether it needs reordering is not the same as deciding it does
+      // not: the pass must either report it or say it could not.
+      func TestASkuThatCannotBeLookedUpIsNotSilentlyDropped(t *testing.T) {
+        mem := lowStock(t, false)
+        log := audit.NewMemoryLog()
+        w := NewRestockWatcher(inventory.New(mem, mem), log, 5)
+
+        n, err := w.RunOnce(context.Background())
+        if err == nil && n == 0 {
+          t.Fatal("a SKU below the threshold vanished from the report because its item " +
+            "record could not be read, and the pass returned success")
+        }
+      }
+
+      // Discontinued items are excluded on purpose. A fix that stops skipping
+      // them to satisfy the test above has broken what the report is for.
+      func TestDiscontinuedItemsAreStillExcluded(t *testing.T) {
+        ctx := context.Background()
+        mem := store.NewMemory()
+        if err := mem.PutItem(ctx, domain.Item{
+          SKU: "OLD-1", Name: "Retired", Category: domain.CategoryGeneral,
+          UnitPrice: domain.NewMoney(100, domain.GBP), WeightGram: 10,
+          Discontinued: true,
+        }); err != nil {
+          t.Fatal(err)
+        }
+        if err := mem.PutStock(ctx, store.Stock{SKU: "OLD-1", OnHand: 0}); err != nil {
+          t.Fatal(err)
+        }
+        log := audit.NewMemoryLog()
+        w := NewRestockWatcher(inventory.New(mem, mem), log, 5)
+
+        n, err := w.RunOnce(ctx)
+        if err != nil {
+          t.Fatalf("a discontinued item made the pass fail: %v", err)
+        }
+        if n != 0 {
+          t.Fatalf("reordered %d discontinued item(s); the report exists to drive buying", n)
+        }
+      }
+
+      // The number returned is a count of alerts that were actually recorded.
+      func TestTheCountMatchesTheAlertsRecorded(t *testing.T) {
+        mem := lowStock(t, true)
+        log := audit.NewMemoryLog()
+        w := NewRestockWatcher(inventory.New(mem, mem), log, 5)
+
+        n, err := w.RunOnce(context.Background())
+        if err != nil {
+          t.Fatal(err)
+        }
+        if n != log.Count() {
+          t.Fatalf("RunOnce returned %d but %d alert(s) reached the log", n, log.Count())
+        }
+      }
