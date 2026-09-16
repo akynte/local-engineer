@@ -136,11 +136,11 @@ func TestGateBlocksUntilDecidedAndIsJournalled(t *testing.T) {
 		t.Fatalf("pending = %+v", pending)
 	}
 
-	decided, err := b.Decide(ctx, g.ID, broker.Approved, "ali", "diff looks right")
+	decided, err := b.Decide(ctx, g.ID, broker.Approved, "operator", "diff looks right")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if decided.Decision != broker.Approved || decided.DecidedBy != "ali" {
+	if decided.Decision != broker.Approved || decided.DecidedBy != "operator" {
 		t.Errorf("decided = %+v", decided)
 	}
 	if decided.DecidedAt == nil {
@@ -166,7 +166,7 @@ func TestTheNoteSurvives(t *testing.T) {
 	seedTask(t, st, "t1")
 
 	g, _ := b.Ask(ctx, "t1", broker.KindApply, "apply?", broker.Evidence{})
-	if _, err := b.Decide(ctx, g.ID, broker.Rejected, "ali",
+	if _, err := b.Decide(ctx, g.ID, broker.Rejected, "operator",
 		"this changes the retry semantics; needs a design discussion first"); err != nil {
 		t.Fatal(err)
 	}

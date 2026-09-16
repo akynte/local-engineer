@@ -709,7 +709,7 @@ func TestARejectedGateFailsTheTask(t *testing.T) {
 	if out.Gate == nil {
 		t.Fatal("expected a gate")
 	}
-	if _, err := b.Decide(ctx, out.Gate.ID, broker.Rejected, "ali", "not the right approach"); err != nil {
+	if _, err := b.Decide(ctx, out.Gate.ID, broker.Rejected, "operator", "not the right approach"); err != nil {
 		t.Fatal(err)
 	}
 	loaded, err := b.Get(ctx, out.Gate.ID)
