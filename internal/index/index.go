@@ -15,6 +15,7 @@ import (
 	"database/sql"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -22,9 +23,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/akynte/local-engineer/internal/cache"
 	"github.com/akynte/local-engineer/internal/config"
 	"github.com/akynte/local-engineer/internal/graph"
 	"github.com/akynte/local-engineer/internal/store"
@@ -113,6 +116,10 @@ type Indexer struct {
 	st   *store.Store
 	g    graph.Graph
 	opts Options
+	// cache holds analyzer results keyed by the content of what they read
+	// (§2.2). Nil disables reuse, which is what a caller wants when it is
+	// measuring an analyzer rather than using one.
+	cache *cache.Cache
 }
 
 // New binds an indexer to a workspace store.
@@ -127,7 +134,19 @@ func New(s *store.Store, opts Options) *Indexer {
 	if opts.Excludes == nil {
 		opts.Excludes = d.Excludes
 	}
-	return &Indexer{st: s, g: graph.New(s), opts: opts}
+	ix := &Indexer{st: s, g: graph.New(s), opts: opts}
+	ix.cache = cache.New(s)
+	return ix
+}
+
+// CacheStats reports analyzer-cache hits and misses, so `le index` can say
+// whether reuse is actually happening rather than leaving it to be assumed.
+func (ix *Indexer) CacheStats() (hits, misses int64) {
+	if ix.cache == nil {
+		return 0, 0
+	}
+	s := ix.cache.Stats()
+	return s.Hits, s.Misses
 }
 
 // RegisterRepository records a repository in the index database. Every node,
@@ -160,6 +179,24 @@ func (ix *Indexer) Repository(ctx context.Context, repositoryID, absRoot string)
 	if err := ix.writeFiles(ctx, files); err != nil {
 		return st, err
 	}
+
+	// A full index replaces this repository's graph rather than merging into
+	// it. Upserting alone leaves a node for every symbol that has since been
+	// deleted, and those never decay: the graph accumulates code that is not
+	// there, impact analysis reports consumers that no longer exist, and
+	// retrieval can hand the model a slice of a file nobody has. §3.3 treats a
+	// missing edge as "not discovered", which is honest; a present node for
+	// deleted code asserts something false.
+	//
+	// This has to happen before the first node of the run is written, not
+	// before the analyzers' nodes: the filesystem graph below is written
+	// first, and clearing after it would delete the containment nodes this
+	// same run just produced. Edges cascade from nodes, so this clears both,
+	// and chunks are rebuilt the same way further down.
+	if err := ix.clearGraph(ctx, repositoryID); err != nil {
+		return st, fmt.Errorf("index: clearing the previous graph: %w", err)
+	}
+
 	nodes, edges, err := ix.writeFilesystemGraph(ctx, repositoryID, files)
 	if err != nil {
 		return st, err
@@ -197,7 +234,7 @@ func (ix *Indexer) Repository(ctx context.Context, repositoryID, absRoot string)
 		if len(accepted) == 0 {
 			continue
 		}
-		res, err := a.Analyze(ctx, absRoot, accepted)
+		res, err := ix.analyze(ctx, a, absRoot, accepted)
 		if err != nil {
 			return st, fmt.Errorf("index: analyzer %s: %w", a.Name(), err)
 		}
@@ -675,4 +712,66 @@ func manifestHash(pairs map[string]string) string {
 		}
 	}
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// analyze runs one analyzer, reusing a cached result when the inputs it was
+// given have not changed.
+//
+// §2.2 gives each workspace a cache "keyed by workspace and content manifest"
+// and names call graphs and package loads as what belongs in it. Re-deriving
+// them is the expensive part of indexing — loading and type-checking this
+// repository's 129 packages is about 1.5 seconds on its own — and the answer
+// is a pure function of the files, the analyzer and the toolchain, which is
+// exactly the shape a content-addressed cache is for.
+//
+// The key mixes the analyzer's name, the indexer version and the content hash
+// of every file it accepted. Version is in the key because a change to an
+// analyzer changes its output for unchanged input, and a cache that outlived
+// the code that filled it would serve yesterday's graph forever.
+//
+// A cache failure is never a task failure: on any error the analyzer runs and
+// the result is used. The cache is an optimisation, and one that cannot be
+// turned off by a corrupt file is one nobody has to reason about.
+func (ix *Indexer) analyze(ctx context.Context, a Analyzer, absRoot string, accepted []File) (Result, error) {
+	if ix.cache == nil {
+		return a.Analyze(ctx, absRoot, accepted)
+	}
+	pairs := make(map[string]string, len(accepted)+1)
+	for _, f := range accepted {
+		pairs[f.Path] = f.ContentHash
+	}
+	// Not a path: this pins the key to the code that produced the result.
+	pairs["\x00indexer-version"] = strconv.Itoa(version.IndexerVersion)
+	manifest := cache.ManifestOf(pairs)
+
+	if body, err := ix.cache.Get(a.Name(), manifest); err == nil {
+		var res Result
+		if json.Unmarshal(body, &res) == nil {
+			return res, nil
+		}
+		// Unreadable entry: fall through and re-derive. The write below
+		// replaces it.
+	}
+
+	res, err := a.Analyze(ctx, absRoot, accepted)
+	if err != nil {
+		return res, err
+	}
+	if body, err := json.Marshal(res); err == nil {
+		_ = ix.cache.Put(a.Name(), manifest, body)
+	}
+	return res, nil
+}
+
+// clearGraph removes a repository's nodes, and with them its edges, so a full
+// index writes the graph that is rather than the graph that has ever been.
+func (ix *Indexer) clearGraph(ctx context.Context, repositoryID string) error {
+	return ix.st.Index().Tx(ctx, func(tx *sql.Tx) error {
+		// edges.src_id and dst_id are ON DELETE CASCADE from nodes, so this
+		// takes the edges with it. Doing it in one statement inside one
+		// transaction means an interrupted index never leaves a graph with
+		// nodes whose edges are gone.
+		_, err := tx.ExecContext(ctx, `DELETE FROM nodes WHERE repository_id = ?`, repositoryID)
+		return err
+	})
 }
