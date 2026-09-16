@@ -237,7 +237,7 @@ jobs:
           govulncheck ./...
 
       - name: osv-scanner
-        uses: google/osv-scanner-action/osv-scanner-action@75ab1b8ea6e30f7fc2e6a5aa00c825b39d48ca7e # v1.9.1
+        uses: google/osv-scanner-action/osv-scanner-action@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
         with:
           scan-args: |-
             --lockfile=go.mod
