@@ -27,6 +27,8 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
+	"strings"
 	"syscall"
 
 	ll "github.com/landlock-lsm/go-landlock/landlock"
@@ -191,6 +193,19 @@ func Apply(spec sandbox.Spec) error {
 	for _, p := range spec.TCPBind {
 		rules = append(rules, ll.BindTCP(p))
 	}
+	if spec.AllowEphemeralTCP {
+		denied := make(map[uint16]bool, len(spec.TCPDeny))
+		for _, p := range spec.TCPDeny {
+			denied[p] = true
+		}
+		lo, hi := EphemeralRange()
+		for p := int(lo); p <= int(hi); p++ {
+			if denied[uint16(p)] {
+				continue
+			}
+			rules = append(rules, ll.BindTCP(uint16(p)), ll.ConnectTCP(uint16(p)))
+		}
+	}
 
 	if err := cfg.Restrict(rules...); err != nil {
 		return fmt.Errorf("landlock: restrict: %w", err)
@@ -253,4 +268,36 @@ func Helper(argv []string) error {
 		cleaned = append(cleaned, kv)
 	}
 	return syscall.Exec(bin, argv, cleaned)
+}
+
+// EphemeralRange reports the host's local port range — the ports the kernel
+// hands out for a bind to port 0.
+//
+// It is read from the kernel rather than assumed because an operator can set
+// it, and a rule set built from the wrong range fails in the confusing
+// direction: the test binds a port the sandbox never granted and the error
+// surfaces from inside whatever library opened the socket. The documented
+// default is used when the file cannot be read, which is the same range the
+// kernel itself defaults to.
+func EphemeralRange() (lo, hi uint16) {
+	const (
+		defaultLo = 32768
+		defaultHi = 60999
+	)
+	body, err := os.ReadFile("/proc/sys/net/ipv4/ip_local_port_range")
+	if err != nil {
+		return defaultLo, defaultHi
+	}
+	fields := strings.Fields(string(body))
+	if len(fields) != 2 {
+		return defaultLo, defaultHi
+	}
+	l, err1 := strconv.Atoi(fields[0])
+	h, err2 := strconv.Atoi(fields[1])
+	// A range the kernel would not produce is a parse that went wrong, not a
+	// configuration to honour.
+	if err1 != nil || err2 != nil || l < 1 || h > 65535 || l > h {
+		return defaultLo, defaultHi
+	}
+	return uint16(l), uint16(h)
 }

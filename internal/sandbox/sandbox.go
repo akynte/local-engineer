@@ -39,6 +39,28 @@ type Spec struct {
 	TCPConnect []uint16
 	// TCPBind are ports the task may listen on (test servers).
 	TCPBind []uint16
+	// AllowEphemeralTCP grants bind and connect on the host's ephemeral port
+	// range, which a test suite needs and no allowlist can predict.
+	//
+	// Landlock's network rules name one port each — the kernel's rule struct
+	// carries a single port, so a range cannot be expressed — and a server
+	// bound to port 0 gets whatever the kernel picks. That is how every Go
+	// test that uses httptest works, so without this the verification of any
+	// repository with HTTP tests fails with "connect: permission denied" on a
+	// port nobody chose. On this repository that was 22 tests across three
+	// packages, failing regardless of the change under test.
+	//
+	// It does not weaken the guarantee §6.2 actually makes. The range holds no
+	// services: by convention and by IANA's dynamic-port assignment, a service
+	// listens below it, so the inference endpoint, the supervisor API and the
+	// egress proxy stay denied. TCPDeny covers the case where an operator has
+	// moved one into the range anyway.
+	AllowEphemeralTCP bool
+	// TCPDeny are ports excluded from the AllowEphemeralTCP grant: the
+	// system's own service ports, in case an operator configured one inside
+	// the ephemeral range. It has no effect on TCPConnect and TCPBind, which
+	// are deliberate grants.
+	TCPDeny []uint16
 	// Env is the child's environment. XDG variables are set per task so that
 	// OpenCode never sees another workspace's directories (§2.2).
 	Env []string

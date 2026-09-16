@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -164,6 +166,12 @@ func runnerFor(cmd *cobra.Command, root *store.Root, st *store.Store, eng engine
 			dirs.GoBuildCache,
 			dirs.GoModCache,
 			dirs.Tmp),
+		// A test suite binds port 0 and connects to whatever the kernel
+		// returns, so no allowlist can name those ports in advance. The range
+		// holds no services, and TCPDeny below keeps it that way even if an
+		// operator has moved one into it.
+		AllowEphemeralTCP: true,
+		TCPDeny:           servicePorts(cfg),
 	}
 	for _, port := range cfg.Sandbox.AllowedTCPConnect {
 		r.SandboxSpec.TCPConnect = append(r.SandboxSpec.TCPConnect, uint16(port)) //nolint:gosec // operator-configured port
@@ -581,4 +589,30 @@ func reviewProvider(root *store.Root) (llm.Provider, error) {
 		return nil, err
 	}
 	return router.For(llm.RoleReview)
+}
+
+// servicePorts lists the ports this installation's own services listen on, so
+// the ephemeral grant never opens one.
+//
+// The supervisor API is the one that matters: it serves every workspace's
+// status and the dashboard, and a task reaching it would cross the boundary
+// §6.2 draws. The inference port is listed too — when inference is embedded it
+// is granted deliberately through TCPConnect, and a deliberate grant is a
+// different thing from one a range happened to cover.
+func servicePorts(cfg config.Config) []uint16 {
+	var out []uint16
+	add := func(p int) {
+		if p > 0 && p <= 65535 {
+			out = append(out, uint16(p)) //nolint:gosec // bounds checked above
+		}
+	}
+	if _, portStr, err := net.SplitHostPort(cfg.API.Addr); err == nil {
+		if p, err := strconv.Atoi(portStr); err == nil {
+			add(p)
+		}
+	}
+	add(cfg.Inference.Port)
+	add(cfg.Egress.DepsPort)
+	add(cfg.Egress.DocsPort)
+	return out
 }
