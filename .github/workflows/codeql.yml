@@ -16,6 +16,15 @@ jobs:
   analyze:
     name: Analyze Go
     runs-on: ubuntu-latest
+    # A pull request opened by Dependabot runs with a read-only token and no
+    # access to secrets, by GitHub's design. `security-events: write` is
+    # therefore unobtainable there and the upload at the end of `analyze`
+    # fails — not because anything is wrong with the code, which init and
+    # autobuild have already compiled by that point. Every dependency bump
+    # would carry a red check that means nothing, which is how a maintainer
+    # learns to stop reading them. The push to main covers the merged result,
+    # and that is the run the security tab is built from.
+    if: github.actor != 'dependabot[bot]'
     permissions:
       security-events: write
       actions: read
