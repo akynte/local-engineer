@@ -186,8 +186,14 @@ func (s *Store) RestoreFrom(dir string, force bool) ([]string, error) {
 type TaskDirs struct {
 	// Worktrees is where per-task checkouts live.
 	Worktrees string
-	// GoBuildCache and GoModCache are per-workspace, so one project's build
-	// cache never serves another's.
+	// GoBuildCache is per-workspace, so one project's build cache never
+	// serves another's. GoModCache is the shared provisioning cache, because
+	// a downloaded module is not workspace state: it is content-addressed and
+	// checksum-verified by go.sum, it carries nothing identifying the project
+	// that asked for it, and §2.2's isolation is about project content — so
+	// two workspaces needing the same module version should not download it
+	// twice, which is what the doc comment on Layout.ProvisioningDir already
+	// says.
 	GoBuildCache string
 	GoModCache   string
 	// Tmp is the task's only visible temporary directory.
@@ -199,7 +205,7 @@ func (s *Store) TaskDirs() (TaskDirs, error) {
 	d := TaskDirs{
 		Worktrees:    filepath.Join(s.Dir(), "worktrees"),
 		GoBuildCache: filepath.Join(s.CacheDir(), "go-build"),
-		GoModCache:   filepath.Join(s.CacheDir(), "go-mod"),
+		GoModCache:   filepath.Join(s.layout.ProvisioningDir("deps"), "go-mod"),
 		Tmp:          s.TmpDir(),
 	}
 	for _, p := range []string{d.Worktrees, d.GoBuildCache, d.GoModCache, d.Tmp} {
