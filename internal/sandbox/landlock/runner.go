@@ -199,11 +199,16 @@ func Apply(spec sandbox.Spec) error {
 			denied[p] = true
 		}
 		lo, hi := EphemeralRange()
-		for p := int(lo); p <= int(hi); p++ {
-			if denied[uint16(p)] {
-				continue
+		// Counted in uint16 so no conversion can truncate a port, and the
+		// termination test is placed after the body: `p <= hi` would never
+		// end when hi is 65535, because the increment wraps to zero.
+		for p := lo; ; p++ {
+			if !denied[p] {
+				rules = append(rules, ll.BindTCP(p), ll.ConnectTCP(p))
 			}
-			rules = append(rules, ll.BindTCP(uint16(p)), ll.ConnectTCP(uint16(p)))
+			if p == hi {
+				break
+			}
 		}
 	}
 
@@ -292,11 +297,12 @@ func EphemeralRange() (lo, hi uint16) {
 	if len(fields) != 2 {
 		return defaultLo, defaultHi
 	}
-	l, err1 := strconv.Atoi(fields[0])
-	h, err2 := strconv.Atoi(fields[1])
-	// A range the kernel would not produce is a parse that went wrong, not a
-	// configuration to honour.
-	if err1 != nil || err2 != nil || l < 1 || h > 65535 || l > h {
+	// Parsed at 16 bits so a value that is not a port cannot become one by
+	// truncation: a range the kernel would not produce is a parse that went
+	// wrong, not a configuration to honour.
+	l, err1 := strconv.ParseUint(fields[0], 10, 16)
+	h, err2 := strconv.ParseUint(fields[1], 10, 16)
+	if err1 != nil || err2 != nil || l < 1 || l > h {
 		return defaultLo, defaultHi
 	}
 	return uint16(l), uint16(h)

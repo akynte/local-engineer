@@ -62,17 +62,14 @@ func TestEveryEvidenceFieldIsRendered(t *testing.T) {
 			}
 			continue
 		}
-		marker := strings.ToUpper(name) + "-MARKER"
-		// The markers are built from the field names, so a renamed field
-		// fails here rather than passing by accident.
-		switch name {
-		case "Summary", "Findings", "OutOfScope", "Diff", "PolicyReasons", "ReviewConcerns":
-			marker = map[string]string{
-				"Summary": "SUMMARY-MARKER", "Findings": "FINDING-MARKER",
-				"OutOfScope": "OUTOFSCOPE-MARKER", "Diff": "DIFF-MARKER",
-				"PolicyReasons": "POLICY-MARKER", "ReviewConcerns": "CONCERN-MARKER",
-			}[name]
-		default:
+		// Each marker is listed against its field by hand, so a renamed or
+		// newly added field fails here rather than passing by accident.
+		marker, known := map[string]string{
+			"Summary": "SUMMARY-MARKER", "Findings": "FINDING-MARKER",
+			"OutOfScope": "OUTOFSCOPE-MARKER", "Diff": "DIFF-MARKER",
+			"PolicyReasons": "POLICY-MARKER", "ReviewConcerns": "CONCERN-MARKER",
+		}[name]
+		if !known {
 			t.Fatalf("broker.Evidence gained the field %q and this test does not know how it "+
 				"reaches the operator. Render it in writeEvidence, or add it to "+
 				"renderedIndirectly with the reason.", name)
