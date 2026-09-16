@@ -331,6 +331,7 @@ func TestAConditionalCheckThatCouldNotRunDoesNotBlock(t *testing.T) {
 		{Recipe: "go build", Kind: recipe.KindBuild, Status: recipe.Pass, Candidate: cand},
 		{Recipe: "go vet", Kind: recipe.KindVet, Status: recipe.Pass, Candidate: cand},
 		{Recipe: "go test", Kind: recipe.KindTest, Status: recipe.Pass, Candidate: cand},
+		{Recipe: "gofmt", Kind: recipe.KindFormat, Status: recipe.Pass, Candidate: cand},
 		// A tool that is not installed, and one that does not apply here.
 		// Neither says anything about the code, so neither may block.
 		{Recipe: "semgrep", Kind: recipe.KindAnalyzer, Status: recipe.Error, Candidate: cand},
@@ -348,6 +349,7 @@ func TestAStaleConditionalFailureDoesNotBlock(t *testing.T) {
 		{Recipe: "go build", Kind: recipe.KindBuild, Status: recipe.Pass, Candidate: "current"},
 		{Recipe: "go vet", Kind: recipe.KindVet, Status: recipe.Pass, Candidate: "current"},
 		{Recipe: "go test", Kind: recipe.KindTest, Status: recipe.Pass, Candidate: "current"},
+		{Recipe: "gofmt", Kind: recipe.KindFormat, Status: recipe.Pass, Candidate: "current"},
 		{Recipe: "semgrep", Kind: recipe.KindAnalyzer, Status: recipe.Fail, Candidate: "older"},
 	}
 	if ok, reasons := task.Accept(recipe.Standard, results, "current", nil, task.Effect{Made: true, Expected: true}); !ok {

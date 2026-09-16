@@ -40,7 +40,7 @@ func (l Level) Includes(k Kind) bool {
 	case Low:
 		return k == KindBuild
 	case Standard:
-		return k == KindBuild || k == KindVet || k == KindTest
+		return k == KindBuild || k == KindVet || k == KindTest || k == KindFormat
 	case High:
 		return true
 	}
@@ -207,7 +207,17 @@ func Required(level Level) []Kind {
 	case Low:
 		return []Kind{KindBuild}
 	case Standard:
-		return []Kind{KindBuild, KindVet, KindTest}
+		// KindFormat is here rather than only at High because CI runs
+		// `make fmt-check` on every change, so a contract that accepts
+		// unformatted code accepts work the project will reject — and an
+		// acceptance that CI overturns is not an acceptance. It costs almost
+		// nothing to run, unlike the race detector and the linters that make
+		// High expensive, so there is no reason to defer it to a level people
+		// reach for only sometimes.
+		//
+		// This is not hypothetical: a task accepted at this level merged a
+		// test file whose imports were out of order.
+		return []Kind{KindBuild, KindVet, KindTest, KindFormat}
 	case High:
 		return []Kind{KindBuild, KindVet, KindTest, KindRace, KindFormat}
 	}

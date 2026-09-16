@@ -10,8 +10,8 @@ import (
 	"github.com/akynte/local-engineer/internal/recipe"
 	"github.com/akynte/local-engineer/internal/sandbox"
 	"github.com/akynte/local-engineer/internal/store"
-	"github.com/akynte/local-engineer/internal/worktree"
 	"github.com/akynte/local-engineer/internal/workspace"
+	"github.com/akynte/local-engineer/internal/worktree"
 )
 
 // TestVerificationSandboxUsesSharedModuleCache verifies the sandbox spec that

@@ -27,6 +27,7 @@ func standardPass(candidate string) []recipe.Result {
 		passResult(recipe.KindBuild, candidate),
 		passResult(recipe.KindVet, candidate),
 		passResult(recipe.KindTest, candidate),
+		passResult(recipe.KindFormat, candidate),
 	}
 }
 

@@ -135,8 +135,8 @@ func TestVerificationLevels(t *testing.T) {
 	if !recipe.High.Includes(recipe.KindRace) {
 		t.Error("high must include the race detector")
 	}
-	if got := len(recipe.GoRecipes(recipe.Standard)); got != 3 {
-		t.Errorf("standard should select 3 recipes, got %d", got)
+	if got := len(recipe.GoRecipes(recipe.Standard)); got != 4 {
+		t.Errorf("standard should select 4 recipes, got %d", got)
 	}
 	// High selects every kind, so it must be a superset of standard rather
 	// than a fixed count: a hardcoded number here fails whenever a recipe is

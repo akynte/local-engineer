@@ -17,6 +17,7 @@ func TestATaskThatChangedNothingIsNotAccepted(t *testing.T) {
 	const c = "unchanged"
 	green := []recipe.Result{
 		pass(recipe.KindBuild, c), pass(recipe.KindVet, c), pass(recipe.KindTest, c),
+		pass(recipe.KindFormat, c),
 	}
 
 	ok, reasons := task.Accept(recipe.Standard, green, c, nil,
@@ -43,6 +44,7 @@ func TestTheSameEvidenceIsAcceptedWhenTheTaskChangedSomething(t *testing.T) {
 	const c = "changed"
 	green := []recipe.Result{
 		pass(recipe.KindBuild, c), pass(recipe.KindVet, c), pass(recipe.KindTest, c),
+		pass(recipe.KindFormat, c),
 	}
 
 	ok, reasons := task.Accept(recipe.Standard, green, c, nil,
@@ -59,6 +61,7 @@ func TestAVerificationOnlyRunIsNotRefusedForChangingNothing(t *testing.T) {
 	const c = "unchanged"
 	green := []recipe.Result{
 		pass(recipe.KindBuild, c), pass(recipe.KindVet, c), pass(recipe.KindTest, c),
+		pass(recipe.KindFormat, c),
 	}
 
 	ok, reasons := task.Accept(recipe.Standard, green, c, nil,

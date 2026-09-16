@@ -25,18 +25,43 @@ func fail(kind recipe.Kind, candidate, headline string) recipe.Result {
 	}
 }
 
-func TestStandardLevelRequiresBuildVetAndTest(t *testing.T) {
+func TestStandardLevelRequiresBuildVetTestAndFormat(t *testing.T) {
 	const c = "cand-1"
 	ok, reasons := task.Accept(recipe.Standard, []recipe.Result{
 		pass(recipe.KindBuild, c), pass(recipe.KindVet, c), pass(recipe.KindTest, c),
+		pass(recipe.KindFormat, c),
 	}, c, nil, task.Effect{Made: true, Expected: true})
 
 	if !ok {
 		t.Fatalf("expected acceptance, got: %v", reasons)
 	}
 	// "Why did this pass" must be as answerable as "why did it fail".
-	if len(reasons) != 3 {
+	if len(reasons) != 4 {
 		t.Errorf("acceptance must explain itself, got %v", reasons)
+	}
+}
+
+// CI runs `make fmt-check` on every change, so a contract that accepts
+// unformatted code hands someone an acceptance that CI then overturns. A task
+// accepted at standard merged a test file with its imports out of order, which
+// is what put this rule at this level.
+func TestStandardRefusesWhenFormattingWasNotChecked(t *testing.T) {
+	const c = "cand-1"
+	ok, reasons := task.Accept(recipe.Standard, []recipe.Result{
+		pass(recipe.KindBuild, c), pass(recipe.KindVet, c), pass(recipe.KindTest, c),
+	}, c, nil, task.Effect{Made: true, Expected: true})
+
+	if ok {
+		t.Fatal("standard accepted a change whose formatting was never checked")
+	}
+	var named bool
+	for _, r := range reasons {
+		if strings.Contains(r, "format") {
+			named = true
+		}
+	}
+	if !named {
+		t.Errorf("the refusal must name the missing check, got %v", reasons)
 	}
 }
 
