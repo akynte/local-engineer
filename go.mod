@@ -4,9 +4,10 @@ go 1.26.0
 
 // Minimum patch release, not a language requirement: the standard library in
 // 1.26.0 through 1.26.5 carries advisories that govulncheck reports against
-// this code (net/http, crypto/tls, crypto/x509, net/url, encoding/asn1).
+// this code (net/http, crypto/tls, crypto/x509, net/url, encoding/asn1), and
+// this names the current patch rather than the first one that cleared them.
 // Building with an older toolchain reintroduces them.
-toolchain go1.26.6
+toolchain go1.26.8
 
 require (
 	github.com/fsnotify/fsnotify v1.10.1
