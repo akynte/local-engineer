@@ -1,15 +1,43 @@
+# The build stage runs `COPY . .`, so everything the compiler does not need is
+# excluded here: a smaller context is a faster build and a smaller chance of a
+# local file reaching an image.
 .git
 .github
+.devcontainer
+
+# Documentation, examples and the evaluation set are not compiled into `le`.
 docs
 evals
 examples
 *.md
 !README.md
-.devcontainer
+
+# Build output and local tool state.
 dist
 bin
 tmp
+site
+coverage.out
+*.test
+*.prof
+*.pprof
+
+# Runtime data: SQLite databases, the data directory, and task transcripts.
+le-data
 *.db
 *.db-wal
 *.db-shm
+.run-*.log
+
+# Workspace pins and local editor / assistant configuration.
 .le
+.claude
+.idea
+.vscode
+
+# Installed by the image from the lockfile, never copied from the host.
+**/node_modules
+
+# Never part of a build context.
+.env
+.env.*
