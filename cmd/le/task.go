@@ -89,6 +89,7 @@ func engineFor(cmd *cobra.Command, root *store.Root, st *store.Store) (engine.En
 		opts.Temperature = profile.Sampling.Temperature
 		opts.Thinking = profile.Thinking
 		opts.ContextTokens = profile.ContextTokens
+		opts.MaxSteps = profile.MaxSteps
 	}
 	eng, err := native.New(opts)
 	if err != nil {

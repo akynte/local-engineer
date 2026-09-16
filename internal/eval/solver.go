@@ -50,6 +50,7 @@ type SystemSolver struct {
 	Temperature   float64
 	Thinking      string
 	ContextTokens int
+	MaxSteps      int
 	// Analyzers are the language analyzers `le index` runs, so a task copy is
 	// indexed exactly the way a real repository would be. Without them the
 	// graph holds containment edges only, and the graph ablation compares two
@@ -287,6 +288,7 @@ func (s *SystemSolver) engineFor(arm Arm, provider llm.Provider, st *store.Store
 		MaxTools: s.MaxTools, MaxTokens: s.MaxTokens,
 		Temperature: s.Temperature, Thinking: s.Thinking,
 		ContextTokens: s.ContextTokens,
+		MaxSteps:      s.MaxSteps,
 	}
 	if arm.Supervised {
 		opts.Retriever = retrieval.New(st)

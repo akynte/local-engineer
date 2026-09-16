@@ -29,6 +29,12 @@ type Profile struct {
 	MaxPacketTokens int `yaml:"max_packet_tokens"`
 	ReservedOutput  int `yaml:"reserved_output_tokens"`
 	ToolSurfaceMax  int `yaml:"max_tools_exposed"`
+	// MaxSteps bounds the tool calls in one engine attempt. It belongs here
+	// rather than in code because how many steps a task needs depends on the
+	// model: a slower or less decisive one spends more of them orienting, and
+	// an attempt cut off mid-investigation produces no edits at all, which the
+	// completion contract then correctly refuses as a task that did nothing.
+	MaxSteps int `yaml:"max_steps"`
 
 	// Admission limits, measured not guessed.
 	PeakVRAMMB  int `yaml:"measured_peak_vram_mb"`
@@ -106,9 +112,13 @@ func FallbackProfile() Profile {
 		MaxPacketTokens: 6000,
 		ReservedOutput:  4096,
 		ToolSurfaceMax:  12,
-		Concurrency:     1,
-		Sampling:        Sampling{Temperature: 0.2, TopP: 0.95, TopK: 40, MinP: 0.05},
-		Thinking:        "auto",
+		// Left at zero on purpose: the engine substitutes its own
+		// DefaultMaxSteps, and duplicating that number here would give two
+		// places to change it and one of them would be missed.
+		MaxSteps:    0,
+		Concurrency: 1,
+		Sampling:    Sampling{Temperature: 0.2, TopP: 0.95, TopK: 40, MinP: 0.05},
+		Thinking:    "auto",
 	}
 }
 
@@ -126,6 +136,9 @@ func (p Profile) Validate() error {
 	if p.MaxPacketTokens+p.ReservedOutput > p.ContextTokens {
 		return fmt.Errorf("profile %s: max_packet_tokens (%d) plus reserved_output_tokens (%d) exceeds context_tokens (%d)",
 			p.Name, p.MaxPacketTokens, p.ReservedOutput, p.ContextTokens)
+	}
+	if p.MaxSteps < 0 {
+		return fmt.Errorf("profile %s: max_steps cannot be negative", p.Name)
 	}
 	switch p.Thinking {
 	case "off", "auto", "always", "":

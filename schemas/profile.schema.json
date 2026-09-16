@@ -31,6 +31,11 @@
       "minimum": 1,
       "description": "A small model given twenty tools picks the wrong one far more often than one given eight."
     },
+    "max_steps": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Tool calls allowed in one engine attempt. How many a task needs depends on the model: one that spends its budget orienting is cut off before it edits anything, and an attempt that changed nothing satisfies no completion contract."
+    },
     "measured_peak_vram_mb": { "type": "integer", "minimum": 0 },
     "measured_peak_ram_mb": { "type": "integer", "minimum": 0 },
     "max_concurrent_tasks": { "type": "integer", "minimum": 1 },
