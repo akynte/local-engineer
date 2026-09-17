@@ -120,11 +120,17 @@ type ComparisonResult struct {
 	BaselineRate   Rate    `json:"baseline_rate"`
 	VariantRate    Rate    `json:"variant_rate"`
 	Delta          float64 `json:"delta"`
-	// Significant is false whenever the intervals overlap. It is deliberately
-	// a weak test: with a set this size, claiming a difference the data cannot
-	// support is the likeliest way these numbers mislead.
-	Significant bool   `json:"significant"`
-	Verdict     string `json:"verdict"`
+	// Significant is false whenever the intervals overlap. It is kept because
+	// the intervals are still what the rates are reported with, but it is no
+	// longer what decides the verdict: it treats two arms given the same tasks
+	// as independent samples, and answers "cannot tell" long after the data
+	// could tell.
+	Significant bool `json:"significant"`
+	// Paired is what the verdict is drawn from. Every arm sees the same tasks,
+	// so the comparison is made within a task and the difficulty of that task
+	// cancels instead of being counted as noise.
+	Paired  Paired `json:"paired"`
+	Verdict string `json:"verdict"`
 }
 
 // Aggregate turns outcomes into a report.
@@ -138,6 +144,21 @@ func Aggregate(outcomes []Outcome, tasks []Task) Report {
 	for _, t := range tasks {
 		rep.LeakMix[t.LeakRisk]++
 	}
+	rep.derive()
+	return rep
+}
+
+// derive recomputes everything that is a function of the outcomes.
+//
+// It is separate from Aggregate so that a saved result file can be re-analysed
+// without being re-run. The outcomes are the measurement; the arms, the
+// comparisons and the caveats are readings taken from it, and a reading that
+// improves should improve for runs that have already been paid for. Eight GPU
+// hours should not have to be spent again to apply a better test to them.
+func (r *Report) derive() {
+	outcomes := r.Outcomes
+	r.Arms = nil
+	r.Comparisons = nil
 
 	byArm := map[string][]Outcome{}
 	var order []string
@@ -151,7 +172,7 @@ func Aggregate(outcomes []Outcome, tasks []Task) Report {
 	rates := map[string]Rate{}
 	for _, arm := range order {
 		res := summarise(arm, byArm[arm])
-		rep.Arms = append(rep.Arms, res)
+		r.Arms = append(r.Arms, res)
 		rates[arm] = res.Solved
 	}
 
@@ -167,13 +188,13 @@ func Aggregate(outcomes []Outcome, tasks []Task) Report {
 			BaselineRate:   base, VariantRate: variant,
 			Delta:       variant.Value - base.Value,
 			Significant: !base.Overlaps(variant),
+			Paired:      pairArms(outcomes, c.Baseline, c.Variant),
 		}
 		cr.Verdict = verdictFor(cr)
-		rep.Comparisons = append(rep.Comparisons, cr)
+		r.Comparisons = append(r.Comparisons, cr)
 	}
 
-	rep.Caveats = caveats(rep)
-	return rep
+	r.Caveats = caveats(*r)
 }
 
 func summarise(arm string, outcomes []Outcome) ArmResult {
@@ -229,17 +250,33 @@ func summarise(arm string, outcomes []Outcome) ArmResult {
 	return res
 }
 
+// verdictFor reads the paired test, and says how many pairs it rests on.
+//
+// A verdict with three discordant pairs behind it and a verdict with thirty
+// are different claims, and a reader who is shown only "better by 20 points"
+// cannot tell them apart.
 func verdictFor(c ComparisonResult) string {
+	p := c.Paired
 	switch {
 	case c.BaselineRate.Total == 0 || c.VariantRate.Total == 0:
 		return "not run"
-	case c.Significant && c.Delta > 0:
-		return fmt.Sprintf("%s is better by %.0f points", c.Variant, c.Delta*100)
-	case c.Significant && c.Delta < 0:
-		return fmt.Sprintf("%s is WORSE by %.0f points", c.Variant, -c.Delta*100)
+	case p.Pairs() == 0:
+		return "no shared runs to compare"
+	case p.Decided() && c.Delta > 0:
+		return fmt.Sprintf("%s is better: it solved %d that %s did not and lost %d the other way "+
+			"(exact p=%.3f over %d disagreeing pair(s))",
+			c.Variant, p.VariantOnly, c.Baseline, p.BaselineOnly, p.P, p.Discordant())
+	case p.Decided() && c.Delta < 0:
+		return fmt.Sprintf("%s is WORSE: it lost %d that %s solved and won %d back "+
+			"(exact p=%.3f over %d disagreeing pair(s))",
+			c.Variant, p.BaselineOnly, c.Baseline, p.VariantOnly, p.P, p.Discordant())
+	case p.Discordant() == 0:
+		return fmt.Sprintf("the two arms agreed on all %d shared run(s); this set did not "+
+			"separate them at all", p.Pairs())
 	default:
-		return fmt.Sprintf("no detectable difference (%.0f-point gap, intervals overlap; "+
-			"this set is too small to tell)", c.Delta*100)
+		return fmt.Sprintf("no detectable difference (%.0f-point gap; the arms disagreed on "+
+			"%d of %d shared run(s), %d–%d, exact p=%.2f)",
+			c.Delta*100, p.Discordant(), p.Pairs(), p.VariantOnly, p.BaselineOnly, p.P)
 	}
 }
 
@@ -425,7 +462,17 @@ func LoadReport(path string) (Report, error) {
 		return Report{}, err
 	}
 	var r Report
-	return r, json.Unmarshal(body, &r)
+	if err := json.Unmarshal(body, &r); err != nil {
+		return Report{}, err
+	}
+	// Re-derive rather than trust what the file recorded. The outcomes are the
+	// measurement and they do not change; the arms, comparisons and caveats
+	// are a reading of them, and this is what lets a sharper test be applied
+	// to a run that has already been paid for.
+	if len(r.Outcomes) > 0 {
+		r.derive()
+	}
+	return r, nil
 }
 
 // stability reports how many task/arm cells did not agree with themselves

@@ -117,12 +117,37 @@ says so in its caveats.
 Rates are reported with a 95% Wilson interval, not as bare percentages. Wilson
 rather than the normal approximation because at small samples and rates near 0
 or 1 the normal interval produces bounds outside [0,1] — which is exactly the
-regime a twenty-task set sits in.
+regime this set sits in.
 
-A comparison is called significant only when the two intervals do not overlap.
-That is a deliberately weak test: with a set this size, claiming a difference
-the data cannot support is the likeliest way these numbers mislead. A 10-point
-gap over 20 tasks is reported as "no detectable difference".
+**Comparisons between arms are paired, not independent.** Every arm is given
+the same tasks on the same passes, so the dominant source of variance — one
+task simply being harder than another — is shared between the arms and cancels
+when the comparison is made within a task. Comparing two Wilson intervals
+throws that away: it asks whether two independently drawn rates differ, which
+is a question about a design this evaluation does not have, and it answers
+"cannot tell" long after the data could tell.
+
+The test is **McNemar's, exact**, because the disagreeing counts here are
+single digits and the chi-squared approximation is not trustworthy there.
+Pairs where both arms solved a task, or neither did, carry no information about
+which arm is better and are excluded by construction; only the runs where the
+arms disagree can move a verdict. A run that errored drops its whole pair — a
+harness fault is not evidence about either arm, and keeping the pair would
+score the fault as a loss for whichever side happened to run.
+
+Every verdict states the evidence it rests on: how many shared runs the arms
+disagreed on, which way, and the exact p. "Better by 20 points" over three
+disagreements and over thirty are different claims, and a reader shown only the
+gap cannot tell them apart. It also tells you whether more runs would help — a
+comparison that splits 3–5 over 25 shared runs has a small effect, not an
+unmeasured one, and no affordable number of repetitions will resolve it.
+
+**Analysis is re-derived from the outcomes, never read back from the file.**
+`le eval report` recomputes the arms, the comparisons and the caveats from the
+saved runs every time. The outcomes are the measurement and they do not change;
+everything else is a reading taken from them, and a reading that improves
+should improve for runs that have already been paid for. Eight GPU-hours should
+not have to be spent again to apply a better test to them.
 
 ### Running it
 

@@ -1,6 +1,7 @@
 package eval_test
 
 import (
+	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -79,8 +80,16 @@ func TestOverlappingIntervalsAreNotSignificant(t *testing.T) {
 		if c.Significant {
 			t.Errorf("a 10-point gap over 20 tasks must not be called significant: %+v", c)
 		}
-		if !strings.Contains(c.Verdict, "too small") {
-			t.Errorf("the verdict should say why it cannot tell: %q", c.Verdict)
+		if !strings.Contains(c.Verdict, "no detectable difference") {
+			t.Errorf("the verdict should say it cannot tell: %q", c.Verdict)
+		}
+		// The reader has to be able to see how thin the evidence is, or
+		// "cannot tell" is indistinguishable from "measured and equal".
+		if !strings.Contains(c.Verdict, "disagreed on") {
+			t.Errorf("the verdict must name the evidence it rests on: %q", c.Verdict)
+		}
+		if c.Paired.Discordant() != 2 {
+			t.Errorf("discordant = %d, want 2", c.Paired.Discordant())
 		}
 	}
 	if !found {
@@ -186,17 +195,24 @@ func TestFormatIncludesIntervalsAndCaveats(t *testing.T) {
 }
 
 // runs builds n outcomes for an arm with the given solved/unsolved split.
+//
+// Each outcome is given a distinct task id, numbered from zero, so that two
+// arms built this way pair up run for run. Without it every outcome carried
+// the zero task id and the whole arm collapsed into one pair, which made every
+// comparison rest on a single observation.
 func runs(arm string, solved, unsolved int) []eval.Outcome {
 	var out []eval.Outcome
 	for i := 0; i < solved; i++ {
 		out = append(out, eval.Outcome{
-			Arm: arm, Category: eval.CategoryBugFix, Solved: true, Claimed: true,
+			TaskID: fmt.Sprintf("t%d", i),
+			Arm:    arm, Category: eval.CategoryBugFix, Solved: true, Claimed: true,
 			Duration: time.Second, Attempts: 1,
 		})
 	}
 	for i := 0; i < unsolved; i++ {
 		out = append(out, eval.Outcome{
-			Arm: arm, Category: eval.CategoryBugFix, Solved: false, Claimed: false,
+			TaskID: fmt.Sprintf("t%d", solved+i),
+			Arm:    arm, Category: eval.CategoryBugFix, Solved: false, Claimed: false,
 			Duration: time.Second, Attempts: 1,
 		})
 	}
