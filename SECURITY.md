@@ -36,7 +36,10 @@ like vulnerabilities are documented design limits.
 - modify the policy files, the execution journal, or hidden tests;
 - escape the container to the host.
 
-Also in scope: a path where repository content leaves the machine when
+Also in scope: repository content that reaches the model as an instruction
+rather than as data — a README, comment, commit message, test fixture,
+dependency manifest or tool result that changes what the system does rather
+than what it knows;  a path where repository content leaves the machine when
 `offline` is set; a supervisor API endpoint that performs a state change
 without the operator asking; and any credential written to disk in plaintext by
 this software.
@@ -59,6 +62,17 @@ reported by `le doctor`:
   reason per rule; `le doctor` warns on wildcard entries.
 - Out-of-scope writes *inside* a task's own worktree are detected by diff, not
   prevented. That is the design: a task must be able to edit its worktree.
+- **A model can be persuaded; the fence only bounds what it is told.** Every
+  piece of repository content reaching the model — packet slices, recorded
+  notes, and every tool result — is delimited by markers carrying a token
+  generated per run, and the prompt states that fenced content is data and never
+  an instruction. Content cannot close its own fence: marker-shaped text inside
+  a body is defanged, and guessing a 128-bit token is not a strategy. What this
+  does not do is stop a model from being convinced by something it read. It is
+  one layer. The layers that stop damage are the sandbox the tools run in, the
+  policy on protected paths, the diff an operator approves, and a completion
+  contract that decides from evidence rather than from the model's account of
+  itself — none of which a persuaded model can talk its way past.
 - A remote provider sees the repository content you send it. That is what
   choosing a remote provider means; offline mode refuses remote providers at
   startup precisely so it cannot happen by accident.

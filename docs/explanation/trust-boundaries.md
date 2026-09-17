@@ -33,6 +33,22 @@ when gates are off — a system running without them should never be a surprise.
 carries deterministic evidence rather than the model's account of its own work
 precisely so that reading it is worthwhile.
 
+### The repository and the model
+
+Repository content is untrusted input, and it reaches the model through two
+channels: the retrieval packet, and the result of every tool that reads a file,
+searches the source or reads the git log. Both are delimited with markers
+carrying a token generated per run, and the system prompt states that anything
+between them is data to be analysed rather than an instruction to follow.
+Marker-shaped text inside a body is defanged, so content cannot close its own
+fence and speak outside it.
+
+**Does not protect against:** a model that reads the content, is not confused
+about where it came from, and is persuaded by it anyway. That is why nothing
+downstream trusts the model's conclusions: the sandbox bounds what a tool can
+touch, the policy bounds what may change, and acceptance is decided from
+verification evidence.
+
 ### The supervisor and the task
 
 Everything the model does is a tool call the supervisor executes. Paths are

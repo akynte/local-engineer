@@ -12,6 +12,7 @@ import (
 	"github.com/akynte/local-engineer/internal/models"
 	"github.com/akynte/local-engineer/internal/recipe"
 	"github.com/akynte/local-engineer/internal/retrieval"
+	"github.com/akynte/local-engineer/internal/trust"
 	"github.com/akynte/local-engineer/prompts"
 )
 
@@ -51,6 +52,11 @@ type Engine struct {
 	// Logf reports each tool call. Nil discards them.
 	Logf func(format string, args ...any)
 
+	// fence marks repository content so it cannot be read as an instruction.
+	// It carries a token generated per engine, which is what a document would
+	// have to guess to close the fence and speak outside it.
+	fence trust.Fence
+
 	tools []llm.ToolDef
 }
 
@@ -85,10 +91,17 @@ func New(o Options) (*Engine, error) {
 		// (DR-4).
 		return nil, &llm.UnsupportedError{Provider: o.Provider.Name(), Capability: "tool calling"}
 	}
+	// One fence per engine, so every message in a run shares a token and
+	// content copied from an earlier task cannot forge a marker in this one.
+	fence, err := trust.NewFence()
+	if err != nil {
+		return nil, err
+	}
 	e := &Engine{
 		Provider: o.Provider, Retriever: o.Retriever, Graph: o.Graph, Recipes: o.Recipes,
 		MaxSteps: o.MaxSteps, MaxTools: o.MaxTools, Temperature: o.Temperature,
-		MaxTokens: o.MaxTokens, Thinking: o.Thinking, ContextTokens: o.ContextTokens, Logf: o.Logf,
+		MaxTokens: o.MaxTokens, Thinking: o.Thinking, ContextTokens: o.ContextTokens,
+		Logf: o.Logf, fence: fence,
 	}
 	if e.MaxSteps <= 0 {
 		e.MaxSteps = DefaultMaxSteps
@@ -312,8 +325,14 @@ func (e *Engine) Step(ctx context.Context, req engine.Request) (*engine.Response
 			res := e.Exec(ctx, req.Worktree, call)
 			e.logf("  %s%s (%s)", call.Name, failMark(res), time.Since(start).Round(time.Millisecond))
 
+			// A tool result is repository content by another route: read_file
+			// returns a file, search_code returns matching lines, git_log
+			// returns commit messages someone else wrote. Fencing only the
+			// packet would leave the larger channel open, and it is the one
+			// the model reads most.
 			messages = append(messages, llm.Message{
-				Role: "tool", ToolCallID: call.ID, Name: call.Name, Content: res.Content,
+				Role: "tool", ToolCallID: call.ID, Name: call.Name,
+				Content: e.ensureFence().Wrap("result of "+call.Name, res.Content),
 			})
 			if res.Edited {
 				resp.Edited = true
@@ -347,8 +366,32 @@ func (e *Engine) seed(req engine.Request) []llm.Message {
 }
 
 func (e *Engine) brief(req engine.Request) string {
+	return e.briefWith(req, e.ensureFence())
+}
+
+// ensureFence returns this engine's fence, making one if it has none.
+//
+// New always sets one, so in production this is a no-op. It exists because an
+// Engine built by struct literal — which tests do — would otherwise render
+// unfenced content, and a defence that depends on the constructor being used is
+// one an ordinary refactor can remove without failing anything.
+func (e *Engine) ensureFence() trust.Fence {
+	if !e.fence.Valid() {
+		if made, err := trust.NewFence(); err == nil {
+			e.fence = made
+		}
+	}
+	return e.fence
+}
+
+// briefWith renders the opening message with a given fence, so a test can pin
+// the token instead of matching a random one.
+func (e *Engine) briefWith(req engine.Request, fence trust.Fence) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Objective: %s\n", req.Objective)
+	// Stated once, above everything it governs. The objective is the only
+	// instruction in this message; what follows it came out of the repository.
+	b.WriteString("\n" + fence.Preamble() + "\n")
 	if req.Attempt > 1 {
 		fmt.Fprintf(&b, "\nThis is attempt %d. The previous attempt did not pass verification.\n", req.Attempt)
 	}
@@ -364,7 +407,10 @@ func (e *Engine) brief(req engine.Request) string {
 			if src == "" {
 				src = "unattributed"
 			}
-			fmt.Fprintf(&b, "  [%s, from %s] %s\n", n.Kind, src, n.Text)
+			// A note is written by whoever had commit access, which is not
+			// necessarily the operator sitting at this task.
+			b.WriteString(fence.Wrap(
+				fmt.Sprintf("note %s from %s", n.Kind, src), n.Text) + "\n")
 		}
 		if req.Packet.NotesDropped > 0 {
 			fmt.Fprintf(&b, "  (%d more note(s) did not fit)\n", req.Packet.NotesDropped)
@@ -380,10 +426,14 @@ func (e *Engine) brief(req engine.Request) string {
 			}
 			b.WriteString("\n")
 			if s.Signature != "" {
-				fmt.Fprintf(&b, "  %s\n", s.Signature)
+				fmt.Fprintf(&b, "  %s\n", fence.Neutralise(s.Signature))
 			}
 			if body := strings.TrimSpace(s.Body); body != "" {
-				fmt.Fprintf(&b, "%s\n", indent(body, "  "))
+				origin := s.Path
+				if s.Symbol != "" && s.Symbol != s.Path {
+					origin = fmt.Sprintf("%s %s", s.Path, s.Symbol)
+				}
+				b.WriteString(fence.Wrap(origin, body) + "\n")
 			}
 		}
 		if req.Packet.Impact != nil && len(req.Packet.Impact.Consumers) > 0 {
@@ -398,14 +448,6 @@ func (e *Engine) brief(req engine.Request) string {
 		}
 	}
 	return b.String()
-}
-
-func indent(s, prefix string) string {
-	lines := strings.Split(s, "\n")
-	for i, l := range lines {
-		lines[i] = prefix + l
-	}
-	return strings.Join(lines, "\n")
 }
 
 // SetRecipeRunner gives the engine the same sandboxed recipe runner the
