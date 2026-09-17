@@ -142,6 +142,32 @@ gap cannot tell them apart. It also tells you whether more runs would help — a
 comparison that splits 3–5 over 25 shared runs has a small effect, not an
 unmeasured one, and no affordable number of repetitions will resolve it.
 
+**Runs are graded, not just passed or failed.** Solved stays the headline and
+stays binary: a task is done or it is not, and partial credit is not an outcome
+anyone can ship. But a binary result carries one bit per run, and separating two
+arms that differ slightly then needs more runs than the hardware can produce in
+a working day. Each task's hidden acceptance is already several independent
+assertions, so the harness records how many of them held. One bit becomes
+several, from exactly the same run.
+
+The count comes from the task, not the output: `go test` names its failures and
+says nothing about what passed, so the set of hidden tests is read from the
+task's own acceptance files and the failures are subtracted from it. A failing
+run that names no hidden test did not reach them — a build error or a timeout —
+and scores zero, because the alternative is awarding full marks to the code that
+compiles least.
+
+Arms are then compared on the mean per-pair difference in score, with a
+bootstrap interval over the pairs. Bootstrap because scores are bounded,
+discrete and skewed, which is the regime where a normal interval is wrong. The
+graded comparison answers a narrower question than Solved does — "did this arm
+get further" is not "did this arm do the job" — so it is reported beside the
+binary test and never in place of it. What it buys is resolution: on the first
+large-fixture run it turned "the arms disagreed on 8 of 25 runs, p=0.73" into an
+effect of -4.7 points bounded at [-17.3, +8.0], and showed that the bare
+baseline, which solved nothing at all, was still satisfying 40% of the hidden
+tests.
+
 **Analysis is re-derived from the outcomes, never read back from the file.**
 `le eval report` recomputes the arms, the comparisons and the caveats from the
 saved runs every time. The outcomes are the measurement and they do not change;

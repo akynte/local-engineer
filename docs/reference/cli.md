@@ -284,6 +284,18 @@ ground truth, so "claimed success and was wrong" is its own number rather than
 something averaged away — read a solved rate without the false-acceptance rate
 beside it and you are reading half the result.
 
+`report` takes `--tasks` as well. A result file written before per-test grading
+existed holds each run's acceptance output but no counts; given the set it was
+run against, `le eval report results.json --tasks evals/tasks` recovers them
+without re-running anything.
+
+Every run is graded as well as judged. `SOLVED` is the only measure of whether a
+task was done; `TESTS` is the mean share of a task's hidden tests a run
+satisfied, and exists because a binary outcome carries one bit per run and
+cannot separate two arms that differ slightly without more runs than the
+hardware can produce. Comparisons report both: an exact paired test on solved,
+and a bootstrap interval on the graded difference.
+
 `--repeat` **defaults to 3** because one run of a cell is a sample rather than
 a measurement. The first real run of this harness changed verdict on 4 of 12
 task/arm cells between passes, which is why repetition is the default rather

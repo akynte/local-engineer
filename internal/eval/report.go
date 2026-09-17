@@ -86,6 +86,12 @@ type ArmResult struct {
 	// every rate above: a harness fault is not evidence about the system.
 	Errored int `json:"errored"`
 
+	// MeanScore is the mean fraction of hidden tests satisfied, over graded
+	// runs. GradedRuns is how many those were: a mean over three runs and a
+	// mean over thirty are different numbers to trust.
+	MeanScore  float64 `json:"mean_score"`
+	GradedRuns int     `json:"graded_runs"`
+
 	MedianDuration time.Duration `json:"median_duration"`
 	MedianAttempts int           `json:"median_attempts"`
 	TotalTokens    int           `json:"total_tokens,omitempty"`
@@ -129,8 +135,12 @@ type ComparisonResult struct {
 	// Paired is what the verdict is drawn from. Every arm sees the same tasks,
 	// so the comparison is made within a task and the difficulty of that task
 	// cancels instead of being counted as noise.
-	Paired  Paired `json:"paired"`
-	Verdict string `json:"verdict"`
+	Paired Paired `json:"paired"`
+	// Score compares how far through each task's hidden tests the arms got.
+	// It has more power than the binary test and answers a narrower question,
+	// so it is reported beside that test rather than in place of it.
+	Score   PairedScore `json:"score"`
+	Verdict string      `json:"verdict"`
 }
 
 // Aggregate turns outcomes into a report.
@@ -189,6 +199,7 @@ func (r *Report) derive() {
 			Delta:       variant.Value - base.Value,
 			Significant: !base.Overlaps(variant),
 			Paired:      pairArms(outcomes, c.Baseline, c.Variant),
+			Score:       pairScores(outcomes, c.Baseline, c.Variant),
 		}
 		cr.Verdict = verdictFor(cr)
 		r.Comparisons = append(r.Comparisons, cr)
@@ -241,6 +252,7 @@ func summarise(arm string, outcomes []Outcome) ArmResult {
 	res.FalseAccept = NewRate(falseAccept, n)
 	res.MissedSuccess = NewRate(missed, n)
 	res.Tampered = NewRate(tampered, n)
+	res.MeanScore, res.GradedRuns = meanScore(valid)
 	res.MedianDuration = medianDuration(durations)
 	res.MedianAttempts = medianInt(attempts)
 
@@ -345,11 +357,21 @@ func (r Report) Format() string {
 	fmt.Fprintf(&b, "Evaluation — %d tasks, %d arms, %s\n\n",
 		r.TaskCount, len(r.Arms), r.RanAt.Format(time.RFC3339))
 
-	fmt.Fprintf(&b, "%-28s %-22s %-22s %s\n", "ARM", "SOLVED", "FALSE ACCEPT", "MEDIAN")
+	fmt.Fprintf(&b, "%-28s %-22s %-22s %-8s %s\n",
+		"ARM", "SOLVED", "FALSE ACCEPT", "TESTS", "MEDIAN")
 	for _, arm := range r.Arms {
-		fmt.Fprintf(&b, "%-28s %-22s %-22s %s\n",
-			arm.Arm, arm.Solved.String(), arm.FalseAccept.String(),
+		tests := "—"
+		if arm.GradedRuns > 0 {
+			tests = fmt.Sprintf("%.0f%%", arm.MeanScore*100)
+		}
+		fmt.Fprintf(&b, "%-28s %-22s %-22s %-8s %s\n",
+			arm.Arm, arm.Solved.String(), arm.FalseAccept.String(), tests,
 			arm.MedianDuration.Round(time.Second))
+	}
+	if graded := gradedArms(r.Arms); graded > 0 {
+		b.WriteString("\nTESTS is the mean share of each task's hidden tests a run satisfied. " +
+			"SOLVED is\nthe only measure of whether the task was done; TESTS exists because it " +
+			"separates\narms from far fewer runs.\n")
 	}
 
 	if len(r.Comparisons) > 0 {
@@ -359,6 +381,15 @@ func (r Report) Format() string {
 			fmt.Fprintf(&b, "    %s: %s\n", c.Baseline, c.BaselineRate)
 			fmt.Fprintf(&b, "    %s: %s\n", c.Variant, c.VariantRate)
 			fmt.Fprintf(&b, "    → %s\n", c.Verdict)
+			if sc := c.Score; sc.Recorded && sc.Pairs > 1 {
+				tail := "which does not exclude no difference"
+				if sc.Decided() {
+					tail = "which excludes no difference"
+				}
+				fmt.Fprintf(&b, "    → on hidden tests: %+.1f points over %d pair(s), "+
+					"95%% [%+.1f, %+.1f], %s\n",
+					sc.MeanDelta*100, sc.Pairs, sc.Low*100, sc.High*100, tail)
+			}
 			fmt.Fprintf(&b, "      isolates: %s\n", c.WhatItIsolates)
 		}
 	}
@@ -503,4 +534,16 @@ func stability(outcomes []Outcome) (passes, unstable, cells int) {
 		}
 	}
 	return passes, unstable, cells
+}
+
+// gradedArms counts the arms that have any graded runs, so the explanation of
+// the TESTS column is printed only when there is a column to explain.
+func gradedArms(arms []ArmResult) int {
+	n := 0
+	for _, a := range arms {
+		if a.GradedRuns > 0 {
+			n++
+		}
+	}
+	return n
 }

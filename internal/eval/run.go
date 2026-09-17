@@ -59,6 +59,11 @@ type Outcome struct {
 
 	// Reasons is what the system said about its own verdict.
 	Reasons []string `json:"reasons,omitempty"`
+	// Grade is how many of the task's hidden tests the run satisfied. Solved
+	// stays the binary ground truth; this exists so that comparing two arms
+	// does not have to rest on one bit per run.
+	Grade Grade `json:"grade"`
+
 	// AcceptanceOutput is the hidden command's output when it failed, which
 	// is what makes a failure diagnosable rather than just a zero.
 	AcceptanceOutput string `json:"acceptance_output,omitempty"`
@@ -208,6 +213,9 @@ func (r *Runner) Run(ctx context.Context, task Task, arm Arm, solver Solver) Out
 		return out
 	}
 	out.Solved = solved && !out.Tampered
+	// Graded before the output is truncated, so the count is exact rather than
+	// a lower bound taken from whatever survived the cut.
+	out.Grade = gradeRun(task, out.Solved, output)
 	if !out.Solved {
 		out.AcceptanceOutput = truncate(output, 4000)
 	}

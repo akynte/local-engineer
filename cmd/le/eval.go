@@ -258,7 +258,8 @@ func newEvalRunCmd() *cobra.Command {
 }
 
 func newEvalReportCmd() *cobra.Command {
-	return &cobra.Command{
+	var tasks string
+	cmd := &cobra.Command{
 		Use:   "report <results.json>",
 		Short: "Render a saved result file",
 		Args:  cobra.ExactArgs(1),
@@ -267,10 +268,26 @@ func newEvalReportCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// A result file written before grading existed holds the
+			// acceptance output but no per-test counts. Given the set it was
+			// run against, those can be recovered without re-running it.
+			if tasks != "" {
+				set, err := eval.LoadSet(tasks)
+				if err != nil {
+					return err
+				}
+				if n := rep.GradeWith(set); n > 0 {
+					fmt.Fprintf(cmd.ErrOrStderr(),
+						"graded %d run(s) from their saved acceptance output\n\n", n)
+				}
+			}
 			fmt.Fprint(cmd.OutOrStdout(), rep.Format())
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&tasks, "tasks", "",
+		"the task set the results were produced from, to grade runs recorded before grading existed")
+	return cmd
 }
 
 func verdict(o eval.Outcome) string {
