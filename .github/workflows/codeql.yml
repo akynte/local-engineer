@@ -24,7 +24,15 @@ jobs:
     # would carry a red check that means nothing, which is how a maintainer
     # learns to stop reading them. The push to main covers the merged result,
     # and that is the run the security tab is built from.
-    if: github.actor != 'dependabot[bot]'
+    #
+    # And skipped entirely while the repository is private. The analysis itself
+    # runs fine there; the upload at the end does not, because code scanning on
+    # a private repository needs GitHub Advanced Security. Without it the job
+    # burns several minutes of CodeQL evaluation and then fails on the last
+    # step, every push — which is the same permanently-red check the Dependabot
+    # rule above exists to avoid, for a different reason. It resumes by itself
+    # when the repository is made public.
+    if: github.actor != 'dependabot[bot]' && github.event.repository.private == false
     permissions:
       # A job-level block replaces the workflow-level one rather than merging
       # with it, so `contents: read` has to be repeated here. Omitting it worked
