@@ -331,11 +331,17 @@ func TestWriteFileRefusesToClobberAnExistingFile(t *testing.T) {
 }
 
 // The loop is the supervisor's, and it is bounded.
+//
+// Every call here asks something different, so the loop is making progress by
+// the progress guard's reckoning and only the step limit can stop it. That is
+// the property this test exists for: a model that keeps learning still costs a
+// bounded number of steps.
 func TestTheLoopIsBounded(t *testing.T) {
 	wt := worktree(t, map[string]string{"a.go": "package a\n"})
 	var responses []*llm.ChatResponse
 	for i := 0; i < 50; i++ {
-		responses = append(responses, call(fmt.Sprint(i), "list_files", map[string]any{}))
+		responses = append(responses, call(fmt.Sprint(i), "list_files",
+			map[string]any{"path": fmt.Sprintf("dir%d", i)}))
 	}
 	p := newScripted(responses...)
 	e, err := native.New(native.Options{Provider: p, MaxSteps: 4, Logf: t.Logf})
@@ -675,4 +681,76 @@ func (f *fakeGraph) ImpactOf(context.Context, []int64, graph.ChangeKind) (graph.
 
 func (f *fakeGraph) Stats(context.Context) (graph.Stats, error) {
 	return graph.Stats{}, errors.New("not used by these tests")
+}
+
+// A model stuck calling the same tool must be stopped while there is still
+// budget left to explain it, not at the step limit long afterwards. This is the
+// end-to-end version: a real engine, a real tool, a provider that never varies.
+func TestARepeatingModelIsStoppedBeforeTheStepLimit(t *testing.T) {
+	wt := worktree(t, map[string]string{"a.go": "package a\n"})
+	var responses []*llm.ChatResponse
+	for i := 0; i < 50; i++ {
+		responses = append(responses, call(fmt.Sprint(i), "read_file", map[string]any{"path": "a.go"}))
+	}
+	p := newScripted(responses...)
+	e, err := native.New(native.Options{Provider: p, MaxSteps: 40, Logf: t.Logf})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := e.Step(context.Background(), engine.Request{Worktree: wt, Attempt: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.ClaimsDone {
+		t.Error("a looping model must not be reported as done")
+	}
+	p.mu.Lock()
+	calls := len(p.requests)
+	p.mu.Unlock()
+	if calls >= 40 {
+		t.Errorf("the loop ran to the step limit (%d calls); the guard did not fire", calls)
+	}
+	if calls > 5 {
+		t.Errorf("the guard took %d steps to notice an identical repeated call", calls)
+	}
+	// The operator has to be able to read what happened from the summary.
+	if !strings.Contains(resp.Summary, "read_file") {
+		t.Errorf("the summary must name what it kept doing, got %q", resp.Summary)
+	}
+	t.Logf("stopped after %d model calls: %s", calls, resp.Summary)
+}
+
+// Before it gives up, the supervisor tells the model it is repeating itself —
+// and that warning is the supervisor speaking, so it must not be inside the
+// untrusted fence.
+func TestTheRepeatWarningReachesTheModelOutsideTheFence(t *testing.T) {
+	wt := worktree(t, map[string]string{"a.go": "package a\n"})
+	p := newScripted(
+		call("1", "read_file", map[string]any{"path": "a.go"}),
+		call("2", "read_file", map[string]any{"path": "a.go"}),
+		call("3", "done", map[string]any{"summary": "x"}),
+	)
+	e := newEngine(t, p)
+	if _, err := e.Step(context.Background(), engine.Request{Worktree: wt, Attempt: 1}); err != nil {
+		t.Fatal(err)
+	}
+
+	var warned string
+	for _, m := range p.lastRequest(t).Messages {
+		if m.Role == "tool" && strings.Contains(m.Content, "[supervisor]") {
+			warned = m.Content
+		}
+	}
+	if warned == "" {
+		t.Fatal("the model was never told it was repeating itself")
+	}
+	head, _, ok := strings.Cut(warned, "<<<UNTRUSTED")
+	if !ok {
+		t.Fatal("the tool result was not fenced")
+	}
+	if !strings.Contains(head, "[supervisor]") {
+		t.Error("the supervisor's warning was inside the untrusted fence, which tells " +
+			"the model to treat its own supervisor as repository data")
+	}
 }

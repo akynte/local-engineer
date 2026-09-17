@@ -246,6 +246,7 @@ func trimMessages(messages []llm.Message, tools []llm.ToolDef, budget int) ([]ll
 func (e *Engine) Step(ctx context.Context, req engine.Request) (*engine.Response, error) {
 	messages := e.seed(req)
 	resp := &engine.Response{}
+	prog := newProgress()
 
 	temp := e.Temperature
 	for step := 1; step <= e.MaxSteps; step++ {
@@ -320,10 +321,26 @@ func (e *Engine) Step(ctx context.Context, req engine.Request) (*engine.Response
 			Role: "assistant", Content: out.Content, ToolCalls: out.ToolCalls,
 		})
 
+		learnedThisStep := false
 		for _, call := range out.ToolCalls {
 			start := time.Now()
 			res := e.Exec(ctx, req.Worktree, call)
 			e.logf("  %s%s (%s)", call.Name, failMark(res), time.Since(start).Round(time.Millisecond))
+
+			// An edit changes the worktree, so the step produced something
+			// whatever the call's answer was.
+			v, times := prog.observe(call.Name, string(call.Arguments), res.Content)
+			if v == learned || res.Edited || res.Done {
+				learnedThisStep = true
+			}
+			// The supervisor's warning goes outside the fence: it is this
+			// program speaking to the model, not content read out of the
+			// repository, and fencing it would tell the model to treat its own
+			// supervisor as data.
+			var prefix string
+			if v == repeated && times > 1 {
+				prefix = repeatNote(call.Name, times)
+			}
 
 			// A tool result is repository content by another route: read_file
 			// returns a file, search_code returns matching lines, git_log
@@ -332,7 +349,7 @@ func (e *Engine) Step(ctx context.Context, req engine.Request) (*engine.Response
 			// the model reads most.
 			messages = append(messages, llm.Message{
 				Role: "tool", ToolCallID: call.ID, Name: call.Name,
-				Content: e.ensureFence().Wrap("result of "+call.Name, res.Content),
+				Content: prefix + e.ensureFence().Wrap("result of "+call.Name, res.Content),
 			})
 			if res.Edited {
 				resp.Edited = true
@@ -342,6 +359,18 @@ func (e *Engine) Step(ctx context.Context, req engine.Request) (*engine.Response
 				resp.ClaimsDone = true
 				return resp, nil
 			}
+		}
+
+		// Ending here rather than at the step limit is the point: a loop that
+		// has stopped learning will not start again, and the budget is better
+		// spent telling the operator what it kept doing. The attempt still
+		// carries whatever edits it made, so verification judges the work
+		// rather than the loop.
+		prog.endOfStep(learnedThisStep)
+		if stuck, why := prog.stuck(); stuck {
+			resp.Summary = why
+			e.logf("  loop guard: %s", why)
+			return resp, nil
 		}
 	}
 
