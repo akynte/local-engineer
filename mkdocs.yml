@@ -70,6 +70,7 @@ nav:
       - Declare runtime and generation checks: how-to/declare-runtime-checks.md
       - Write a policy rule: how-to/write-a-policy-rule.md
       - Verify a release: how-to/verify-a-release.md
+      - Use with OpenCode: how-to/use-with-opencode.md
       - Troubleshooting: how-to/troubleshooting.md
   - Reference:
       - CLI: reference/cli.md

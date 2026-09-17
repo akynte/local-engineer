@@ -119,6 +119,24 @@ docker exec -it local-engineer bash -c 'cd /work/my-project && le task verify'
 docker exec -it local-engineer bash -c 'cd /work/my-project && le plan "add retries to the payment client"'
 ```
 
+### From your editor
+
+Local Engineer answers questions about a repository from inside
+[OpenCode](https://opencode.ai), so routine use needs no terminal. Add to
+`opencode.jsonc`:
+
+```jsonc
+{ "mcp": { "local-engineer": {
+    "type": "local", "command": ["le", "mcp"], "enabled": true } } }
+```
+
+Then ask: *"is Local Engineer set up here?"*, *"what breaks if I change Total's
+signature?"*, *"where is stock reserved?"* Four tools back those questions —
+status, impact, retrieval and re-indexing — and both interfaces call the same
+code rather than one shelling out to the other. Running tasks and anything
+destructive stay on the CLI, where a person is already watching. See
+[use with OpenCode](docs/how-to/use-with-opencode.md).
+
 `docker compose -f deploy/docker-compose.yml up -d` wraps the same thing, and
 `deploy/docker-compose.split.yml` is the conventional multi-container layout.
 To run without Docker, see
@@ -184,7 +202,7 @@ to change your mind about using this:
 | | |
 |---|---|
 | **Tutorials** | [First task in 15 minutes](docs/tutorials/first-task.md) · [Index a Go microservice](docs/tutorials/index-a-go-service.md) · [Run the evaluation](docs/tutorials/run-the-evaluation.md) |
-| **How-to** | [install](docs/how-to/install.md) · [configure models](docs/how-to/configure-models.md) · [choose a profile](docs/how-to/choose-a-profile.md) · [persistent storage](docs/how-to/persistent-storage.md) · [back up and restore](docs/how-to/backup-and-restore.md) · [run offline](docs/how-to/run-offline.md) · [troubleshooting](docs/how-to/troubleshooting.md) |
+| **How-to** | [install](docs/how-to/install.md) · [use with OpenCode](docs/how-to/use-with-opencode.md) · [configure models](docs/how-to/configure-models.md) · [choose a profile](docs/how-to/choose-a-profile.md) · [persistent storage](docs/how-to/persistent-storage.md) · [back up and restore](docs/how-to/backup-and-restore.md) · [run offline](docs/how-to/run-offline.md) · [troubleshooting](docs/how-to/troubleshooting.md) |
 | **Reference** | [CLI](docs/reference/cli.md) · [configuration](docs/reference/configuration.md) · [graph schema](docs/reference/graph-schema.md) · [HTTP API](docs/reference/http-api.md) |
 | **Explanation** | [architecture](docs/explanation/architecture.md) · [isolation model](docs/explanation/isolation-model.md) · [trust boundaries](docs/explanation/trust-boundaries.md) · [why small models can work here](docs/explanation/why-small-models.md) · [decision records](docs/adr/) |
 

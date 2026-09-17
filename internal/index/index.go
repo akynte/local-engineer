@@ -786,11 +786,30 @@ func (ix *Indexer) clearGraph(ctx context.Context, repositoryID string) error {
 // It is exported so `le doctor` and the tests read the value through one
 // accessor rather than each spelling the query — which is how the column came
 // to hold two different units.
+//
+// Both writers agree on seconds now, but a database written before they did
+// still holds milliseconds in rows nothing has touched since, and there is no
+// migration that rewrites them: the two units are indistinguishable by type,
+// so a migration would have had to guess. Reading is where the guess can be
+// made safely, because a plausible range exists. A seconds timestamp does not
+// reach 1e11 until the year 5138; a milliseconds one passed it in 1973. So a
+// value above that threshold is the old unit, and normalising it here keeps
+// the guess in the one place that already knows both units existed.
 func (ix *Indexer) LastIndexedAt(ctx context.Context) int64 {
 	var at int64
 	if err := ix.st.Index().SQL().QueryRowContext(ctx,
 		`SELECT COALESCE(MAX(updated_at),0) FROM index_keys`).Scan(&at); err != nil {
 		return 0
+	}
+	return normaliseIndexedAt(at)
+}
+
+// legacyMillisThreshold separates the two units. See LastIndexedAt.
+const legacyMillisThreshold = int64(1e11)
+
+func normaliseIndexedAt(at int64) int64 {
+	if at >= legacyMillisThreshold {
+		return at / 1000
 	}
 	return at
 }

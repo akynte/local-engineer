@@ -3,14 +3,15 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
 
 	"github.com/akynte/local-engineer/internal/config"
+	"github.com/akynte/local-engineer/internal/session"
 	"github.com/akynte/local-engineer/internal/store"
 	"github.com/akynte/local-engineer/internal/workspace"
 )
@@ -28,31 +29,19 @@ func openWorkspace(ctx context.Context) (*workspace.Workspace, *store.Root, *sto
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	ws, err := workspace.Open(cwd)
+	// The binding sequence, including §2.2's slot-clearing switch, lives in
+	// internal/session so that every interface onto this system performs it
+	// identically. See that package for why it is not a helper here.
+	s, err := session.Open(ctx, g.dataDir, cwd)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("%w\nRun `le workspace init` in the repository root first", err)
-	}
-	root, err := openRoot()
-	if err != nil {
+		var missing *session.ErrNoWorkspace
+		if errors.As(err, &missing) {
+			return nil, nil, nil, fmt.Errorf(
+				"%w\nRun `le workspace init` in the repository root first", err)
+		}
 		return nil, nil, nil, err
 	}
-	st, err := root.OpenWorkspace(ctx, ws.ID())
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	// §2.2: slots are cleared on workspace switch, so neither cache contents
-	// nor cache timing leak between projects. This is the switch: a command has
-	// just bound to one workspace, and anything the previous one left behind is
-	// now sitting where this one's work will run.
-	if previous, err := root.SwitchTo(ctx, ws.ID()); err != nil {
-		return nil, nil, nil, err
-	} else if previous != "" {
-		slog.Debug("workspace switch: cleared saved slots", "previous", previous, "now", ws.ID())
-	}
-	if err := st.RecordWorkspace(ws); err != nil {
-		return nil, nil, nil, err
-	}
-	return ws, root, st, nil
+	return s.Workspace, s.Root, s.Store, nil
 }
 
 // loadConfig reads le.yaml from the data directory's config folder.

@@ -304,6 +304,38 @@ plainly that a single pass measures nothing. See
 [the published results](../benchmarks/results/2026-09-14-tasks.md) and
 [the methodology](../benchmarks/METHODOLOGY.md).
 
+## `le mcp`
+
+Serves Local Engineer's tools to an MCP client over stdin and stdout, so an
+editor or agent can ask about a repository without the operator typing
+commands. It takes no subcommands.
+
+Register it with OpenCode in `opencode.jsonc`:
+
+```jsonc
+{ "mcp": { "local-engineer": {
+    "type": "local", "command": ["le", "mcp"], "enabled": true } } }
+```
+
+| Tool | |
+|---|---|
+| `le_status` | Whether Local Engineer is set up here, what it tracks, how fresh the index is, and what the graph holds |
+| `le_graph_impact` | What a change to a symbol would affect, with evidence category and migration per consumer |
+| `le_search` | The code most relevant to a question: lexical anchors then graph expansion |
+| `le_reindex` | Re-analyse the repository so the index matches the working tree |
+
+The surface is deliberately small. OpenCode's documentation warns that MCP
+servers add to the agent's context, and each tool spends some before anything
+happens. Running tasks and every destructive operation stay on the CLI, where a
+person is already watching — `le task run` drives a model for minutes at a time,
+and nesting that inside another agent's tool call would put one budget under
+another's control with no gate between them.
+
+stdout carries the protocol, so the command prints nothing there; diagnostics go
+to stderr. Each call rebinds to the workspace containing the path it was given,
+which performs §2.2's switch — a server is long-lived and will be asked about
+more than one repository.
+
 ## `le memory`
 
 | Command | |

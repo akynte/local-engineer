@@ -98,6 +98,7 @@ func newRootCmd() *cobra.Command {
 		newDocsCmd(),
 		newTelemetryCmd(),
 		newTUICmd(),
+		newMCPCmd(),
 		newVerifyDeclaredCmd(),
 	)
 	return root
