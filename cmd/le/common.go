@@ -13,6 +13,7 @@ import (
 	"github.com/akynte/local-engineer/internal/config"
 	"github.com/akynte/local-engineer/internal/session"
 	"github.com/akynte/local-engineer/internal/store"
+	"github.com/akynte/local-engineer/internal/supervisor"
 	"github.com/akynte/local-engineer/internal/workspace"
 )
 
@@ -46,20 +47,13 @@ func openWorkspace(ctx context.Context) (*workspace.Workspace, *store.Root, *sto
 
 // loadConfig reads le.yaml from the data directory's config folder.
 func loadConfig(root *store.Root) (config.Config, error) {
-	return config.Load(root.Layout().ConfigDir())
+	return supervisor.Config(root)
 }
 
 // loadProfile resolves the active hardware profile, returning nil when none is
 // configured so callers can say so rather than pretend.
 func loadProfile(root *store.Root, cfg config.Config) *config.Profile {
-	if cfg.Profile == "" {
-		return nil
-	}
-	p, err := config.LoadProfile(profileDir(root), cfg.Profile)
-	if err != nil {
-		return nil
-	}
-	return &p
+	return supervisor.Profile(root, cfg)
 }
 
 // profileDir is where generated profiles are written and read. Shipped

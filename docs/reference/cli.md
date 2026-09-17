@@ -343,12 +343,23 @@ Register it with OpenCode in `opencode.jsonc`:
 | `le_graph_impact` | What a change to a symbol would affect, with evidence category and migration per consumer |
 | `le_search` | The code most relevant to a question: lexical anchors then graph expansion |
 | `le_reindex` | Re-analyse the repository so the index matches the working tree |
+| `le_task_start` | Open a supervised task: journals the intent before the work, returns the repository's protected paths |
+| `le_verify` | Run the verification recipes in a sandbox and apply the completion contract |
+| `le_note_add` | Record something durable the next session should not have to rediscover |
 
-The surface is deliberately small. OpenCode's documentation warns that MCP
-servers add to the agent's context, and each tool spends some before anything
-happens. Running tasks and every destructive operation stay on the CLI, where a
-person is already watching — `le task run` drives a model for minutes at a time,
-and nesting that inside another agent's tool call would put one budget under
+`le_task_start` and `le_verify` put an editor's work under the same controls a
+CLI task gets: the intent is journalled before the work, and the completion
+contract — not the agent's account of itself — decides whether it is done.
+
+The agent does the editing, and that division is forced rather than chosen. An
+MCP server cannot ask a user a question: OpenCode declares only the `roots`
+capability, not `elicitation`, so there is no channel for one. The agent talking
+to the user is the only component that can pause and ask, so it edits and this
+supervises.
+
+`le task run`, which drives Local Engineer's own model through a bounded loop,
+stays on the CLI. So does every destructive operation. Nesting a model's
+multi-minute loop inside another agent's tool call would put one budget under
 another's control with no gate between them.
 
 stdout carries the protocol, so the command prints nothing there; diagnostics go

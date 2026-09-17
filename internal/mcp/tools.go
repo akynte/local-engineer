@@ -63,6 +63,8 @@ func (s *Server) register(srv *mcp.Server) {
 			"working tree. Run after pulling changes or when le_status reports the index " +
 			"is stale. Changes Local Engineer's own storage, never the repository.",
 	}, s.reindex)
+
+	s.registerSupervision(srv)
 }
 
 // ---------------------------------------------------------------- le_status

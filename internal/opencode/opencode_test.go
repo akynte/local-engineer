@@ -166,3 +166,45 @@ func TestAnExistingJsoncIsNotRewritten(t *testing.T) {
 		t.Errorf("the error should give the block to paste, got: %v", err)
 	}
 }
+
+// Verification runs this repository's checks in a sandbox, which is minutes on
+// anything real. OpenCode's default MCP timeout is five seconds, at which the
+// call is abandoned while the work is still running and the agent is told
+// nothing rather than told it failed.
+func TestTheRegisteredServerGetsATimeoutVerificationCanFinishIn(t *testing.T) {
+	dir := t.TempDir()
+	if _, _, err := opencode.RegisterMCP(dir, []string{"le", "mcp"}); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(filepath.Join(dir, "opencode.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		MCP map[string]struct {
+			Timeout int `json:"timeout"`
+		} `json:"mcp"`
+	}
+	if err := json.Unmarshal(body, &doc); err != nil {
+		t.Fatal(err)
+	}
+	got := doc.MCP[opencode.ServerName].Timeout
+	if got < 5*60*1000 {
+		t.Errorf("timeout is %dms; a verification cannot finish inside it", got)
+	}
+}
+
+// The agent has to be told the supervised path exists and that the contract,
+// not its own reading of the code, decides completion. Without that it edits
+// and reports success, which is the behaviour the contract exists to catch.
+func TestTheBlockDirectsTheAgentThroughVerification(t *testing.T) {
+	got := opencode.Render(opencode.Facts{Nodes: 1, Edges: 1})
+	for _, want := range []string{"le_task_start", "le_verify", "ACCEPTED"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the block never mentions %q:\n%s", want, got)
+		}
+	}
+	if !strings.Contains(got, "your own reading of the code does not") {
+		t.Error("the block does not say the contract decides completion rather than the agent")
+	}
+}

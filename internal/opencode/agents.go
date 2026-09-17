@@ -88,6 +88,14 @@ func Render(f Facts) string {
 		"would select, so start there and read the files normally.\n")
 	b.WriteString("- **`le_status`** when answers look stale. It reports how far the index has " +
 		"drifted from the working tree.\n")
+	b.WriteString("- **`le_task_start`** before implementing, fixing or refactoring anything. " +
+		"It opens a supervised task, journals the intent before the work, and tells you which " +
+		"paths this repository protects — which is cheaper to learn before editing than after.\n")
+	b.WriteString("- **`le_verify`** when you believe the change is complete. It runs this " +
+		"repository's checks in a sandbox and applies the completion contract, tying every " +
+		"result to the exact content hash it describes. It decides whether the work is done; " +
+		"your own reading of the code does not. If it reports failures, fix them and call it " +
+		"again — do not tell the user the work is finished until it says ACCEPTED.\n")
 	b.WriteString("- **`le_note_add`** when you establish something durable about this project " +
 		"that the next session should not have to rediscover — a constraint, a decision and its " +
 		"reason, a trap someone already fell into. Not a summary of what you just did.\n\n")

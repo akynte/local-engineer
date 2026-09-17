@@ -11,6 +11,11 @@ import (
 // ServerName is the key Local Engineer registers itself under.
 const ServerName = "local-engineer"
 
+// verifyTimeoutMillis bounds one MCP call. Twenty minutes is the task budget a
+// verification runs under, so a client that gives up earlier would abandon a
+// call the supervisor is still honouring.
+const verifyTimeoutMillis = 20 * 60 * 1000
+
 // RegisterMCP adds Local Engineer to the repository's opencode.json, leaving
 // every other setting alone.
 //
@@ -53,6 +58,12 @@ func RegisterMCP(repoRoot string, command []string) (path string, changed bool, 
 		"type":    "local",
 		"command": toAny(command),
 		"enabled": true,
+		// OpenCode's default MCP timeout is five seconds. le_verify runs this
+		// repository's build, vet, test and format checks in a sandbox, which
+		// is minutes on anything real — at the default the call is abandoned
+		// while the work is still running, and the agent is told nothing
+		// rather than told it failed.
+		"timeout": verifyTimeoutMillis,
 	}
 	if equalJSON(servers[ServerName], want) {
 		return path, false, nil

@@ -2,19 +2,12 @@ package main
 
 import (
 	"fmt"
+	"github.com/akynte/local-engineer/internal/supervisor"
 	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
 
-	"github.com/akynte/local-engineer/internal/analyzers/architecture"
-	"github.com/akynte/local-engineer/internal/analyzers/deploy"
-	"github.com/akynte/local-engineer/internal/analyzers/gitlog"
-	"github.com/akynte/local-engineer/internal/analyzers/golang"
-	"github.com/akynte/local-engineer/internal/analyzers/protoavro"
-	sqlan "github.com/akynte/local-engineer/internal/analyzers/sql"
-	"github.com/akynte/local-engineer/internal/analyzers/terraform"
-	"github.com/akynte/local-engineer/internal/analyzers/typescript"
 	"github.com/akynte/local-engineer/internal/index"
 	"github.com/akynte/local-engineer/internal/retrieval"
 )
@@ -84,38 +77,9 @@ func newIndexCmd() *cobra.Command {
 // depend on each other. They meet in the graph, where the SQL analyzer's table
 // nodes are what the Go analyzer's reads_schema edges point at.
 func analyzers(cmd *cobra.Command) []index.Analyzer {
-	warn := func(format string, args ...any) {
+	return supervisor.Analyzers(func(format string, args ...any) {
 		fmt.Fprintf(cmd.ErrOrStderr(), format+"\n", args...)
-	}
-
-	goa := golang.New()
-	goa.Warnf = warn
-
-	sqla := sqlan.New()
-	sqla.Warnf = warn
-
-	dep := deploy.New()
-	dep.Warnf = warn
-
-	tf := terraform.New()
-	tf.Warnf = warn
-
-	gitl := gitlog.New()
-	gitl.Warnf = warn
-
-	ts := typescript.New()
-	ts.Warnf = warn
-	// The sidecar gives compiler-backed edges when it is installed; without it
-	// the lexical reading runs and its edges say they are weaker.
-	ts.UseSidecar = true
-
-	pa := protoavro.New()
-	pa.Warnf = warn
-
-	arch := architecture.New()
-	arch.Warnf = warn
-
-	return []index.Analyzer{goa, ts, sqla, pa, dep, tf, arch, gitl}
+	})
 }
 
 func newGraphCmd() *cobra.Command {

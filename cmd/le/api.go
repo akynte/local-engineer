@@ -19,9 +19,8 @@ import (
 	"github.com/akynte/local-engineer/internal/procman"
 	"github.com/akynte/local-engineer/internal/proxy"
 	"github.com/akynte/local-engineer/internal/sandbox"
-	"github.com/akynte/local-engineer/internal/sandbox/bwrap"
-	"github.com/akynte/local-engineer/internal/sandbox/landlock"
 	"github.com/akynte/local-engineer/internal/store"
+	"github.com/akynte/local-engineer/internal/supervisor"
 	"github.com/akynte/local-engineer/internal/workspace"
 )
 
@@ -148,26 +147,7 @@ func newAPICmd() *cobra.Command {
 // selectSandbox picks the strongest runner permitted by configuration and
 // returns the report `le doctor` and /v1/sandbox both serve (DR-3).
 func selectSandbox(ctx context.Context, cfg config.Config) (sandbox.Runner, sandbox.Report) {
-	var candidates []sandbox.Runner
-	ll, llErr := landlock.New()
-	switch cfg.Sandbox.Mode {
-	case "none":
-	case "landlock":
-		if llErr == nil {
-			candidates = append(candidates, ll)
-		}
-	case "bwrap":
-		if llErr == nil {
-			candidates = append(candidates, bwrap.New(ll))
-		}
-	default:
-		if llErr == nil {
-			candidates = append(candidates, bwrap.New(ll), ll)
-		}
-	}
-	candidates = append(candidates, sandbox.ContainerRunner{})
-	runner, rep := sandbox.Select(ctx, candidates)
-	return runner, rep
+	return supervisor.SelectSandbox(ctx, cfg)
 }
 
 // registerChildren wires the §4.3 process model. `le api` itself is this

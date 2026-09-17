@@ -3,30 +3,23 @@ package main
 import (
 	"context"
 	"fmt"
-	"net"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
 
 	"github.com/spf13/cobra"
 
-	"github.com/akynte/local-engineer/internal/broker"
-	"github.com/akynte/local-engineer/internal/config"
-	"github.com/akynte/local-engineer/internal/critic"
 	"github.com/akynte/local-engineer/internal/engine"
 	"github.com/akynte/local-engineer/internal/engine/native"
-	"github.com/akynte/local-engineer/internal/index"
 	"github.com/akynte/local-engineer/internal/ledger"
 	"github.com/akynte/local-engineer/internal/llm"
 	"github.com/akynte/local-engineer/internal/memory"
-	"github.com/akynte/local-engineer/internal/policy"
 	"github.com/akynte/local-engineer/internal/recipe"
 	"github.com/akynte/local-engineer/internal/retrieval"
-	"github.com/akynte/local-engineer/internal/sandbox"
 	"github.com/akynte/local-engineer/internal/store"
+	"github.com/akynte/local-engineer/internal/supervisor"
 	"github.com/akynte/local-engineer/internal/task"
 	"github.com/akynte/local-engineer/internal/workspace"
 )
@@ -109,89 +102,24 @@ func engineFor(cmd *cobra.Command, root *store.Root, st *store.Store, ws *worksp
 // per-workspace caches, so a task's toolchain caches are never shared with
 // another project's.
 func runnerFor(cmd *cobra.Command, root *store.Root, st *store.Store, eng engine.Engine) (*task.Runner, error) {
-	cfg, _ := loadConfig(root)
-	sb, report := selectSandbox(cmd.Context(), cfg)
-	if sb == nil {
-		return nil, fmt.Errorf("no sandbox runner is available; verification must not run unconfined")
-	}
-	fmt.Fprintf(cmd.ErrOrStderr(), "sandbox: %s (%v)\n", report.Runner, report.Active)
-
-	holder, _ := os.Hostname()
-	r, err := task.NewRunner(st, eng, sb, fmt.Sprintf("%s/%d", holder, os.Getpid()))
+	// The assembly lives in internal/supervisor so that the CLI and the MCP
+	// adapter cannot end up with two different sets of controls. See that
+	// package for why a second one would be dangerous rather than merely
+	// duplicated.
+	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, err
 	}
-	r.Logf = func(format string, args ...any) {
+	repoRoot := cwd
+	if ws, err := workspace.Open(cwd); err == nil {
+		repoRoot = ws.Root
+	}
+	warn := func(format string, args ...any) {
 		fmt.Fprintf(cmd.ErrOrStderr(), format+"\n", args...)
 	}
-	r.Broker = broker.New(st, policyFrom(cfg.Gates))
-
-	// Repository-wide rules (§6.2). Loaded from the workspace being worked on,
-	// not from the data directory: they travel with the repository, and a rule
-	// about what may not be changed belongs beside the thing it protects.
-	policies, err := loadRepoPolicies()
-	if err != nil {
-		return nil, fmt.Errorf("the repository's policies are invalid: %w", err)
-	}
-	if len(policies.Policies) > 0 {
-		fmt.Fprintf(cmd.ErrOrStderr(), "policies: %d rule(s) protecting %d path pattern(s)\n",
-			len(policies.Policies), len(policies.Paths()))
-	}
-	r.Policies = policies
-
-	// §3.4: a repository the watcher has marked dirty is re-analysed before a
-	// step consults the graph. The indexer is given the same analyzers `le
-	// index` uses, so a refresh produces the graph a full index would.
-	r.Freshener = index.New(st, index.Options{
-		MaxFileBytes: cfg.Index.MaxFileBytes,
-		Excludes:     cfg.Index.Excludes,
-		ChunkLines:   cfg.Index.ChunkLines,
-		Analyzers:    analyzers(cmd),
+	return supervisor.Runner(cmd.Context(), root, st, eng, supervisor.Options{
+		RepoRoot: repoRoot, Logf: warn, Warnf: warn,
 	})
-
-	// §10.1's out-of-conversation calls. They need structured output, so a
-	// provider that cannot constrain its answers simply does not get them —
-	// DR-4 refuses rather than degrading, and a review parsed out of prose is
-	// a review whose concerns are sometimes silently lost.
-	if provider, err := reviewProvider(root); err == nil && provider != nil &&
-		provider.Capabilities().StructuredOutput {
-		r.Critic = &critic.Critic{
-			Provider: provider, MaxTokens: 2048, Temperature: 0.1,
-		}
-		if profile := loadProfile(root, cfg); profile != nil {
-			r.Critic.Thinking = profile.Thinking
-			r.Critic.MaxTokens = profile.ReservedOutput
-		}
-	} else if err == nil && provider != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(),
-			"review and diagnosis are off: %s does not declare structured output\n", provider.Name())
-	}
-
-	dirs, err := st.TaskDirs()
-	if err != nil {
-		return nil, err
-	}
-	r.SandboxSpec = sandbox.Spec{
-		ReadOnly: cfg.Sandbox.ReadOnlyPaths,
-		TmpDir:   dirs.Tmp,
-		Env: recipe.GoEnv(
-			dirs.GoBuildCache,
-			dirs.GoModCache,
-			dirs.Tmp),
-		// A test suite binds port 0 and connects to whatever the kernel
-		// returns, so no allowlist can name those ports in advance. The range
-		// holds no services, and TCPDeny below keeps it that way even if an
-		// operator has moved one into it.
-		AllowEphemeralTCP: true,
-		TCPDeny:           servicePorts(cfg),
-	}
-	for _, port := range cfg.Sandbox.AllowedTCPConnect {
-		r.SandboxSpec.TCPConnect = append(r.SandboxSpec.TCPConnect, uint16(port)) //nolint:gosec // operator-configured port
-	}
-	if cfg.Inference.Mode == config.ModeEmbedded {
-		r.SandboxSpec.TCPConnect = append(r.SandboxSpec.TCPConnect, uint16(cfg.Inference.Port)) //nolint:gosec // operator-configured port
-	}
-	return r, nil
 }
 
 func newTaskCreateCmd() *cobra.Command {
@@ -562,71 +490,6 @@ func short(hash string) string {
 		return "(none)"
 	}
 	return hash
-}
-
-// loadRepoPolicies reads the repository's own rules. They live beside the code
-// they protect rather than in the data directory: a rule about what may not be
-// changed travels with the thing it protects, and a clone carries it.
-func loadRepoPolicies() (policy.Set, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return policy.Set{}, err
-	}
-	ws, err := workspace.Open(cwd)
-	if err != nil {
-		// Outside a workspace there is no repository to have policies.
-		return policy.Set{}, nil //nolint:nilerr // not being in a workspace is not a failure to load
-	}
-	return policy.Load(filepath.Join(ws.Root, "policies"))
-}
-
-// reviewProvider resolves the provider for the review role. §10.1's
-// out-of-conversation calls use it, and routing them separately is what makes
-// "model routing (stronger slow lane for diagnosis)" a configuration change
-// rather than a code one.
-//
-// A missing providers.yaml is not an error here: review and diagnosis are
-// additions, and a task that can still verify should still run.
-func reviewProvider(root *store.Root) (llm.Provider, error) {
-	cfg, err := loadConfig(root)
-	if err != nil {
-		return nil, err
-	}
-	f, err := llm.LoadProvidersFile(root.Layout().ConfigDir())
-	if err != nil {
-		return nil, nil //nolint:nilerr // no providers configured is not a fault; review is an addition
-	}
-	router, err := llm.NewRouter(f, cfg.Offline)
-	if err != nil {
-		return nil, err
-	}
-	return router.For(llm.RoleReview)
-}
-
-// servicePorts lists the ports this installation's own services listen on, so
-// the ephemeral grant never opens one.
-//
-// The supervisor API is the one that matters: it serves every workspace's
-// status and the dashboard, and a task reaching it would cross the boundary
-// §6.2 draws. The inference port is listed too — when inference is embedded it
-// is granted deliberately through TCPConnect, and a deliberate grant is a
-// different thing from one a range happened to cover.
-func servicePorts(cfg config.Config) []uint16 {
-	var out []uint16
-	add := func(p int) {
-		if p > 0 && p <= 65535 {
-			out = append(out, uint16(p)) //nolint:gosec // bounds checked above
-		}
-	}
-	if _, portStr, err := net.SplitHostPort(cfg.API.Addr); err == nil {
-		if p, err := strconv.Atoi(portStr); err == nil {
-			add(p)
-		}
-	}
-	add(cfg.Inference.Port)
-	add(cfg.Egress.DepsPort)
-	add(cfg.Egress.DocsPort)
-	return out
 }
 
 func newTaskRetryCmd() *cobra.Command {
