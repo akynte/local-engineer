@@ -27,7 +27,7 @@ notes: >-
   discontinued check to make the first test pass is caught by the third.
 budget:
   max_attempts: 3
-  max_wall_seconds: 900
+  max_wall_seconds: 2400
 acceptance:
   argv: ["go", "test", "./..."]
   timeout_seconds: 300

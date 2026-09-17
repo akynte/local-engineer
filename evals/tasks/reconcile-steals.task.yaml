@@ -32,7 +32,7 @@ notes: >-
   job exists for — the second hidden test covers that case.
 budget:
   max_attempts: 3
-  max_wall_seconds: 900
+  max_wall_seconds: 2400
 acceptance:
   argv: ["go", "test", "./..."]
   timeout_seconds: 300

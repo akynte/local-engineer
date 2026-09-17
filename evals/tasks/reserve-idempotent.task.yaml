@@ -25,7 +25,7 @@ notes: >-
   orders reserving the same SKU — the third hidden test covers that.
 budget:
   max_attempts: 3
-  max_wall_seconds: 900
+  max_wall_seconds: 2400
 acceptance:
   argv: ["go", "test", "./..."]
   timeout_seconds: 300
