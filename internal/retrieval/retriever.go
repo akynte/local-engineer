@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/akynte/local-engineer/internal/graph"
@@ -46,6 +47,21 @@ func (r *Retriever) WithMemory(m *memory.Store) *Retriever {
 // out the code is the failure mode. A note that does not fit is dropped and
 // counted rather than silently trimmed, so the cap is visible when it bites.
 const MemoryBudgetFraction = 0.15
+
+// GraphBudgetFraction is the share of a packet that graph expansion may take.
+//
+// Expansion has the same failure mode the notes cap exists for, and had no
+// equivalent bound: it reaches up to MaxNodes neighbours and appends them, so
+// it filled whatever budget the anchors left, on every step of every task. The
+// first measured run showed what that costs — the arm with the graph spent
+// 1.8x the tokens of the arm without it and solved no more, which is what
+// paying full price for a packet nobody read looks like.
+//
+// A third is deliberately generous. The graph's case is real: a consumer in
+// another package is exactly what lexical search cannot find. The claim being
+// bounded is not that expansion is worthless, only that it must compete for
+// room rather than take what is left.
+const GraphBudgetFraction = 0.33
 
 // WorkspaceID reports the workspace this retriever serves.
 func (r *Retriever) WorkspaceID() workspace.ID { return r.st.ID() }
@@ -173,6 +189,15 @@ func (r *Retriever) Build(ctx context.Context, req Request) (*Packet, error) {
 		}
 	}
 
+	// Best first, within each origin. The score was computed for every slice
+	// — bm25 for an anchor, inverse depth for an expanded node — and nothing
+	// read it: the packet was filled in the order things happened to be
+	// appended, so a depth-2 neighbour could displace a better one purely by
+	// traversal order. Sorting inside an origin rather than across all of them
+	// because bm25 and inverse depth are not the same scale, and comparing
+	// them directly would rank by units rather than by relevance.
+	sortByScore(candidates)
+
 	kept, rejected := Guard(r.st.ID(), append(mandatory, candidates...))
 	for _, err := range rejected {
 		pkt.Rejected = append(pkt.Rejected, err.Error())
@@ -184,6 +209,9 @@ func (r *Retriever) Build(ctx context.Context, req Request) (*Packet, error) {
 	// so they can never be most of the packet.
 	r.addNotes(pkt, int(float64(budget)*MemoryBudgetFraction))
 
+	graphBudget := int(float64(budget) * GraphBudgetFraction)
+	graphTokens := 0
+
 	seen := map[int64]bool{}
 	for _, s := range kept {
 		if s.NodeID != 0 {
@@ -193,9 +221,19 @@ func (r *Retriever) Build(ctx context.Context, req Request) (*Packet, error) {
 			seen[s.NodeID] = true
 		}
 		cost := s.TokenEstimate()
+		// Expansion competes for a bounded share, the way notes do. Without
+		// this it takes whatever the anchors left, which is most of the packet
+		// on most steps.
+		if s.Origin == OriginGraph && graphTokens+cost > graphBudget {
+			pkt.Dropped++
+			continue
+		}
 		if s.Origin != OriginImpact && pkt.Tokens+cost > budget {
 			pkt.Dropped++
 			continue
+		}
+		if s.Origin == OriginGraph {
+			graphTokens += cost
 		}
 		pkt.Slices = append(pkt.Slices, s)
 		pkt.Tokens += cost
@@ -374,4 +412,20 @@ func (r *Retriever) addNotes(pkt *Packet, budget int) {
 // cannot be judged (§11).
 func noteTokens(n memory.Note) int {
 	return (len(n.Text)+len(n.Provenance.Source)+len(n.Kind))/4 + 8
+}
+
+// sortByScore orders slices best-first within each origin, leaving the relative
+// order of the origins alone.
+//
+// Anchors stay ahead of expansion because a lexical hit on the query is a
+// stronger signal than being adjacent to one, and the two scores are not on a
+// common scale. What changes is that within each group the best now come first,
+// which is what the score was computed for.
+func sortByScore(slices []Slice) {
+	sort.SliceStable(slices, func(i, j int) bool {
+		if slices[i].Origin != slices[j].Origin {
+			return false // keep the existing grouping
+		}
+		return slices[i].Score > slices[j].Score
+	})
 }
