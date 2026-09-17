@@ -1,0 +1,2178 @@
+{
+  "arms": [
+    {
+      "arm": "supervised",
+      "solved": {
+        "successes": 19,
+        "total": 35,
+        "value": 0.5428571428571428,
+        "ci_low": 0.38189451340137515,
+        "ci_high": 0.6953422636623914
+      },
+      "false_accept": {
+        "successes": 8,
+        "total": 35,
+        "value": 0.22857142857142856,
+        "ci_low": 0.12065736746179101,
+        "ci_high": 0.39017637780102
+      },
+      "missed_success": {
+        "successes": 0,
+        "total": 35,
+        "value": 0,
+        "ci_low": 6.938893903907228e-18,
+        "ci_high": 0.0989042675893887
+      },
+      "tampered": {
+        "successes": 0,
+        "total": 35,
+        "value": 0,
+        "ci_low": 6.938893903907228e-18,
+        "ci_high": 0.0989042675893887
+      },
+      "errored": 0,
+      "mean_score": 0.7595238095238095,
+      "graded_runs": 35,
+      "median_duration": 168169761442,
+      "median_attempts": 1,
+      "total_tokens": 9146595,
+      "by_category": {
+        "api_change": {
+          "successes": 3,
+          "total": 5,
+          "value": 0.6,
+          "ci_low": 0.23071993220883696,
+          "ci_high": 0.8823817688407467
+        },
+        "bug_fix": {
+          "successes": 12,
+          "total": 20,
+          "value": 0.6,
+          "ci_low": 0.3865779423152061,
+          "ci_high": 0.7811960325858074
+        },
+        "feature": {
+          "successes": 1,
+          "total": 5,
+          "value": 0.2,
+          "ci_low": 0.03622316096978745,
+          "ci_high": 0.6244717358814611
+        },
+        "schema_change": {
+          "successes": 3,
+          "total": 5,
+          "value": 0.6,
+          "ci_low": 0.23071993220883696,
+          "ci_high": 0.8823817688407467
+        }
+      }
+    },
+    {
+      "arm": "supervised-no-graph",
+      "solved": {
+        "successes": 18,
+        "total": 35,
+        "value": 0.5142857142857142,
+        "ci_low": 0.35568539626711626,
+        "ci_high": 0.6700601960874726
+      },
+      "false_accept": {
+        "successes": 7,
+        "total": 35,
+        "value": 0.2,
+        "ci_low": 0.10042319445900802,
+        "ci_high": 0.35891936609462516
+      },
+      "missed_success": {
+        "successes": 0,
+        "total": 35,
+        "value": 0,
+        "ci_low": 6.938893903907228e-18,
+        "ci_high": 0.0989042675893887
+      },
+      "tampered": {
+        "successes": 0,
+        "total": 35,
+        "value": 0,
+        "ci_low": 6.938893903907228e-18,
+        "ci_high": 0.0989042675893887
+      },
+      "errored": 0,
+      "mean_score": 0.75,
+      "graded_runs": 35,
+      "median_duration": 184970950556,
+      "median_attempts": 1,
+      "total_tokens": 10811537,
+      "by_category": {
+        "api_change": {
+          "successes": 2,
+          "total": 5,
+          "value": 0.4,
+          "ci_low": 0.11761823115925324,
+          "ci_high": 0.7692800677911629
+        },
+        "bug_fix": {
+          "successes": 10,
+          "total": 20,
+          "value": 0.5,
+          "ci_low": 0.2992949144298199,
+          "ci_high": 0.7007050855701801
+        },
+        "feature": {
+          "successes": 2,
+          "total": 5,
+          "value": 0.4,
+          "ci_low": 0.11761823115925324,
+          "ci_high": 0.7692800677911629
+        },
+        "schema_change": {
+          "successes": 4,
+          "total": 5,
+          "value": 0.8,
+          "ci_low": 0.37552826411853885,
+          "ci_high": 0.9637768390302124
+        }
+      }
+    }
+  ],
+  "comparisons": [
+    {
+      "question": "Does the code graph contribute anything beyond lexical search?",
+      "baseline": "supervised-no-graph",
+      "variant": "supervised",
+      "what_it_isolates": "graph expansion and impact analysis, with everything else held constant",
+      "baseline_rate": {
+        "successes": 18,
+        "total": 35,
+        "value": 0.5142857142857142,
+        "ci_low": 0.35568539626711626,
+        "ci_high": 0.6700601960874726
+      },
+      "variant_rate": {
+        "successes": 19,
+        "total": 35,
+        "value": 0.5428571428571428,
+        "ci_low": 0.38189451340137515,
+        "ci_high": 0.6953422636623914
+      },
+      "delta": 0.02857142857142858,
+      "significant": false,
+      "paired": {
+        "variant_only": 6,
+        "baseline_only": 5,
+        "both": 13,
+        "neither": 11,
+        "p": 1
+      },
+      "score": {
+        "pairs": 35,
+        "mean_delta": 0.009523809523809525,
+        "low": -0.10238095238095239,
+        "high": 0.11904761904761903,
+        "recorded": true
+      },
+      "verdict": "no detectable difference (3-point gap; the arms disagreed on 11 of 35 shared run(s), 6–5, exact p=1.00)"
+    }
+  ],
+  "task_count": 7,
+  "leak_mix": {
+    "none": 7
+  },
+  "caveats": [
+    "11 of 14 task/arm cells changed verdict between passes. The set was run 5 times; a cell that disagrees with itself is not evidence about an arm, and comparisons drawn across arms are weaker than the intervals alone suggest.",
+    "The task set has 7 tasks. Confidence intervals at this size are wide enough that only large differences are detectable; treat every rate as indicative.",
+    "supervised claimed success and was wrong on 8 run(s) (23% [12–39%] (8/35)). A solved rate should never be read without this number beside it.",
+    "supervised-no-graph claimed success and was wrong on 7 run(s) (20% [10–36%] (7/35)). A solved rate should never be read without this number beside it."
+  ],
+  "ran_at": "2026-09-17T16:19:35.455788076Z",
+  "outcomes": [
+    {
+      "task_id": "conflict-status-001",
+      "category": "bug_fix",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": false,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 1,
+      "attempts": 0,
+      "duration": 600038634433,
+      "diff_bytes": 0,
+      "files_touched": 0,
+      "grade": {
+        "total": 3,
+        "passed": 2,
+        "failed": [
+          "TestConflictIsReportedAsConflict"
+        ]
+      },
+      "acceptance_output": "?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n--- FAIL: TestConflictIsReportedAsConflict (0.00s)\n    hidden_acceptance_test.go:18: status = 500 for a version conflict, want 409\nFAIL\nFAIL\texample.com/warehouse/internal/api\t0.002s\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.002s\nok  \texample.com/warehouse/internal/domain\t0.001s\nok  \texample.com/warehouse/internal/inventory\t0.001s\n?   \texample.com/warehouse/internal/notify\t[no test files]\nok  \texample.com/warehouse/internal/orders\t0.001s\nok  \texample.com/warehouse/internal/pricing\t0.001s\nok  \texample.com/warehouse/internal/shipping\t0.001s\n?   \texample.com/warehouse/internal/store\t[no test files]\n?   \texample.com/warehouse/internal/worker\t[no test files]\nFAIL\n"
+    },
+    {
+      "task_id": "damaged-stock-001",
+      "category": "schema_change",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 1,
+      "attempts": 1,
+      "duration": 128770808569,
+      "tokens_used": 215738,
+      "diff_bytes": 1858,
+      "files_touched": 2,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 4
+      }
+    },
+    {
+      "task_id": "discount-floor-001",
+      "category": "bug_fix",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 1,
+      "attempts": 1,
+      "duration": 123464786585,
+      "tokens_used": 111176,
+      "diff_bytes": 562,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 4
+      }
+    },
+    {
+      "task_id": "perishable-zone-001",
+      "category": "feature",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": false,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 1,
+      "attempts": 0,
+      "duration": 600038678934,
+      "diff_bytes": 0,
+      "files_touched": 0,
+      "grade": {
+        "total": 4,
+        "passed": 2,
+        "failed": [
+          "TestPerishableRefusedAbroad",
+          "TestQuoteRefusesPerishableAbroad"
+        ]
+      },
+      "acceptance_output": "?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.002s\nok  \texample.com/warehouse/internal/domain\t0.002s\nok  \texample.com/warehouse/internal/inventory\t0.002s\n?   \texample.com/warehouse/internal/notify\t[no test files]\nok  \texample.com/warehouse/internal/orders\t0.002s\nok  \texample.com/warehouse/internal/pricing\t0.001s\n--- FAIL: TestPerishableRefusedAbroad (0.00s)\n    hidden_acceptance_test.go:51: FR: a perishable parcel was quoted for a zone with no cold chain\n--- FAIL: TestQuoteRefusesPerishableAbroad (0.00s)\n    hidden_acceptance_test.go:91: Quote returned \u003cnil\u003e, want ErrNoCarrier\nFAIL\nFAIL\texample.com/warehouse/internal/shipping\t0.001s\n?   \texample.com/warehouse/internal/store\t[no test files]\n?   \texample.com/warehouse/internal/worker\t[no test files]\nFAIL\n"
+    },
+    {
+      "task_id": "reconcile-steals-reservations",
+      "category": "bug_fix",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": false,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 1,
+      "attempts": 3,
+      "duration": 1516801793900,
+      "tokens_used": 333514,
+      "diff_bytes": 0,
+      "files_touched": 0,
+      "reasons": [
+        "the task changed nothing: every check below passed against the unmodified worktree, so they describe the baseline rather than the work",
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean",
+        "the attempt budget of 3 was exhausted without meeting the completion contract"
+      ],
+      "grade": {
+        "total": 2,
+        "passed": 1,
+        "failed": [
+          "TestReconcileDoesNotTakeStockFromLiveOrders"
+        ]
+      },
+      "acceptance_output": "?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.002s\nok  \texample.com/warehouse/internal/domain\t0.002s\nok  \texample.com/warehouse/internal/inventory\t0.002s\n?   \texample.com/warehouse/internal/notify\t[no test files]\nok  \texample.com/warehouse/internal/orders\t0.002s\nok  \texample.com/warehouse/internal/pricing\t0.001s\nok  \texample.com/warehouse/internal/shipping\t0.002s\n?   \texample.com/warehouse/internal/store\t[no test files]\n--- FAIL: TestReconcileDoesNotTakeStockFromLiveOrders (0.00s)\n    hidden_acceptance_test.go:89: reserved = 0 after 3 reconciliation passes, want 4: the live order's reservation was released along with the cancelled one\nFAIL\nFAIL\texample.com/warehouse/internal/worker\t0.001s\nFAIL\n"
+    },
+    {
+      "task_id": "reserve-idempotent-001",
+      "category": "api_change",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": false,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 1,
+      "attempts": 3,
+      "duration": 392075397183,
+      "tokens_used": 880062,
+      "diff_bytes": 0,
+      "files_touched": 0,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format failed: 1 file(s) are not gofmt'd",
+        "1 file(s) changed outside the task's declared scope: internal/worker/reconcile.go",
+        "the attempt budget of 3 was exhausted without meeting the completion contract"
+      ],
+      "grade": {
+        "total": 3,
+        "passed": 1,
+        "failed": [
+          "TestRepeatedPlacementIsStable",
+          "TestRepeatedPlacementReservesOnce"
+        ]
+      },
+      "acceptance_output": "?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.001s\nok  \texample.com/warehouse/internal/domain\t0.001s\nok  \texample.com/warehouse/internal/inventory\t0.002s\n?   \texample.com/warehouse/internal/notify\t[no test files]\n--- FAIL: TestRepeatedPlacementReservesOnce (0.00s)\n    hidden_acceptance_test.go:71: reserved = 10 after the retry, want 5: the repeat took more stock\n--- FAIL: TestRepeatedPlacementIsStable (0.00s)\n    hidden_acceptance_test.go:83: reserved = 12 after three identical placements, want 4\nFAIL\nFAIL\texample.com/warehouse/internal/orders\t0.002s\nok  \texample.com/warehouse/internal/pricing\t0.002s\nok  \texample.com/warehouse/internal/shipping\t0.002s\n?   \texample.com/warehouse/internal/store\t[no test files]\n?   \texample.com/warehouse/internal/worker\t[no test files]\nFAIL\n"
+    },
+    {
+      "task_id": "restock-silence-001",
+      "category": "bug_fix",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 1,
+      "attempts": 1,
+      "duration": 180064272739,
+      "tokens_used": 353336,
+      "diff_bytes": 2193,
+      "files_touched": 2,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 4
+      }
+    },
+    {
+      "task_id": "conflict-status-001",
+      "category": "bug_fix",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 1,
+      "attempts": 1,
+      "duration": 113469184462,
+      "tokens_used": 230727,
+      "diff_bytes": 700,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 3,
+        "passed": 3
+      }
+    },
+    {
+      "task_id": "damaged-stock-001",
+      "category": "schema_change",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 1,
+      "attempts": 1,
+      "duration": 218096677861,
+      "tokens_used": 804538,
+      "diff_bytes": 1870,
+      "files_touched": 2,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 4
+      }
+    },
+    {
+      "task_id": "discount-floor-001",
+      "category": "bug_fix",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 1,
+      "attempts": 2,
+      "duration": 341227312222,
+      "tokens_used": 276407,
+      "diff_bytes": 717,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 4
+      }
+    },
+    {
+      "task_id": "perishable-zone-001",
+      "category": "feature",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": false,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 1,
+      "attempts": 0,
+      "duration": 600039084168,
+      "diff_bytes": 0,
+      "files_touched": 0,
+      "grade": {
+        "total": 4,
+        "passed": 2,
+        "failed": [
+          "TestPerishableRefusedAbroad",
+          "TestQuoteRefusesPerishableAbroad"
+        ]
+      },
+      "acceptance_output": "?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.002s\nok  \texample.com/warehouse/internal/domain\t0.002s\nok  \texample.com/warehouse/internal/inventory\t0.002s\n?   \texample.com/warehouse/internal/notify\t[no test files]\nok  \texample.com/warehouse/internal/orders\t0.002s\nok  \texample.com/warehouse/internal/pricing\t0.002s\n--- FAIL: TestPerishableRefusedAbroad (0.00s)\n    hidden_acceptance_test.go:51: FR: a perishable parcel was quoted for a zone with no cold chain\n--- FAIL: TestQuoteRefusesPerishableAbroad (0.00s)\n    hidden_acceptance_test.go:91: Quote returned \u003cnil\u003e, want ErrNoCarrier\nFAIL\nFAIL\texample.com/warehouse/internal/shipping\t0.002s\n?   \texample.com/warehouse/internal/store\t[no test files]\n?   \texample.com/warehouse/internal/worker\t[no test files]\nFAIL\n"
+    },
+    {
+      "task_id": "reconcile-steals-reservations",
+      "category": "bug_fix",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": true,
+      "false_accept": true,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 1,
+      "attempts": 2,
+      "duration": 917944064994,
+      "tokens_used": 390080,
+      "diff_bytes": 1013,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 2,
+        "passed": 1,
+        "failed": [
+          "TestReconcileDoesNotTakeStockFromLiveOrders"
+        ]
+      },
+      "acceptance_output": "?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.001s\nok  \texample.com/warehouse/internal/domain\t0.002s\nok  \texample.com/warehouse/internal/inventory\t0.002s\n?   \texample.com/warehouse/internal/notify\t[no test files]\nok  \texample.com/warehouse/internal/orders\t0.002s\nok  \texample.com/warehouse/internal/pricing\t0.002s\nok  \texample.com/warehouse/internal/shipping\t0.001s\n?   \texample.com/warehouse/internal/store\t[no test files]\n--- FAIL: TestReconcileDoesNotTakeStockFromLiveOrders (0.00s)\n    hidden_acceptance_test.go:89: reserved = 1 after 3 reconciliation passes, want 4: the live order's reservation was released along with the cancelled one\nFAIL\nFAIL\texample.com/warehouse/internal/worker\t0.001s\nFAIL\n"
+    },
+    {
+      "task_id": "reserve-idempotent-001",
+      "category": "api_change",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": false,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 1,
+      "attempts": 3,
+      "duration": 360545766845,
+      "tokens_used": 595237,
+      "diff_bytes": 0,
+      "files_touched": 0,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format failed: 1 file(s) are not gofmt'd",
+        "the attempt budget of 3 was exhausted without meeting the completion contract"
+      ],
+      "grade": {
+        "total": 3,
+        "passed": 1,
+        "failed": [
+          "TestRepeatedPlacementIsStable",
+          "TestRepeatedPlacementReservesOnce"
+        ]
+      },
+      "acceptance_output": "?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.002s\nok  \texample.com/warehouse/internal/domain\t0.001s\nok  \texample.com/warehouse/internal/inventory\t0.001s\n?   \texample.com/warehouse/internal/notify\t[no test files]\n--- FAIL: TestRepeatedPlacementReservesOnce (0.00s)\n    hidden_acceptance_test.go:71: reserved = 10 after the retry, want 5: the repeat took more stock\n--- FAIL: TestRepeatedPlacementIsStable (0.00s)\n    hidden_acceptance_test.go:83: reserved = 12 after three identical placements, want 4\nFAIL\nFAIL\texample.com/warehouse/internal/orders\t0.001s\nok  \texample.com/warehouse/internal/pricing\t0.001s\nok  \texample.com/warehouse/internal/shipping\t0.001s\n?   \texample.com/warehouse/internal/store\t[no test files]\n?   \texample.com/warehouse/internal/worker\t[no test files]\nFAIL\n"
+    },
+    {
+      "task_id": "restock-silence-001",
+      "category": "bug_fix",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": true,
+      "false_accept": true,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 1,
+      "attempts": 2,
+      "duration": 184970950556,
+      "tokens_used": 261019,
+      "diff_bytes": 610,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 3,
+        "failed": [
+          "TestASkuThatCannotBeLookedUpIsNotSilentlyDropped"
+        ]
+      },
+      "acceptance_output": "?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.002s\nok  \texample.com/warehouse/internal/domain\t0.001s\nok  \texample.com/warehouse/internal/inventory\t0.002s\n?   \texample.com/warehouse/internal/notify\t[no test files]\nok  \texample.com/warehouse/internal/orders\t0.002s\nok  \texample.com/warehouse/internal/pricing\t0.002s\nok  \texample.com/warehouse/internal/shipping\t0.002s\n?   \texample.com/warehouse/internal/store\t[no test files]\n--- FAIL: TestASkuThatCannotBeLookedUpIsNotSilentlyDropped (0.00s)\n    hidden_acceptance_test.go:62: a SKU below the threshold vanished from the report because its item record could not be read, and the pass returned success\nFAIL\nFAIL\texample.com/warehouse/internal/worker\t0.002s\nFAIL\n"
+    },
+    {
+      "task_id": "conflict-status-001",
+      "category": "bug_fix",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 2,
+      "attempts": 1,
+      "duration": 147750397622,
+      "tokens_used": 300953,
+      "diff_bytes": 710,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 3,
+        "passed": 3
+      }
+    },
+    {
+      "task_id": "damaged-stock-001",
+      "category": "schema_change",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 2,
+      "attempts": 1,
+      "duration": 205631728274,
+      "tokens_used": 610992,
+      "diff_bytes": 1660,
+      "files_touched": 2,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 4
+      }
+    },
+    {
+      "task_id": "discount-floor-001",
+      "category": "bug_fix",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 2,
+      "attempts": 1,
+      "duration": 342508343986,
+      "tokens_used": 354274,
+      "diff_bytes": 675,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 4
+      }
+    },
+    {
+      "task_id": "perishable-zone-001",
+      "category": "feature",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": false,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 2,
+      "attempts": 0,
+      "duration": 600041614090,
+      "diff_bytes": 0,
+      "files_touched": 0,
+      "grade": {
+        "total": 4,
+        "passed": 2,
+        "failed": [
+          "TestPerishableRefusedAbroad",
+          "TestQuoteRefusesPerishableAbroad"
+        ]
+      },
+      "acceptance_output": "?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.002s\nok  \texample.com/warehouse/internal/domain\t0.001s\nok  \texample.com/warehouse/internal/inventory\t0.001s\n?   \texample.com/warehouse/internal/notify\t[no test files]\nok  \texample.com/warehouse/internal/orders\t0.001s\nok  \texample.com/warehouse/internal/pricing\t0.001s\n--- FAIL: TestPerishableRefusedAbroad (0.00s)\n    hidden_acceptance_test.go:51: FR: a perishable parcel was quoted for a zone with no cold chain\n--- FAIL: TestQuoteRefusesPerishableAbroad (0.00s)\n    hidden_acceptance_test.go:91: Quote returned \u003cnil\u003e, want ErrNoCarrier\nFAIL\nFAIL\texample.com/warehouse/internal/shipping\t0.002s\n?   \texample.com/warehouse/internal/store\t[no test files]\n?   \texample.com/warehouse/internal/worker\t[no test files]\nFAIL\n"
+    },
+    {
+      "task_id": "reconcile-steals-reservations",
+      "category": "bug_fix",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 2,
+      "attempts": 1,
+      "duration": 217281092604,
+      "tokens_used": 227905,
+      "diff_bytes": 2732,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 2,
+        "passed": 2
+      }
+    },
+    {
+      "task_id": "reserve-idempotent-001",
+      "category": "api_change",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 2,
+      "attempts": 1,
+      "duration": 203784991042,
+      "tokens_used": 414348,
+      "diff_bytes": 3973,
+      "files_touched": 3,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 3,
+        "passed": 3
+      }
+    },
+    {
+      "task_id": "restock-silence-001",
+      "category": "bug_fix",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 2,
+      "attempts": 1,
+      "duration": 159605184869,
+      "tokens_used": 252113,
+      "diff_bytes": 2062,
+      "files_touched": 2,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 4
+      }
+    },
+    {
+      "task_id": "conflict-status-001",
+      "category": "bug_fix",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 2,
+      "attempts": 1,
+      "duration": 105595193008,
+      "tokens_used": 196490,
+      "diff_bytes": 714,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 3,
+        "passed": 3
+      }
+    },
+    {
+      "task_id": "damaged-stock-001",
+      "category": "schema_change",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 2,
+      "attempts": 1,
+      "duration": 146419927144,
+      "tokens_used": 329330,
+      "diff_bytes": 1637,
+      "files_touched": 2,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 4
+      }
+    },
+    {
+      "task_id": "discount-floor-001",
+      "category": "bug_fix",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": true,
+      "false_accept": true,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 2,
+      "attempts": 1,
+      "duration": 200853697527,
+      "tokens_used": 126714,
+      "diff_bytes": 1494,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 2,
+        "failed": [
+          "TestBreakdownReconcilesAfterClamping",
+          "TestTaxIsNotChargedOnANegativeBase"
+        ]
+      },
+      "acceptance_output": "?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.002s\nok  \texample.com/warehouse/internal/domain\t0.001s\nok  \texample.com/warehouse/internal/inventory\t0.002s\n?   \texample.com/warehouse/internal/notify\t[no test files]\nok  \texample.com/warehouse/internal/orders\t0.002s\n--- FAIL: TestBreakdownReconcilesAfterClamping (0.00s)\n    hidden_acceptance_test.go:70: the breakdown claims 1300 taken off a subtotal of 1000\n--- FAIL: TestTaxIsNotChargedOnANegativeBase (0.00s)\n    hidden_acceptance_test.go:94: total = 0, want 600 (shipping plus its tax)\nFAIL\nFAIL\texample.com/warehouse/internal/pricing\t0.001s\nok  \texample.com/warehouse/internal/shipping\t0.001s\n?   \texample.com/warehouse/internal/store\t[no test files]\n?   \texample.com/warehouse/internal/worker\t[no test files]\nFAIL\n"
+    },
+    {
+      "task_id": "perishable-zone-001",
+      "category": "feature",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": false,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 2,
+      "attempts": 0,
+      "duration": 600047605398,
+      "diff_bytes": 0,
+      "files_touched": 0,
+      "grade": {
+        "total": 4,
+        "passed": 2,
+        "failed": [
+          "TestPerishableRefusedAbroad",
+          "TestQuoteRefusesPerishableAbroad"
+        ]
+      },
+      "acceptance_output": "?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.002s\nok  \texample.com/warehouse/internal/domain\t0.001s\nok  \texample.com/warehouse/internal/inventory\t0.001s\n?   \texample.com/warehouse/internal/notify\t[no test files]\nok  \texample.com/warehouse/internal/orders\t0.001s\nok  \texample.com/warehouse/internal/pricing\t0.001s\n--- FAIL: TestPerishableRefusedAbroad (0.00s)\n    hidden_acceptance_test.go:51: FR: a perishable parcel was quoted for a zone with no cold chain\n--- FAIL: TestQuoteRefusesPerishableAbroad (0.00s)\n    hidden_acceptance_test.go:91: Quote returned \u003cnil\u003e, want ErrNoCarrier\nFAIL\nFAIL\texample.com/warehouse/internal/shipping\t0.001s\n?   \texample.com/warehouse/internal/store\t[no test files]\n?   \texample.com/warehouse/internal/worker\t[no test files]\nFAIL\n"
+    },
+    {
+      "task_id": "reconcile-steals-reservations",
+      "category": "bug_fix",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": true,
+      "false_accept": true,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 2,
+      "attempts": 2,
+      "duration": 709100513170,
+      "tokens_used": 366430,
+      "diff_bytes": 1694,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 2,
+        "passed": 1,
+        "failed": [
+          "TestReconcileStillRecoversOrphanedReservations"
+        ]
+      },
+      "acceptance_output": "?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.002s\nok  \texample.com/warehouse/internal/domain\t0.001s\nok  \texample.com/warehouse/internal/inventory\t0.001s\n?   \texample.com/warehouse/internal/notify\t[no test files]\nok  \texample.com/warehouse/internal/orders\t0.001s\nok  \texample.com/warehouse/internal/pricing\t0.001s\nok  \texample.com/warehouse/internal/shipping\t0.001s\n?   \texample.com/warehouse/internal/store\t[no test files]\n--- FAIL: TestReconcileStillRecoversOrphanedReservations (0.00s)\n    hidden_acceptance_test.go:122: reserved = 7 after reconciling an orphaned cancellation, want 2: the reconciler no longer recovers stock, which is what it is for\nFAIL\nFAIL\texample.com/warehouse/internal/worker\t0.001s\nFAIL\n"
+    },
+    {
+      "task_id": "reserve-idempotent-001",
+      "category": "api_change",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": false,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 2,
+      "attempts": 3,
+      "duration": 320696337798,
+      "tokens_used": 631791,
+      "diff_bytes": 0,
+      "files_touched": 0,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format failed: 1 file(s) are not gofmt'd",
+        "the attempt budget of 3 was exhausted without meeting the completion contract"
+      ],
+      "grade": {
+        "total": 3,
+        "passed": 1,
+        "failed": [
+          "TestRepeatedPlacementIsStable",
+          "TestRepeatedPlacementReservesOnce"
+        ]
+      },
+      "acceptance_output": "?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.002s\nok  \texample.com/warehouse/internal/domain\t0.002s\nok  \texample.com/warehouse/internal/inventory\t0.002s\n?   \texample.com/warehouse/internal/notify\t[no test files]\n--- FAIL: TestRepeatedPlacementReservesOnce (0.00s)\n    hidden_acceptance_test.go:71: reserved = 10 after the retry, want 5: the repeat took more stock\n--- FAIL: TestRepeatedPlacementIsStable (0.00s)\n    hidden_acceptance_test.go:83: reserved = 12 after three identical placements, want 4\nFAIL\nFAIL\texample.com/warehouse/internal/orders\t0.001s\nok  \texample.com/warehouse/internal/pricing\t0.002s\nok  \texample.com/warehouse/internal/shipping\t0.001s\n?   \texample.com/warehouse/internal/store\t[no test files]\n?   \texample.com/warehouse/internal/worker\t[no test files]\nFAIL\n"
+    },
+    {
+      "task_id": "restock-silence-001",
+      "category": "bug_fix",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": false,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 2,
+      "attempts": 3,
+      "duration": 475308125503,
+      "tokens_used": 925459,
+      "diff_bytes": 0,
+      "files_touched": 0,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean",
+        "2 file(s) changed outside the task's declared scope: cmd/warehoused/main.go, internal/notify/notify.go",
+        "the attempt budget of 3 was exhausted without meeting the completion contract"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 2,
+        "failed": [
+          "TestAFailedAlertIsNotReportedAsDelivered",
+          "TestASkuThatCannotBeLookedUpIsNotSilentlyDropped"
+        ]
+      },
+      "acceptance_output": "?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.002s\nok  \texample.com/warehouse/internal/domain\t0.001s\nok  \texample.com/warehouse/internal/inventory\t0.002s\n?   \texample.com/warehouse/internal/notify\t[no test files]\nok  \texample.com/warehouse/internal/orders\t0.001s\nok  \texample.com/warehouse/internal/pricing\t0.001s\nok  \texample.com/warehouse/internal/shipping\t0.001s\n?   \texample.com/warehouse/internal/store\t[no test files]\n--- FAIL: TestAFailedAlertIsNotReportedAsDelivered (0.00s)\n    hidden_acceptance_test.go:48: RunOnce reported 1 alert(s) and no error, but every write to the log failed\n--- FAIL: TestASkuThatCannotBeLookedUpIsNotSilentlyDropped (0.00s)\n    hidden_acceptance_test.go:62: a SKU below the threshold vanished from the report because its item record could not be read, and the pass returned success\nFAIL\nFAIL\texample.com/warehouse/internal/worker\t0.001s\nFAIL\n"
+    },
+    {
+      "task_id": "conflict-status-001",
+      "category": "bug_fix",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 3,
+      "attempts": 1,
+      "duration": 130598479852,
+      "tokens_used": 263985,
+      "diff_bytes": 699,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 3,
+        "passed": 3
+      }
+    },
+    {
+      "task_id": "damaged-stock-001",
+      "category": "schema_change",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 3,
+      "attempts": 1,
+      "duration": 161937968303,
+      "tokens_used": 277276,
+      "diff_bytes": 1528,
+      "files_touched": 2,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 4
+      }
+    },
+    {
+      "task_id": "discount-floor-001",
+      "category": "bug_fix",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 3,
+      "attempts": 1,
+      "duration": 168169761442,
+      "tokens_used": 167098,
+      "diff_bytes": 534,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 4
+      }
+    },
+    {
+      "task_id": "perishable-zone-001",
+      "category": "feature",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 3,
+      "attempts": 1,
+      "duration": 118574298562,
+      "tokens_used": 178524,
+      "diff_bytes": 700,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 4
+      }
+    },
+    {
+      "task_id": "reconcile-steals-reservations",
+      "category": "bug_fix",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": true,
+      "false_accept": true,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 3,
+      "attempts": 3,
+      "duration": 1236812947379,
+      "tokens_used": 466097,
+      "diff_bytes": 1136,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 2,
+        "passed": 1,
+        "failed": [
+          "TestReconcileDoesNotTakeStockFromLiveOrders"
+        ]
+      },
+      "acceptance_output": "?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.001s\nok  \texample.com/warehouse/internal/domain\t0.001s\nok  \texample.com/warehouse/internal/inventory\t0.002s\n?   \texample.com/warehouse/internal/notify\t[no test files]\nok  \texample.com/warehouse/internal/orders\t0.002s\nok  \texample.com/warehouse/internal/pricing\t0.002s\nok  \texample.com/warehouse/internal/shipping\t0.002s\n?   \texample.com/warehouse/internal/store\t[no test files]\n--- FAIL: TestReconcileDoesNotTakeStockFromLiveOrders (0.00s)\n    hidden_acceptance_test.go:89: reserved = 0 after 3 reconciliation passes, want 4: the live order's reservation was released along with the cancelled one\nFAIL\nFAIL\texample.com/warehouse/internal/worker\t0.002s\nFAIL\n"
+    },
+    {
+      "task_id": "reserve-idempotent-001",
+      "category": "api_change",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 3,
+      "attempts": 1,
+      "duration": 226307484085,
+      "tokens_used": 481097,
+      "diff_bytes": 3997,
+      "files_touched": 4,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 3,
+        "passed": 3
+      }
+    },
+    {
+      "task_id": "restock-silence-001",
+      "category": "bug_fix",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": true,
+      "false_accept": true,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 3,
+      "attempts": 1,
+      "duration": 126227713002,
+      "tokens_used": 214718,
+      "diff_bytes": 1031,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 3,
+        "failed": [
+          "TestAFailedAlertIsNotReportedAsDelivered"
+        ]
+      },
+      "acceptance_output": "?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.002s\nok  \texample.com/warehouse/internal/domain\t0.002s\nok  \texample.com/warehouse/internal/inventory\t0.002s\n?   \texample.com/warehouse/internal/notify\t[no test files]\nok  \texample.com/warehouse/internal/orders\t0.002s\nok  \texample.com/warehouse/internal/pricing\t0.002s\nok  \texample.com/warehouse/internal/shipping\t0.002s\n?   \texample.com/warehouse/internal/store\t[no test files]\n--- FAIL: TestAFailedAlertIsNotReportedAsDelivered (0.00s)\n    hidden_acceptance_test.go:48: RunOnce reported 1 alert(s) and no error, but every write to the log failed\nFAIL\nFAIL\texample.com/warehouse/internal/worker\t0.002s\nFAIL\n"
+    },
+    {
+      "task_id": "conflict-status-001",
+      "category": "bug_fix",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 3,
+      "attempts": 1,
+      "duration": 137566583765,
+      "tokens_used": 265477,
+      "diff_bytes": 707,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 3,
+        "passed": 3
+      }
+    },
+    {
+      "task_id": "damaged-stock-001",
+      "category": "schema_change",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 3,
+      "attempts": 1,
+      "duration": 116144465213,
+      "tokens_used": 158937,
+      "diff_bytes": 1826,
+      "files_touched": 2,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 4
+      }
+    },
+    {
+      "task_id": "discount-floor-001",
+      "category": "bug_fix",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 3,
+      "attempts": 1,
+      "duration": 147786448524,
+      "tokens_used": 134929,
+      "diff_bytes": 666,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 4
+      }
+    },
+    {
+      "task_id": "perishable-zone-001",
+      "category": "feature",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 3,
+      "attempts": 1,
+      "duration": 145096620278,
+      "tokens_used": 228907,
+      "diff_bytes": 717,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 4
+      }
+    },
+    {
+      "task_id": "reconcile-steals-reservations",
+      "category": "bug_fix",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 3,
+      "attempts": 1,
+      "duration": 170262572534,
+      "tokens_used": 153471,
+      "diff_bytes": 2666,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 2,
+        "passed": 2
+      }
+    },
+    {
+      "task_id": "reserve-idempotent-001",
+      "category": "api_change",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": false,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 3,
+      "attempts": 3,
+      "duration": 359295749857,
+      "tokens_used": 592294,
+      "diff_bytes": 0,
+      "files_touched": 0,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format failed: 1 file(s) are not gofmt'd",
+        "the attempt budget of 3 was exhausted without meeting the completion contract"
+      ],
+      "grade": {
+        "total": 3,
+        "passed": 1,
+        "failed": [
+          "TestRepeatedPlacementIsStable",
+          "TestRepeatedPlacementReservesOnce"
+        ]
+      },
+      "acceptance_output": "?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.001s\nok  \texample.com/warehouse/internal/domain\t0.002s\nok  \texample.com/warehouse/internal/inventory\t0.001s\n?   \texample.com/warehouse/internal/notify\t[no test files]\n--- FAIL: TestRepeatedPlacementReservesOnce (0.00s)\n    hidden_acceptance_test.go:71: reserved = 10 after the retry, want 5: the repeat took more stock\n--- FAIL: TestRepeatedPlacementIsStable (0.00s)\n    hidden_acceptance_test.go:83: reserved = 12 after three identical placements, want 4\nFAIL\nFAIL\texample.com/warehouse/internal/orders\t0.001s\nok  \texample.com/warehouse/internal/pricing\t0.001s\nok  \texample.com/warehouse/internal/shipping\t0.001s\n?   \texample.com/warehouse/internal/store\t[no test files]\n?   \texample.com/warehouse/internal/worker\t[no test files]\nFAIL\n"
+    },
+    {
+      "task_id": "restock-silence-001",
+      "category": "bug_fix",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": true,
+      "false_accept": true,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 3,
+      "attempts": 1,
+      "duration": 127843849542,
+      "tokens_used": 255267,
+      "diff_bytes": 1034,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 3,
+        "failed": [
+          "TestAFailedAlertIsNotReportedAsDelivered"
+        ]
+      },
+      "acceptance_output": "?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.002s\nok  \texample.com/warehouse/internal/domain\t0.001s\nok  \texample.com/warehouse/internal/inventory\t0.002s\n?   \texample.com/warehouse/internal/notify\t[no test files]\nok  \texample.com/warehouse/internal/orders\t0.001s\nok  \texample.com/warehouse/internal/pricing\t0.002s\nok  \texample.com/warehouse/internal/shipping\t0.001s\n?   \texample.com/warehouse/internal/store\t[no test files]\n--- FAIL: TestAFailedAlertIsNotReportedAsDelivered (0.00s)\n    hidden_acceptance_test.go:48: RunOnce reported 1 alert(s) and no error, but every write to the log failed\nFAIL\nFAIL\texample.com/warehouse/internal/worker\t0.002s\nFAIL\n"
+    },
+    {
+      "task_id": "conflict-status-001",
+      "category": "bug_fix",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 4,
+      "attempts": 1,
+      "duration": 122634632319,
+      "tokens_used": 227217,
+      "diff_bytes": 710,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 3,
+        "passed": 3
+      }
+    },
+    {
+      "task_id": "damaged-stock-001",
+      "category": "schema_change",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": true,
+      "false_accept": true,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 4,
+      "attempts": 1,
+      "duration": 128792974054,
+      "tokens_used": 201339,
+      "diff_bytes": 1779,
+      "files_touched": 2,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 0
+      },
+      "acceptance_output": "# example.com/warehouse/internal/inventory [example.com/warehouse/internal/inventory.test]\ninternal/inventory/hidden_acceptance_test.go:31:17: svc.MarkDamaged undefined (type *Service has no field or method MarkDamaged)\ninternal/inventory/hidden_acceptance_test.go:47:17: svc.MarkDamaged undefined (type *Service has no field or method MarkDamaged)\ninternal/inventory/hidden_acceptance_test.go:64:17: svc.MarkDamaged undefined (type *Service has no field or method MarkDamaged)\ninternal/inventory/hidden_acceptance_test.go:79:17: svc.MarkDamaged undefined (type *Service has no field or method MarkDamaged)\n?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.002s\nok  \texample.com/warehouse/internal/domain\t0.003s\nFAIL\texample.com/warehouse/internal/inventory [build failed]\n?   \texample.com/warehouse/internal/notify\t[no test files]\nok  \texample.com/warehouse/internal/orders\t0.001s\nok  \texample.com/warehouse/internal/pricing\t0.002s\nok  \texample.com/warehouse/internal/shipping\t0.002s\n?   \texample.com/warehouse/internal/store\t[no test files]\n?   \texample.com/warehouse/internal/worker\t[no test files]\nFAIL\n"
+    },
+    {
+      "task_id": "discount-floor-001",
+      "category": "bug_fix",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 4,
+      "attempts": 1,
+      "duration": 151367183325,
+      "tokens_used": 120854,
+      "diff_bytes": 865,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 4
+      }
+    },
+    {
+      "task_id": "perishable-zone-001",
+      "category": "feature",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": false,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 4,
+      "attempts": 0,
+      "duration": 600040014479,
+      "diff_bytes": 0,
+      "files_touched": 0,
+      "grade": {
+        "total": 4,
+        "passed": 2,
+        "failed": [
+          "TestPerishableRefusedAbroad",
+          "TestQuoteRefusesPerishableAbroad"
+        ]
+      },
+      "acceptance_output": "?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.002s\nok  \texample.com/warehouse/internal/domain\t0.002s\nok  \texample.com/warehouse/internal/inventory\t0.001s\n?   \texample.com/warehouse/internal/notify\t[no test files]\nok  \texample.com/warehouse/internal/orders\t0.001s\nok  \texample.com/warehouse/internal/pricing\t0.001s\n--- FAIL: TestPerishableRefusedAbroad (0.00s)\n    hidden_acceptance_test.go:51: FR: a perishable parcel was quoted for a zone with no cold chain\n--- FAIL: TestQuoteRefusesPerishableAbroad (0.00s)\n    hidden_acceptance_test.go:91: Quote returned \u003cnil\u003e, want ErrNoCarrier\nFAIL\nFAIL\texample.com/warehouse/internal/shipping\t0.002s\n?   \texample.com/warehouse/internal/store\t[no test files]\n?   \texample.com/warehouse/internal/worker\t[no test files]\nFAIL\n"
+    },
+    {
+      "task_id": "reconcile-steals-reservations",
+      "category": "bug_fix",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": true,
+      "false_accept": true,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 4,
+      "attempts": 1,
+      "duration": 268395780166,
+      "tokens_used": 211991,
+      "diff_bytes": 1822,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 2,
+        "passed": 1,
+        "failed": [
+          "TestReconcileStillRecoversOrphanedReservations"
+        ]
+      },
+      "acceptance_output": "?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.001s\nok  \texample.com/warehouse/internal/domain\t0.001s\nok  \texample.com/warehouse/internal/inventory\t0.002s\n?   \texample.com/warehouse/internal/notify\t[no test files]\nok  \texample.com/warehouse/internal/orders\t0.001s\nok  \texample.com/warehouse/internal/pricing\t0.002s\nok  \texample.com/warehouse/internal/shipping\t0.001s\n?   \texample.com/warehouse/internal/store\t[no test files]\n--- FAIL: TestReconcileStillRecoversOrphanedReservations (0.00s)\n    hidden_acceptance_test.go:122: reserved = 7 after reconciling an orphaned cancellation, want 2: the reconciler no longer recovers stock, which is what it is for\nFAIL\nFAIL\texample.com/warehouse/internal/worker\t0.001s\nFAIL\n"
+    },
+    {
+      "task_id": "reserve-idempotent-001",
+      "category": "api_change",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": false,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 4,
+      "attempts": 3,
+      "duration": 338058197427,
+      "tokens_used": 653197,
+      "diff_bytes": 0,
+      "files_touched": 0,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format failed: 1 file(s) are not gofmt'd",
+        "the attempt budget of 3 was exhausted without meeting the completion contract"
+      ],
+      "grade": {
+        "total": 3,
+        "passed": 1,
+        "failed": [
+          "TestRepeatedPlacementIsStable",
+          "TestRepeatedPlacementReservesOnce"
+        ]
+      },
+      "acceptance_output": "?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.002s\nok  \texample.com/warehouse/internal/domain\t0.002s\nok  \texample.com/warehouse/internal/inventory\t0.002s\n?   \texample.com/warehouse/internal/notify\t[no test files]\n--- FAIL: TestRepeatedPlacementReservesOnce (0.00s)\n    hidden_acceptance_test.go:71: reserved = 10 after the retry, want 5: the repeat took more stock\n--- FAIL: TestRepeatedPlacementIsStable (0.00s)\n    hidden_acceptance_test.go:83: reserved = 12 after three identical placements, want 4\nFAIL\nFAIL\texample.com/warehouse/internal/orders\t0.001s\nok  \texample.com/warehouse/internal/pricing\t0.001s\nok  \texample.com/warehouse/internal/shipping\t0.001s\n?   \texample.com/warehouse/internal/store\t[no test files]\n?   \texample.com/warehouse/internal/worker\t[no test files]\nFAIL\n"
+    },
+    {
+      "task_id": "restock-silence-001",
+      "category": "bug_fix",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": true,
+      "false_accept": true,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 4,
+      "attempts": 1,
+      "duration": 103462465268,
+      "tokens_used": 171406,
+      "diff_bytes": 433,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 3,
+        "failed": [
+          "TestAFailedAlertIsNotReportedAsDelivered"
+        ]
+      },
+      "acceptance_output": "?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.001s\nok  \texample.com/warehouse/internal/domain\t0.001s\nok  \texample.com/warehouse/internal/inventory\t0.001s\n?   \texample.com/warehouse/internal/notify\t[no test files]\nok  \texample.com/warehouse/internal/orders\t0.002s\nok  \texample.com/warehouse/internal/pricing\t0.001s\nok  \texample.com/warehouse/internal/shipping\t0.002s\n?   \texample.com/warehouse/internal/store\t[no test files]\n--- FAIL: TestAFailedAlertIsNotReportedAsDelivered (0.00s)\n    hidden_acceptance_test.go:48: RunOnce reported 1 alert(s) and no error, but every write to the log failed\nFAIL\nFAIL\texample.com/warehouse/internal/worker\t0.002s\nFAIL\n"
+    },
+    {
+      "task_id": "conflict-status-001",
+      "category": "bug_fix",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 4,
+      "attempts": 1,
+      "duration": 125938381170,
+      "tokens_used": 217668,
+      "diff_bytes": 714,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 3,
+        "passed": 3
+      }
+    },
+    {
+      "task_id": "damaged-stock-001",
+      "category": "schema_change",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": true,
+      "false_accept": true,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 4,
+      "attempts": 1,
+      "duration": 128422460291,
+      "tokens_used": 267951,
+      "diff_bytes": 1536,
+      "files_touched": 2,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 0
+      },
+      "acceptance_output": "# example.com/warehouse/internal/inventory [example.com/warehouse/internal/inventory.test]\ninternal/inventory/hidden_acceptance_test.go:31:17: svc.MarkDamaged undefined (type *Service has no field or method MarkDamaged)\ninternal/inventory/hidden_acceptance_test.go:47:17: svc.MarkDamaged undefined (type *Service has no field or method MarkDamaged)\ninternal/inventory/hidden_acceptance_test.go:64:17: svc.MarkDamaged undefined (type *Service has no field or method MarkDamaged)\ninternal/inventory/hidden_acceptance_test.go:79:17: svc.MarkDamaged undefined (type *Service has no field or method MarkDamaged)\n?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.001s\nok  \texample.com/warehouse/internal/domain\t0.002s\nFAIL\texample.com/warehouse/internal/inventory [build failed]\n?   \texample.com/warehouse/internal/notify\t[no test files]\nok  \texample.com/warehouse/internal/orders\t0.001s\nok  \texample.com/warehouse/internal/pricing\t0.001s\nok  \texample.com/warehouse/internal/shipping\t0.001s\n?   \texample.com/warehouse/internal/store\t[no test files]\n?   \texample.com/warehouse/internal/worker\t[no test files]\nFAIL\n"
+    },
+    {
+      "task_id": "discount-floor-001",
+      "category": "bug_fix",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 4,
+      "attempts": 1,
+      "duration": 94571374343,
+      "tokens_used": 86030,
+      "diff_bytes": 716,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 4
+      }
+    },
+    {
+      "task_id": "perishable-zone-001",
+      "category": "feature",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": false,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 4,
+      "attempts": 0,
+      "duration": 600048937357,
+      "diff_bytes": 0,
+      "files_touched": 0,
+      "grade": {
+        "total": 4,
+        "passed": 2,
+        "failed": [
+          "TestPerishableRefusedAbroad",
+          "TestQuoteRefusesPerishableAbroad"
+        ]
+      },
+      "acceptance_output": "?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.002s\nok  \texample.com/warehouse/internal/domain\t0.002s\nok  \texample.com/warehouse/internal/inventory\t0.003s\n?   \texample.com/warehouse/internal/notify\t[no test files]\nok  \texample.com/warehouse/internal/orders\t0.001s\nok  \texample.com/warehouse/internal/pricing\t0.001s\n--- FAIL: TestPerishableRefusedAbroad (0.00s)\n    hidden_acceptance_test.go:51: FR: a perishable parcel was quoted for a zone with no cold chain\n--- FAIL: TestQuoteRefusesPerishableAbroad (0.00s)\n    hidden_acceptance_test.go:91: Quote returned \u003cnil\u003e, want ErrNoCarrier\nFAIL\nFAIL\texample.com/warehouse/internal/shipping\t0.001s\n?   \texample.com/warehouse/internal/store\t[no test files]\n?   \texample.com/warehouse/internal/worker\t[no test files]\nFAIL\n"
+    },
+    {
+      "task_id": "reconcile-steals-reservations",
+      "category": "bug_fix",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": false,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 4,
+      "attempts": 3,
+      "duration": 1407418288489,
+      "tokens_used": 542906,
+      "diff_bytes": 0,
+      "files_touched": 0,
+      "reasons": [
+        "the task changed nothing: every check below passed against the unmodified worktree, so they describe the baseline rather than the work",
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean",
+        "the attempt budget of 3 was exhausted without meeting the completion contract"
+      ],
+      "grade": {
+        "total": 2,
+        "passed": 1,
+        "failed": [
+          "TestReconcileDoesNotTakeStockFromLiveOrders"
+        ]
+      },
+      "acceptance_output": "?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.002s\nok  \texample.com/warehouse/internal/domain\t0.002s\nok  \texample.com/warehouse/internal/inventory\t0.002s\n?   \texample.com/warehouse/internal/notify\t[no test files]\nok  \texample.com/warehouse/internal/orders\t0.002s\nok  \texample.com/warehouse/internal/pricing\t0.002s\nok  \texample.com/warehouse/internal/shipping\t0.002s\n?   \texample.com/warehouse/internal/store\t[no test files]\n--- FAIL: TestReconcileDoesNotTakeStockFromLiveOrders (0.00s)\n    hidden_acceptance_test.go:89: reserved = 0 after 3 reconciliation passes, want 4: the live order's reservation was released along with the cancelled one\nFAIL\nFAIL\texample.com/warehouse/internal/worker\t0.002s\nFAIL\n"
+    },
+    {
+      "task_id": "reserve-idempotent-001",
+      "category": "api_change",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 4,
+      "attempts": 1,
+      "duration": 217384633875,
+      "tokens_used": 473583,
+      "diff_bytes": 5084,
+      "files_touched": 3,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 3,
+        "passed": 3
+      }
+    },
+    {
+      "task_id": "restock-silence-001",
+      "category": "bug_fix",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": true,
+      "false_accept": true,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 4,
+      "attempts": 3,
+      "duration": 242309165265,
+      "tokens_used": 367862,
+      "diff_bytes": 1175,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 3,
+        "failed": [
+          "TestAFailedAlertIsNotReportedAsDelivered"
+        ]
+      },
+      "acceptance_output": "?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.002s\nok  \texample.com/warehouse/internal/domain\t0.002s\nok  \texample.com/warehouse/internal/inventory\t0.001s\n?   \texample.com/warehouse/internal/notify\t[no test files]\nok  \texample.com/warehouse/internal/orders\t0.002s\nok  \texample.com/warehouse/internal/pricing\t0.002s\nok  \texample.com/warehouse/internal/shipping\t0.001s\n?   \texample.com/warehouse/internal/store\t[no test files]\n--- FAIL: TestAFailedAlertIsNotReportedAsDelivered (0.00s)\n    hidden_acceptance_test.go:48: RunOnce reported 1 alert(s) and no error, but every write to the log failed\nFAIL\nFAIL\texample.com/warehouse/internal/worker\t0.001s\nFAIL\n"
+    },
+    {
+      "task_id": "conflict-status-001",
+      "category": "bug_fix",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 5,
+      "attempts": 1,
+      "duration": 115767762494,
+      "tokens_used": 207152,
+      "diff_bytes": 699,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 3,
+        "passed": 3
+      }
+    },
+    {
+      "task_id": "damaged-stock-001",
+      "category": "schema_change",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": true,
+      "false_accept": true,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 5,
+      "attempts": 1,
+      "duration": 129676344993,
+      "tokens_used": 216499,
+      "diff_bytes": 1652,
+      "files_touched": 2,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 0
+      },
+      "acceptance_output": "# example.com/warehouse/internal/inventory [example.com/warehouse/internal/inventory.test]\ninternal/inventory/hidden_acceptance_test.go:31:17: svc.MarkDamaged undefined (type *Service has no field or method MarkDamaged)\ninternal/inventory/hidden_acceptance_test.go:47:17: svc.MarkDamaged undefined (type *Service has no field or method MarkDamaged)\ninternal/inventory/hidden_acceptance_test.go:64:17: svc.MarkDamaged undefined (type *Service has no field or method MarkDamaged)\ninternal/inventory/hidden_acceptance_test.go:79:17: svc.MarkDamaged undefined (type *Service has no field or method MarkDamaged)\n?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.002s\nok  \texample.com/warehouse/internal/domain\t0.002s\nFAIL\texample.com/warehouse/internal/inventory [build failed]\n?   \texample.com/warehouse/internal/notify\t[no test files]\nok  \texample.com/warehouse/internal/orders\t0.002s\nok  \texample.com/warehouse/internal/pricing\t0.001s\nok  \texample.com/warehouse/internal/shipping\t0.001s\n?   \texample.com/warehouse/internal/store\t[no test files]\n?   \texample.com/warehouse/internal/worker\t[no test files]\nFAIL\n"
+    },
+    {
+      "task_id": "discount-floor-001",
+      "category": "bug_fix",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 5,
+      "attempts": 1,
+      "duration": 165202586266,
+      "tokens_used": 163472,
+      "diff_bytes": 976,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 4
+      }
+    },
+    {
+      "task_id": "perishable-zone-001",
+      "category": "feature",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": false,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 5,
+      "attempts": 0,
+      "duration": 600039012681,
+      "diff_bytes": 0,
+      "files_touched": 0,
+      "grade": {
+        "total": 4,
+        "passed": 2,
+        "failed": [
+          "TestPerishableRefusedAbroad",
+          "TestQuoteRefusesPerishableAbroad"
+        ]
+      },
+      "acceptance_output": "?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.002s\nok  \texample.com/warehouse/internal/domain\t0.002s\nok  \texample.com/warehouse/internal/inventory\t0.002s\n?   \texample.com/warehouse/internal/notify\t[no test files]\nok  \texample.com/warehouse/internal/orders\t0.001s\nok  \texample.com/warehouse/internal/pricing\t0.001s\n--- FAIL: TestPerishableRefusedAbroad (0.00s)\n    hidden_acceptance_test.go:51: FR: a perishable parcel was quoted for a zone with no cold chain\n--- FAIL: TestQuoteRefusesPerishableAbroad (0.00s)\n    hidden_acceptance_test.go:91: Quote returned \u003cnil\u003e, want ErrNoCarrier\nFAIL\nFAIL\texample.com/warehouse/internal/shipping\t0.001s\n?   \texample.com/warehouse/internal/store\t[no test files]\n?   \texample.com/warehouse/internal/worker\t[no test files]\nFAIL\n"
+    },
+    {
+      "task_id": "reconcile-steals-reservations",
+      "category": "bug_fix",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": true,
+      "false_accept": true,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 5,
+      "attempts": 1,
+      "duration": 158192928604,
+      "tokens_used": 135299,
+      "diff_bytes": 781,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 2,
+        "passed": 1,
+        "failed": [
+          "TestReconcileDoesNotTakeStockFromLiveOrders"
+        ]
+      },
+      "acceptance_output": "?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.002s\nok  \texample.com/warehouse/internal/domain\t0.001s\nok  \texample.com/warehouse/internal/inventory\t0.001s\n?   \texample.com/warehouse/internal/notify\t[no test files]\nok  \texample.com/warehouse/internal/orders\t0.002s\nok  \texample.com/warehouse/internal/pricing\t0.001s\nok  \texample.com/warehouse/internal/shipping\t0.001s\n?   \texample.com/warehouse/internal/store\t[no test files]\n--- FAIL: TestReconcileDoesNotTakeStockFromLiveOrders (0.00s)\n    hidden_acceptance_test.go:89: reserved = 0 after 3 reconciliation passes, want 4: the live order's reservation was released along with the cancelled one\nFAIL\nFAIL\texample.com/warehouse/internal/worker\t0.002s\nFAIL\n"
+    },
+    {
+      "task_id": "reserve-idempotent-001",
+      "category": "api_change",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 5,
+      "attempts": 1,
+      "duration": 195249811226,
+      "tokens_used": 451545,
+      "diff_bytes": 4555,
+      "files_touched": 3,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 3,
+        "passed": 3
+      }
+    },
+    {
+      "task_id": "restock-silence-001",
+      "category": "bug_fix",
+      "arm": "supervised",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": true,
+      "false_accept": true,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 5,
+      "attempts": 1,
+      "duration": 153531268453,
+      "tokens_used": 283418,
+      "diff_bytes": 1107,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 3,
+        "failed": [
+          "TestAFailedAlertIsNotReportedAsDelivered"
+        ]
+      },
+      "acceptance_output": "?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.002s\nok  \texample.com/warehouse/internal/domain\t0.002s\nok  \texample.com/warehouse/internal/inventory\t0.001s\n?   \texample.com/warehouse/internal/notify\t[no test files]\nok  \texample.com/warehouse/internal/orders\t0.001s\nok  \texample.com/warehouse/internal/pricing\t0.001s\nok  \texample.com/warehouse/internal/shipping\t0.001s\n?   \texample.com/warehouse/internal/store\t[no test files]\n--- FAIL: TestAFailedAlertIsNotReportedAsDelivered (0.00s)\n    hidden_acceptance_test.go:48: RunOnce reported 1 alert(s) and no error, but every write to the log failed\nFAIL\nFAIL\texample.com/warehouse/internal/worker\t0.001s\nFAIL\n"
+    },
+    {
+      "task_id": "conflict-status-001",
+      "category": "bug_fix",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 5,
+      "attempts": 1,
+      "duration": 120493266944,
+      "tokens_used": 259866,
+      "diff_bytes": 694,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 3,
+        "passed": 3
+      }
+    },
+    {
+      "task_id": "damaged-stock-001",
+      "category": "schema_change",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 5,
+      "attempts": 1,
+      "duration": 125855380376,
+      "tokens_used": 196913,
+      "diff_bytes": 1672,
+      "files_touched": 2,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 4
+      }
+    },
+    {
+      "task_id": "discount-floor-001",
+      "category": "bug_fix",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 5,
+      "attempts": 1,
+      "duration": 112906916644,
+      "tokens_used": 111641,
+      "diff_bytes": 562,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 4
+      }
+    },
+    {
+      "task_id": "perishable-zone-001",
+      "category": "feature",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 5,
+      "attempts": 1,
+      "duration": 129288728547,
+      "tokens_used": 209876,
+      "diff_bytes": 698,
+      "files_touched": 1,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 4
+      }
+    },
+    {
+      "task_id": "reconcile-steals-reservations",
+      "category": "bug_fix",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": false,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 5,
+      "attempts": 3,
+      "duration": 1421297322823,
+      "tokens_used": 176758,
+      "diff_bytes": 0,
+      "files_touched": 0,
+      "reasons": [
+        "the task changed nothing: every check below passed against the unmodified worktree, so they describe the baseline rather than the work",
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean",
+        "the attempt budget of 3 was exhausted without meeting the completion contract"
+      ],
+      "grade": {
+        "total": 2,
+        "passed": 1,
+        "failed": [
+          "TestReconcileDoesNotTakeStockFromLiveOrders"
+        ]
+      },
+      "acceptance_output": "?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.002s\nok  \texample.com/warehouse/internal/domain\t0.002s\nok  \texample.com/warehouse/internal/inventory\t0.001s\n?   \texample.com/warehouse/internal/notify\t[no test files]\nok  \texample.com/warehouse/internal/orders\t0.002s\nok  \texample.com/warehouse/internal/pricing\t0.002s\nok  \texample.com/warehouse/internal/shipping\t0.002s\n?   \texample.com/warehouse/internal/store\t[no test files]\n--- FAIL: TestReconcileDoesNotTakeStockFromLiveOrders (0.00s)\n    hidden_acceptance_test.go:89: reserved = 0 after 3 reconciliation passes, want 4: the live order's reservation was released along with the cancelled one\nFAIL\nFAIL\texample.com/warehouse/internal/worker\t0.002s\nFAIL\n"
+    },
+    {
+      "task_id": "reserve-idempotent-001",
+      "category": "api_change",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": true,
+      "claimed": true,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 5,
+      "attempts": 1,
+      "duration": 173577824474,
+      "tokens_used": 324159,
+      "diff_bytes": 3781,
+      "files_touched": 3,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean"
+      ],
+      "grade": {
+        "total": 3,
+        "passed": 3
+      }
+    },
+    {
+      "task_id": "restock-silence-001",
+      "category": "bug_fix",
+      "arm": "supervised-no-graph",
+      "leak_risk": "none",
+      "solved": false,
+      "claimed": false,
+      "false_accept": false,
+      "missed_success": false,
+      "tampered": false,
+      "repetition": 5,
+      "attempts": 3,
+      "duration": 376928038358,
+      "tokens_used": 652820,
+      "diff_bytes": 0,
+      "files_touched": 0,
+      "reasons": [
+        "build passed: compiles",
+        "vet passed: no vet findings",
+        "test passed: 6 package(s) passed",
+        "format passed: formatting is clean",
+        "2 file(s) changed outside the task's declared scope: cmd/warehoused/main.go, internal/notify/notify.go",
+        "the attempt budget of 3 was exhausted without meeting the completion contract"
+      ],
+      "grade": {
+        "total": 4,
+        "passed": 2,
+        "failed": [
+          "TestAFailedAlertIsNotReportedAsDelivered",
+          "TestASkuThatCannotBeLookedUpIsNotSilentlyDropped"
+        ]
+      },
+      "acceptance_output": "?   \texample.com/warehouse/cmd/warehoused\t[no test files]\n?   \texample.com/warehouse/internal/api\t[no test files]\n?   \texample.com/warehouse/internal/audit\t[no test files]\nok  \texample.com/warehouse/internal/config\t0.002s\nok  \texample.com/warehouse/internal/domain\t0.002s\nok  \texample.com/warehouse/internal/inventory\t0.001s\n?   \texample.com/warehouse/internal/notify\t[no test files]\nok  \texample.com/warehouse/internal/orders\t0.001s\nok  \texample.com/warehouse/internal/pricing\t0.001s\nok  \texample.com/warehouse/internal/shipping\t0.001s\n?   \texample.com/warehouse/internal/store\t[no test files]\n--- FAIL: TestAFailedAlertIsNotReportedAsDelivered (0.00s)\n    hidden_acceptance_test.go:48: RunOnce reported 1 alert(s) and no error, but every write to the log failed\n--- FAIL: TestASkuThatCannotBeLookedUpIsNotSilentlyDropped (0.00s)\n    hidden_acceptance_test.go:62: a SKU below the threshold vanished from the report because its item record could not be read, and the pass returned success\nFAIL\nFAIL\texample.com/warehouse/internal/worker\t0.002s\nFAIL\n"
+    }
+  ]
+}
