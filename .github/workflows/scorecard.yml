@@ -14,6 +14,13 @@ permissions: read-all
 jobs:
   analysis:
     name: Scorecard analysis
+    # Scorecard reads commit history through GitHub's GraphQL API, which refuses
+    # an integration token on a private repository: the run ends in "Resource
+    # not accessible by integration" whatever permissions it is given. Skipping
+    # is better than a permanently red check that means only "this repository is
+    # private" — a check a maintainer learns to ignore stops working as a check.
+    # It resumes by itself if the repository is made public again.
+    if: github.event.repository.private == false
     runs-on: ubuntu-latest
     permissions:
       security-events: write

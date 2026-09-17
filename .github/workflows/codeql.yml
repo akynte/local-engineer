@@ -26,6 +26,13 @@ jobs:
     # and that is the run the security tab is built from.
     if: github.actor != 'dependabot[bot]'
     permissions:
+      # A job-level block replaces the workflow-level one rather than merging
+      # with it, so `contents: read` has to be repeated here. Omitting it worked
+      # only while the repository was public, where checkout needs no permission
+      # at all; the moment it went private, checkout failed with "repository not
+      # found" — which reads as an infrastructure fault rather than a missing
+      # scope, and had nothing to do with CodeQL.
+      contents: read
       security-events: write
       actions: read
     steps:
