@@ -78,6 +78,10 @@ func Render(f Facts) string {
 			"rather than from search.\n\n", f.Nodes, f.Edges)
 	}
 
+	b.WriteString("Any task that changes code runs under supervision: open it with " +
+		"`le_task_start`, do the work with your own tools, ask the user anything you cannot " +
+		"safely infer, then `le_verify` and `le_task_finish`. You edit and you talk to the " +
+		"user; Local Engineer records what happened and judges the result.\n\n")
 	b.WriteString("Prefer these over text search when the question is structural, because they " +
 		"answer from the type checker instead of from string matching:\n\n")
 	b.WriteString("- **`le_graph_impact`** before changing any signature, exported name or schema. " +
@@ -96,6 +100,14 @@ func Render(f Facts) string {
 		"result to the exact content hash it describes. It decides whether the work is done; " +
 		"your own reading of the code does not. If it reports failures, fix them and call it " +
 		"again — do not tell the user the work is finished until it says ACCEPTED.\n")
+	b.WriteString("- **`le_task_answer`** whenever the user resolves something you could not " +
+		"infer from the codebase — a business rule, an architectural choice, a limit. Pass the " +
+		"task id. The answer becomes part of this project's record instead of being lost with " +
+		"the conversation.\n")
+	b.WriteString("- **`le_task_finish`** once verification is ACCEPTED. It produces the final " +
+		"review — what was asked, what the user decided, which files changed, what was checked " +
+		"— and you should show that to the user. No approval is needed: the change is already " +
+		"in the working tree and `git diff` is the authoritative view of it.\n")
 	b.WriteString("- **`le_note_add`** when you establish something durable about this project " +
 		"that the next session should not have to rediscover — a constraint, a decision and its " +
 		"reason, a trap someone already fell into. Not a summary of what you just did.\n\n")

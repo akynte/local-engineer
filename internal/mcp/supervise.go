@@ -42,9 +42,84 @@ func (s *Server) registerSupervision(srv *mcp.Server) {
 		Name: "le_verify",
 		Description: "Run this repository's verification recipes in a sandbox against the " +
 			"current working tree and apply the completion contract. Returns each check and " +
-			"whether the work is accepted. Call after editing, and again after fixing what " +
-			"it reports. This, not your own judgement, decides whether a task is done.",
+			"whether the work is accepted. Pass the task_id from le_task_start so the result " +
+			"is recorded against the task. Call after editing, and again after fixing what it " +
+			"reports. This, not your own judgement, decides whether a task is done.",
 	}, s.verify)
+
+	mcp.AddTool(srv, &mcp.Tool{
+		Name: "le_task_answer",
+		Description: "Record a question you had to ask the user and the answer they gave. " +
+			"Call this whenever the user resolves an ambiguity you could not infer from the " +
+			"codebase — a business rule, an architectural choice, a limit. The answer becomes " +
+			"part of this project's record instead of being lost with the conversation.",
+	}, s.taskAnswer)
+
+	mcp.AddTool(srv, &mcp.Tool{
+		Name: "le_task_finish",
+		Description: "Close a supervised task and produce its final review: what was asked, " +
+			"what the user decided, which files changed, what was verified, and the verdict. " +
+			"Call after le_verify reports ACCEPTED. Show the review to the user.",
+	}, s.taskFinish)
+}
+
+// ----------------------------------------------------------- le_task_answer
+
+type answerIn struct {
+	TaskID   string `json:"task_id" jsonschema:"the id le_task_start returned"`
+	Question string `json:"question" jsonschema:"what you asked the user"`
+	Answer   string `json:"answer" jsonschema:"what they said"`
+	Path     string `json:"path,omitempty" jsonschema:"a subdirectory of the open repository; defaults to its root"`
+}
+
+// taskAnswer is the division the protocol forces, made useful.
+//
+// Local Engineer cannot ask the user anything — it has no channel, and the
+// agent holding the conversation does. But an answer about this project is a
+// decision, and a decision that lives only in a chat transcript is gone by the
+// next session. The agent owns the asking; this owns the remembering.
+func (s *Server) taskAnswer(ctx context.Context, _ *mcp.CallToolRequest, in answerIn) (*mcp.CallToolResult, any, error) {
+	sess, err := s.resolve(ctx, in.Path)
+	if err != nil {
+		return fail("%v", err), nil, nil
+	}
+	defer sess.Close() //nolint:contextcheck // cleanup must not take the request context: a cancelled call would then skip closing the databases.
+
+	if err := supervisor.RecordAnswer(ctx, sess.Store, in.TaskID, in.Question, in.Answer); err != nil {
+		return fail("recording the decision: %v", err), nil, nil
+	}
+	return text("Recorded. It will appear in the task's final review and in its journal."), nil, nil
+}
+
+// ----------------------------------------------------------- le_task_finish
+
+type finishIn struct {
+	TaskID string `json:"task_id" jsonschema:"the id le_task_start returned"`
+	Path   string `json:"path,omitempty" jsonschema:"a subdirectory of the open repository; defaults to its root"`
+}
+
+// taskFinish produces the review artifact.
+//
+// It is not an approval. The agent has already edited the working tree, so
+// there is nothing left to withhold and a gate that blocked here would block
+// nothing. What this adds is the part git cannot reconstruct: the objective,
+// the decisions the user made along the way, and what the contract concluded.
+//
+// The verdict comes from the verification actually on record. A task finished
+// without one is reported UNVERIFIED rather than fine, because an agent's own
+// account of its work is exactly what the contract exists not to trust.
+func (s *Server) taskFinish(ctx context.Context, _ *mcp.CallToolRequest, in finishIn) (*mcp.CallToolResult, *supervisor.Review, error) {
+	sess, err := s.resolve(ctx, in.Path)
+	if err != nil {
+		return fail("%v", err), nil, nil
+	}
+	defer sess.Close() //nolint:contextcheck // cleanup must not take the request context: a cancelled call would then skip closing the databases.
+
+	rev, err := supervisor.FinishTask(ctx, sess.Store, sess.Workspace.Root, in.TaskID)
+	if err != nil {
+		return fail("finishing the task: %v", err), nil, nil
+	}
+	return text(rev.Format()), &rev, nil
 }
 
 // ------------------------------------------------------------ le_task_start
@@ -113,8 +188,9 @@ func (s *Server) taskStart(ctx context.Context, _ *mcp.CallToolRequest, in start
 // ----------------------------------------------------------------- le_verify
 
 type verifyIn struct {
-	Level string `json:"level,omitempty" jsonschema:"low, standard or high. Defaults to standard"`
-	Path  string `json:"path,omitempty" jsonschema:"a subdirectory of the open repository; defaults to its root"`
+	TaskID string `json:"task_id,omitempty" jsonschema:"the id le_task_start returned, so the result is recorded against that task"`
+	Level  string `json:"level,omitempty" jsonschema:"low, standard or high. Defaults to standard"`
+	Path   string `json:"path,omitempty" jsonschema:"a subdirectory of the open repository; defaults to its root"`
 }
 
 type verifyOut struct {
@@ -173,6 +249,15 @@ func (s *Server) verify(ctx context.Context, _ *mcp.CallToolRequest, in verifyIn
 	outcome, err := r.Run(ctx, t.ID, sess.Workspace.Root)
 	if err != nil {
 		return fail("verification could not run: %v", err), verifyOut{}, nil
+	}
+	// Attach the result to the supervised task, so the final review reports
+	// what was actually checked rather than what the agent says it checked.
+	// Without this the chain breaks silently: every task would finish
+	// UNVERIFIED however many times it had passed.
+	if in.TaskID != "" {
+		if err := supervisor.RecordVerification(ctx, sess.Store, in.TaskID, outcome); err != nil {
+			return fail("recording the verification against %s: %v", in.TaskID, err), verifyOut{}, nil
+		}
 	}
 	return text(renderOutcome(outcome)), verifyOut{
 		Accepted:   outcome.Accepted,

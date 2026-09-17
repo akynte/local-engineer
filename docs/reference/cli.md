@@ -344,12 +344,23 @@ Register it with OpenCode in `opencode.jsonc`:
 | `le_search` | The code most relevant to a question: lexical anchors then graph expansion |
 | `le_reindex` | Re-analyse the repository so the index matches the working tree |
 | `le_task_start` | Open a supervised task: journals the intent before the work, returns the repository's protected paths |
+| `le_task_answer` | Record a question the executor asked the user and the answer given |
 | `le_verify` | Run the verification recipes in a sandbox and apply the completion contract |
+| `le_task_finish` | Close the task and produce its final review |
 | `le_note_add` | Record something durable the next session should not have to rediscover |
 
-`le_task_start` and `le_verify` put an editor's work under the same controls a
-CLI task gets: the intent is journalled before the work, and the completion
-contract — not the agent's account of itself — decides whether it is done.
+Together these put an editor's work under the same controls a CLI task gets. The
+intent is journalled before the work; questions the user answers are recorded as
+decisions rather than left in a chat transcript; the completion contract — not
+the agent's account of itself — decides whether the work is done; and the task
+ends in a review that states what was asked, what was decided, what changed and
+what was checked.
+
+**The review is a record, not an approval.** By the time it exists the agent has
+already edited the working tree, so there is nothing left to withhold and a gate
+that blocked here would block nothing. `git diff` is the authoritative view of
+the change; the review is the part git cannot reconstruct. A task finished
+without a verification on record is reported UNVERIFIED rather than fine.
 
 The agent does the editing, and that division is forced rather than chosen. An
 MCP server cannot ask a user a question: OpenCode declares only the `roots`
