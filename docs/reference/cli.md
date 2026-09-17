@@ -304,6 +304,26 @@ plainly that a single pass measures nothing. See
 [the published results](../benchmarks/results/2026-09-14-tasks.md) and
 [the methodology](../benchmarks/METHODOLOGY.md).
 
+## `le opencode`
+
+| Command | |
+|---|---|
+| `setup` | Register the MCP server and write AGENTS.md for this repository |
+
+Run once per repository. It registers `le mcp` in `opencode.json`, merging
+rather than replacing so an existing model choice or another MCP server
+survives, and writes a block into `AGENTS.md` — which OpenCode reads into every
+session — naming the tools, saying which questions they answer better than
+search, and carrying what this repository has recorded about itself.
+
+Only the block between its markers is replaced, so anything you write in
+`AGENTS.md` yourself is left alone. An existing `opencode.jsonc` is refused
+rather than rewritten, because marshalling it would delete its comments; the
+block to paste is printed instead.
+
+Re-run after recording notes or re-indexing, so the generated block matches what
+the tools can actually answer.
+
 ## `le mcp`
 
 Serves Local Engineer's tools to an MCP client over stdin and stdout, so an

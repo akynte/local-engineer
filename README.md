@@ -121,20 +121,24 @@ docker exec -it local-engineer bash -c 'cd /work/my-project && le plan "add retr
 
 ### From your editor
 
-Local Engineer answers questions about a repository from inside
-[OpenCode](https://opencode.ai), so routine use needs no terminal. Add to
-`opencode.jsonc`:
+Local Engineer works underneath [OpenCode](https://opencode.ai). Set it up once
+per repository:
 
-```jsonc
-{ "mcp": { "local-engineer": {
-    "type": "local", "command": ["le", "mcp"], "enabled": true } } }
+```console
+$ le workspace init && le index && le opencode setup
 ```
 
-Then ask: *"is Local Engineer set up here?"*, *"what breaks if I change Total's
-signature?"*, *"where is stock reserved?"* Four tools back those questions —
-status, impact, retrieval and re-indexing — and both interfaces call the same
-code rather than one shelling out to the other. Running tasks and anything
-destructive stay on the CLI, where a person is already watching. See
+Then `opencode`, and work as you always do — ask how authentication works, ask
+for a feature, debug something. Behind it, the agent is told that a
+compiler-backed index of this repository exists and which questions it answers
+better than grep, and it is given what this repository has already recorded
+about itself. That arrives through `AGENTS.md`, which OpenCode reads into every
+session, so there is nothing to invoke.
+
+Five tools back it: status, impact analysis, retrieval, re-indexing, and one
+that records what a session established so the next one starts knowing it.
+Running tasks and anything destructive stay on the CLI, where a person is
+already watching. See
 [use with OpenCode](docs/how-to/use-with-opencode.md).
 
 `docker compose -f deploy/docker-compose.yml up -d` wraps the same thing, and

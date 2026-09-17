@@ -59,6 +59,14 @@ var exemptions = map[string]string{
 	// it writes a caller-supplied path — acceptance files, whose names come
 	// from a task file — goes through internal/worktree's confinement.
 	"internal/eval": "manages ephemeral evaluation scratch directories",
+	// Writes AGENTS.md and opencode.json into the user's repository. Both are
+	// files the developer commits and edits: AGENTS.md is what OpenCode reads
+	// into a session, and opencode.json is their editor configuration. Neither
+	// is data-directory state, and confining them to the store would put them
+	// somewhere the editor does not look — the same reasoning as the identity
+	// pin and the memory notes. Both writes are to paths derived from a
+	// workspace root, never from a caller-supplied string.
+	"internal/opencode": "writes the repository's AGENTS.md and editor configuration",
 	// Writes notes under `.le/memory/` inside the user's repository. §2.2
 	// places them there on purpose so they travel with the repository, which
 	// makes them repository files rather than data-directory state — the same

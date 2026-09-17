@@ -19,29 +19,48 @@ tree, or a workspace pinned at a path it has since moved from.
 
 ## Setting it up
 
-Local Engineer must be on your `PATH`. Check with `le version`.
+Local Engineer must be on your `PATH` — check with `le version` — and the
+repository needs a workspace and an index:
 
-Add the server to `opencode.jsonc`, either in the repository or in
-`~/.config/opencode/`:
+```console
+$ cd my-project
+$ le workspace init
+$ le index
+$ le opencode setup
+wrote /path/to/my-project/opencode.json
+wrote /path/to/my-project/AGENTS.md
 
-```jsonc
-{
-  "mcp": {
-    "local-engineer": {
-      "type": "local",
-      "command": ["le", "mcp"],
-      "enabled": true
-    }
-  }
-}
+Open this directory in OpenCode and work normally.
 ```
 
-If your data directory is not the default, pass it:
-`"command": ["le", "mcp", "--data", "/path/to/le-data"]`.
+Then `opencode`, and work as you normally would. There is nothing further to
+remember.
 
-Then open the repository in OpenCode and ask it whether Local Engineer is set
-up. If the repository has no workspace yet, run `le workspace init` and
-`le index` once in the terminal; after that the tools work.
+`le opencode setup` does two things. It registers `le mcp` in `opencode.json`,
+merging so an existing model choice or another MCP server survives. And it
+writes a block into `AGENTS.md`, which OpenCode reads into **every session**:
+what the index holds, which questions the tools answer better than search, and
+what this repository has already recorded about itself.
+
+That second part is what makes this automatic rather than something you invoke.
+OpenCode has no hook that fires before a request reaches the model — plugin
+message hooks fire after events — so per-request injection is not available to
+anyone. `AGENTS.md` is the one mechanism that arrives without being asked for,
+and it is per-session.
+
+Only the block between its markers is replaced, so anything you write in
+`AGENTS.md` yourself survives. Re-run after recording notes or re-indexing.
+
+### Continuity between sessions
+
+`le_note_add` is how a session leaves something behind. When the agent
+establishes a constraint, a decision and its reason, or a trap someone already
+fell into, it records a note; the next `le opencode setup` carries it into
+`AGENTS.md`, and every later session starts already knowing it.
+
+The store caps itself at fifty notes per kind and a kilobyte each. What reaches
+the prompt is capped harder — six per kind, newest first — because `AGENTS.md`
+is paid for on every request of every session.
 
 ## What is deliberately not here
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/akynte/local-engineer/internal/graph"
 	"github.com/akynte/local-engineer/internal/index"
+	"github.com/akynte/local-engineer/internal/memory"
 	"github.com/akynte/local-engineer/internal/retrieval"
 )
 
@@ -47,6 +48,14 @@ func (s *Server) register(srv *mcp.Server) {
 			"would: lexical anchors followed by graph expansion. Returns file, line range " +
 			"and symbol for each result. Read-only.",
 	}, s.search)
+
+	mcp.AddTool(srv, &mcp.Tool{
+		Name: "le_note_add",
+		Description: "Record something durable about this project that a future session " +
+			"should not have to rediscover: a constraint, a decision and why it was made, or a " +
+			"trap someone already fell into. Not a summary of work just done. Notes are kept " +
+			"with the repository and are shown to every later session.",
+	}, s.noteAdd)
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name: "le_reindex",
@@ -291,4 +300,57 @@ func (s *Server) reindex(ctx context.Context, _ *mcp.CallToolRequest, in reindex
 			"Re-indexed %d repositor(y/ies) in %s: %d files, %d chunks, %d nodes, %d edges, %d skipped.",
 			len(repos), total.Duration, total.Files, total.Chunks, total.Nodes, total.Edges, total.Skipped)),
 		total, nil
+}
+
+// ------------------------------------------------------------ le_note_add
+
+type noteIn struct {
+	Text string `json:"text" jsonschema:"the note, in plain prose, one or two sentences"`
+	Kind string `json:"kind,omitempty" jsonschema:"intent, observation, or advice. Defaults to observation"`
+	Path string `json:"path,omitempty" jsonschema:"a subdirectory of the open repository; defaults to its root"`
+}
+
+type noteOut struct {
+	ID   string `json:"id"`
+	Kind string `json:"kind"`
+}
+
+// noteAdd is the only tool here that writes anything, and it writes to the
+// repository's own memory rather than to its code.
+//
+// It exists because continuity is the thing a coding agent loses between
+// sessions. Without somewhere to put what it established, every session
+// re-derives the same constraints from the same files. The store caps itself —
+// fifty per kind, a kilobyte each — so this cannot grow into the essay §419
+// warns about, and what reaches a prompt is capped again, harder.
+func (s *Server) noteAdd(ctx context.Context, _ *mcp.CallToolRequest, in noteIn) (*mcp.CallToolResult, noteOut, error) {
+	if strings.TrimSpace(in.Text) == "" {
+		return fail("text is required"), noteOut{}, nil
+	}
+	kind := memory.Kind(in.Kind)
+	if in.Kind == "" {
+		kind = memory.KindObservation
+	}
+	if !kind.Valid() {
+		return fail("kind %q is not one of: intent, observation, advice", in.Kind), noteOut{}, nil
+	}
+	sess, err := s.resolve(ctx, in.Path)
+	if err != nil {
+		return fail("%v", err), noteOut{}, nil
+	}
+	defer sess.Close() //nolint:contextcheck // cleanup must not take the request context: a cancelled call would then skip closing the databases.
+
+	n, err := memory.Open(sess.Workspace.Root, memory.DefaultCaps()).Add(memory.Note{
+		Kind: kind,
+		Text: strings.TrimSpace(in.Text),
+		// The source is the agent, stated plainly. A note whose provenance is
+		// hidden reads later as something a person decided.
+		Provenance: memory.Provenance{Source: "opencode"},
+	})
+	if err != nil {
+		return fail("recording the note: %v", err), noteOut{}, nil
+	}
+	return text(fmt.Sprintf(
+		"Recorded this as %s. Later sessions will see it once `le opencode setup` refreshes "+
+			"AGENTS.md.", kind)), noteOut{ID: n.ID, Kind: string(n.Kind)}, nil
 }

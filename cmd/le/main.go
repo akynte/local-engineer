@@ -99,6 +99,7 @@ func newRootCmd() *cobra.Command {
 		newTelemetryCmd(),
 		newTUICmd(),
 		newMCPCmd(),
+		newOpenCodeCmd(),
 		newVerifyDeclaredCmd(),
 	)
 	return root
