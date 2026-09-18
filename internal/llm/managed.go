@@ -131,11 +131,17 @@ func (p *managedProvider) prepare(ctx context.Context) error {
 	if hex.EncodeToString(hash.Sum(nil)) != p.process.BinarySHA256 {
 		return fmt.Errorf("model server executable differs from its pinned hash")
 	}
-	listener, err := net.Listen("tcp", p.address)
+	// The probe is only asking whether the port is free, so it takes the
+	// caller's context and gives it back immediately.
+	var probe net.ListenConfig
+	listener, err := probe.Listen(ctx, "tcp", p.address)
 	if err != nil {
 		return fmt.Errorf("model endpoint already occupied; refusing to replace an external server: %w", err)
 	}
-	listener.Close()
+	_ = listener.Close()
+	// Not CommandContext: the server outlives prepare by design, and the slot
+	// stops it. Binding it here would kill it when prepare returned.
+	//nolint:gosec,noctx // argv is operator configuration pinned by the SHA-256 check above, and the server must outlive this call
 	cmd := exec.Command(p.process.Argv[0], p.process.Argv[1:]...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGTERM}
 	cmd.Stderr = os.Stderr
@@ -154,7 +160,7 @@ func (p *managedProvider) prepare(ctx context.Context) error {
 		case err := <-done:
 			localSlot.cmd = nil
 			localSlot.owner = nil
-			return fmt.Errorf("model server exited during startup: %v", err)
+			return fmt.Errorf("model server exited during startup: %w", err)
 		case <-ready.Done():
 			_ = localSlot.stop()
 			return fmt.Errorf("model startup: %w", ready.Err())
@@ -243,7 +249,13 @@ type serializedProvider struct {
 
 func serializeLocal(p Provider, endpoint string) Provider {
 	gate, _ := externalSlots.LoadOrStore(endpoint, make(chan struct{}, 1))
-	return &serializedProvider{Provider: p, gate: gate.(chan struct{})}
+	ch, ok := gate.(chan struct{})
+	if !ok {
+		// Only this function ever stores into the map, so this cannot happen;
+		// serializing on a fresh channel is still the safe reading of it.
+		ch = make(chan struct{}, 1)
+	}
+	return &serializedProvider{Provider: p, gate: ch}
 }
 func (p *serializedProvider) lock(ctx context.Context) error {
 	select {

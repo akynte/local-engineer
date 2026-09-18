@@ -234,9 +234,7 @@ func (r *Runner) taskCard(t *Task, s *workflow.State) contextpack.Card {
 			card.OpenFailures = append(card.OpenFailures, fingerprint)
 		}
 	}
-	for _, risk := range s.Plan.Risks {
-		card.Decisions = append(card.Decisions, risk)
-	}
+	card.Decisions = append(card.Decisions, s.Plan.Risks...)
 	if len(s.Plan.Regenerate) > 0 {
 		card.Decisions = append(card.Decisions, "regenerate: "+strings.Join(s.Plan.Regenerate, ", "))
 	}

@@ -75,26 +75,34 @@ func (r *Retriever) Skeleton(ctx context.Context, paths []string) ([]Slice, erro
 		if policy.Sensitive(path) {
 			continue
 		}
-		rows, err := r.st.Index().SQL().QueryContext(ctx, `SELECT n.name, n.signature,n.start_line,n.end_line FROM nodes n JOIN files f ON f.file_id=n.file_id WHERE f.path=? ORDER BY n.start_line,n.node_id LIMIT 500`, path)
+		slices, err := r.skeletonOf(ctx, path)
 		if err != nil {
 			return nil, err
 		}
-		for rows.Next() {
-			var s Slice
-			s.Path = path
-			if err := rows.Scan(&s.Symbol, &s.Signature, &s.StartLine, &s.EndLine); err != nil {
-				rows.Close()
-				return nil, err
-			}
-			out = append(out, s)
-		}
-		err = rows.Err()
-		rows.Close()
-		if err != nil {
-			return nil, err
-		}
+		out = append(out, slices...)
 	}
 	return out, nil
+}
+
+// skeletonOf reads one file's signatures. It is its own function so the rows
+// can be closed by defer: a loop that closes them by hand has to get every
+// early return right, and one missed path leaks a statement per file.
+func (r *Retriever) skeletonOf(ctx context.Context, path string) ([]Slice, error) {
+	rows, err := r.st.Index().SQL().QueryContext(ctx, `SELECT n.name, n.signature,n.start_line,n.end_line FROM nodes n JOIN files f ON f.file_id=n.file_id WHERE f.path=? ORDER BY n.start_line,n.node_id LIMIT 500`, path)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Slice
+	for rows.Next() {
+		s := Slice{Path: path}
+		if err := rows.Scan(&s.Symbol, &s.Signature, &s.StartLine, &s.EndLine); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
 }
 
 // Request describes what the current step needs.

@@ -45,6 +45,10 @@ func (r *Runner) localize(ctx context.Context, t *Task, wt *worktree.Worktree, s
 			}
 			return nil
 		}
+		// A refusal from the firewall means the path is not part of the
+		// structure the model may see. Skipping it is the outcome, not an
+		// error to propagate: one protected file must not end localization.
+		//nolint:nilerr // the refusal is the reason to skip, not to fail
 		if entry.Type()&os.ModeSymlink != 0 || access.Check(wt.Path, rel, false) != nil {
 			return nil
 		}

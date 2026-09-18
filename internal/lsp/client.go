@@ -46,6 +46,11 @@ type Client struct {
 	out    *bufio.Reader
 	root   string
 	closed chan struct{}
+	// stop ends the server process. It is not derived from the context that
+	// started the client: a language server outlives the call that launched it
+	// and is shut down by Close, so binding it to a request context would kill
+	// the server the moment that request returned.
+	stop context.CancelFunc
 
 	mu      sync.Mutex
 	nextID  int64
@@ -130,22 +135,27 @@ func Start(ctx context.Context, root string, argv ...string) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	life, stop := context.WithCancel(context.WithoutCancel(ctx))
 	//nolint:gosec // argv is operator configuration, never a model argument
-	cmd := exec.Command(argv[0], argv[1:]...)
+	cmd := exec.CommandContext(life, argv[0], argv[1:]...)
 	cmd.Dir = abs
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
+		stop()
 		return nil, err
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		stop()
 		return nil, err
 	}
 	if err := cmd.Start(); err != nil {
+		stop()
 		return nil, fmt.Errorf("lsp: starting %s: %w", argv[0], err)
 	}
 	c := &Client{
 		cmd: cmd, stdin: stdin, out: bufio.NewReader(stdout), root: abs,
+		stop:        stop,
 		closed:      make(chan struct{}),
 		pending:     map[int64]chan response{},
 		diagnostics: map[string][]Diagnostic{},
@@ -173,11 +183,11 @@ func Start(ctx context.Context, root string, argv ...string) (*Client, error) {
 			"workspace": map[string]any{"workspaceFolders": true},
 		},
 	}, &result); err != nil {
-		_ = c.Close()
+		_ = c.Close() //nolint:contextcheck // see Close: shutdown must not inherit a context that may already be done
 		return nil, err
 	}
 	if err := c.notify("initialized", map[string]any{}); err != nil {
-		_ = c.Close()
+		_ = c.Close() //nolint:contextcheck // as above
 		return nil, err
 	}
 	return c, nil
@@ -324,6 +334,11 @@ func (c *Client) Diagnostics(rel string) []Diagnostic {
 }
 
 // Close shuts the server down, politely first.
+//
+// It builds its own context rather than taking one. Shutdown runs on the way
+// out of a failure as often as a success, and a context that is already done —
+// which is the usual reason a caller is unwinding — would skip the polite
+// request and leave the kill below as the only path.
 func (c *Client) Close() error {
 	select {
 	case <-c.closed:
@@ -337,6 +352,9 @@ func (c *Client) Close() error {
 	_ = c.notify("exit", nil)
 	close(c.closed)
 	_ = c.stdin.Close()
+	if c.stop != nil {
+		defer c.stop()
+	}
 
 	done := make(chan error, 1)
 	go func() { done <- c.cmd.Wait() }()

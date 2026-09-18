@@ -194,7 +194,7 @@ func parseGrepLine(line string) (GrepHit, bool) {
 // implements it.
 func ExpandTerms(query string) []string {
 	fields := strings.FieldsFunc(query, func(r rune) bool {
-		return !(r == '_' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9'))
+		return r != '_' && (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9')
 	})
 	seen := map[string]bool{}
 	var out []string

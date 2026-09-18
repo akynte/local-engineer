@@ -144,7 +144,11 @@ func Import(ctx context.Context, st *store.Store, repoID, root, indexPath string
 		}
 	}
 	err = st.Index().Tx(ctx, func(tx *sql.Tx) error {
+		// The table names are this literal slice, never input. A table name
+		// cannot be a bound parameter, which is why the statement is built
+		// this way rather than parameterised.
 		for _, table := range []string{"scip_occurrences", "scip_relationships", "scip_symbols"} {
+			//nolint:gosec // G202: concatenates a constant from the slice above, never input
 			if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE repository_id=?`, repoID); err != nil {
 				return err
 			}

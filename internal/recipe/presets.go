@@ -156,7 +156,10 @@ func DiscoverPresets(root string, level Level) ([]Preset, error) {
 			if under(dir, nodeRoots) {
 				return nil
 			}
-			body, err := os.ReadFile(full)
+			// The walk skips symlinks before reaching here, so the path this
+			// reads is the one the walk saw; a manifest swapped underneath it
+			// yields a parse error rather than a read outside the tree.
+			body, err := os.ReadFile(full) //nolint:gosec // G122: symlinks are skipped above
 			if err != nil {
 				return err
 			}
@@ -199,9 +202,10 @@ func DiscoverPresets(root string, level Level) ([]Preset, error) {
 	filtered := out[:0]
 	for _, p := range out {
 		roots := nodeRoots
-		if p.Argv[0] == "cargo" {
+		switch p.Argv[0] {
+		case "cargo":
 			roots = cargoRoots
-		} else if p.Argv[0] == "go" || p.Argv[0] == "gofmt" {
+		case "go", "gofmt":
 			roots = nil
 		}
 		nested := false
