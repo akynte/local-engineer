@@ -2,6 +2,9 @@ package eval
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -16,10 +19,22 @@ import (
 
 // Outcome is one task run under one arm.
 type Outcome struct {
+	// RunID is stable and unique, so a number in a report can be traced back
+	// to the model calls, edits and verification that produced it.
+	RunID    string   `json:"run_id,omitempty"`
 	TaskID   string   `json:"task_id"`
 	Category Category `json:"category"`
 	Arm      string   `json:"arm"`
 	LeakRisk LeakRisk `json:"leak_risk"`
+	// Set records whether this run came from the tuning set or the held-out
+	// set, so a headline number cannot quietly mix them.
+	Set Set `json:"set,omitempty"`
+	// Synthetic marks a generated fixture. Synthetic runs are reported, never
+	// folded into a headline rate over real tasks.
+	Synthetic bool `json:"synthetic,omitempty"`
+	// Status says how the run ended. Only some statuses are evidence; see
+	// EvidenceRun.
+	Status Status `json:"status,omitempty"`
 
 	// Solved is the ground truth: the hidden acceptance command passed. This
 	// is the only field that measures whether the task was done.
@@ -77,6 +92,33 @@ type Outcome struct {
 // being solved.
 func (o Outcome) Errored() bool { return o.Err != "" }
 
+// EvidenceRun reports whether this run may be counted in a rate.
+//
+// A run with no status is read as evidence unless it errored, which is how
+// results written before statuses existed keep their meaning rather than
+// silently dropping out of every denominator.
+func (o Outcome) EvidenceRun() bool {
+	if o.Status == "" {
+		return !o.Errored()
+	}
+	return o.Status.Evidence()
+}
+
+// Classified returns the status, inferring one for results written before the
+// field existed so old and new files aggregate the same way.
+func (o Outcome) Classified() Status {
+	if o.Status != "" {
+		return o.Status
+	}
+	if o.Errored() {
+		return StatusEnvironmentFailed
+	}
+	if o.Solved {
+		return StatusCompleted
+	}
+	return StatusTaskFailed
+}
+
 // Solver runs one task attempt under one arm, leaving its result in the
 // worktree. It is an interface so the harness can be tested without a model,
 // and so an arm can be implemented by something other than this codebase.
@@ -110,6 +152,10 @@ type Runner struct {
 	WorkDir string
 	// Logf reports progress. Nil discards it.
 	Logf func(format string, args ...any)
+	// RawDir is where each run is written as its own file before anything is
+	// aggregated. Empty disables it, which is right for tests and wrong for
+	// any run whose numbers will be published.
+	RawDir string
 }
 
 func (r *Runner) logf(format string, args ...any) {
@@ -131,6 +177,24 @@ func (r *Runner) logf(format string, args ...any) {
 //
 // Step 4 happening after step 2 is what makes the measurement mean anything.
 func (r *Runner) Run(ctx context.Context, task Task, arm Arm, solver Solver) Outcome {
+	out := r.attempt(ctx, task, arm, solver)
+	out.RunID = newRunID()
+	out.Set = task.Membership()
+	out.Synthetic = task.Synthetic()
+	if out.Status == "" {
+		out.Status = out.Classified()
+	}
+	// Every run is written out, including the ones that failed for reasons
+	// that have nothing to do with the task. A harness that keeps only the
+	// runs it liked cannot be audited, and the selection is invisible in the
+	// summary it produces.
+	if err := r.persist(out); err != nil {
+		r.logf("eval: recording run %s: %v", out.RunID, err)
+	}
+	return out
+}
+
+func (r *Runner) attempt(ctx context.Context, task Task, arm Arm, solver Solver) Outcome {
 	out := Outcome{TaskID: task.ID, Category: task.Category, Arm: arm.Name, LeakRisk: task.LeakRisk}
 	start := time.Now()
 
@@ -175,6 +239,7 @@ func (r *Runner) Run(ctx context.Context, task Task, arm Arm, solver Solver) Out
 		// The operator stopped the run. Recording a verdict would put a
 		// fabricated data point in the results.
 		out.Err = "interrupted"
+		out.Status = StatusCancelled
 		return out
 	case solveErr != nil && !errors.Is(solveErr, context.DeadlineExceeded):
 		// A solver fault is a harness-level error, not evidence that the task
@@ -381,4 +446,42 @@ func diffOf(ctx context.Context, dir string) (string, error) {
 		return "", fmt.Errorf("diffing: %w", err)
 	}
 	return string(out), nil
+}
+
+// newRunID returns an identifier that is unique across runs and sorts by time.
+//
+// It is a random suffix on a timestamp rather than a counter, because two
+// harness processes writing into the same raw directory must not be able to
+// claim the same id and overwrite each other's evidence.
+func newRunID() string {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// A run with no id cannot be traced back to its artefacts, so this
+		// falls back to the clock rather than to an empty string.
+		return time.Now().UTC().Format("20060102T150405.000000000Z")
+	}
+	return time.Now().UTC().Format("20060102T150405") + "-" + hex.EncodeToString(b[:])
+}
+
+// persist writes one run to the raw directory, whatever happened to it.
+//
+// This is the file a reader goes to when a headline number looks wrong. It
+// holds the full diff and acceptance output, which the summary truncates, and
+// it is written before any aggregation so no filter stands between the run and
+// the record of it.
+func (r *Runner) persist(out Outcome) error {
+	if r.RawDir == "" {
+		return nil
+	}
+	if err := os.MkdirAll(r.RawDir, 0o750); err != nil {
+		return err
+	}
+	body, err := json.MarshalIndent(struct {
+		BenchmarkSchemaVersion int     `json:"benchmark_schema_version"`
+		Run                    Outcome `json:"run"`
+	}{BenchmarkSchemaVersion, out}, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(r.RawDir, out.RunID+".json"), body, 0o600)
 }

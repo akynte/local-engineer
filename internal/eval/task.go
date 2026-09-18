@@ -105,6 +105,17 @@ type Task struct {
 	Verification string `yaml:"verification"`
 	// LeakRisk is disclosed per task, never assumed.
 	LeakRisk LeakRisk `yaml:"leak_risk"`
+	// Set decides whether this task may be tuned against. Ranking weights,
+	// thresholds and retrieval constants may be fitted on the dev set; a task
+	// in the held-out set is judged on and never fitted to, because a
+	// threshold chosen because it scored well on a task is no longer measured
+	// by that task. Tasks written before the split default to dev, which is
+	// the conservative reading: it keeps them out of held-out headline numbers.
+	Set Set `yaml:"set,omitempty"`
+	// Expected records the ground truth for localization scoring where it is
+	// known — the files and symbols the real fixing commit touched. It is
+	// applied only when scoring, never shown to the system.
+	Expected Expected `yaml:"expected,omitempty"`
 	// Notes record anything a reader of the results would need to interpret
 	// them: why the task is hard, what a wrong-but-passing solution looks like.
 	Notes string `yaml:"notes,omitempty"`
@@ -112,6 +123,23 @@ type Task struct {
 	// path is where the task was loaded from, for resolving the fixture.
 	path string
 }
+
+// Expected is localization ground truth, used to score retrieval rather than
+// to decide the task. It is optional: a task with no known fixing commit still
+// measures success, it just cannot contribute to recall.
+type Expected struct {
+	// Files the real fix touched, repository-relative.
+	Files []string `yaml:"files,omitempty"`
+	// Symbols the real fix changed.
+	Symbols []string `yaml:"symbols,omitempty"`
+	// Callers that had to change because of the fix, where known.
+	Callers []string `yaml:"callers,omitempty"`
+	// Tests that cover the change, where known.
+	Tests []string `yaml:"tests,omitempty"`
+}
+
+// Known reports whether this task can contribute to localization scoring.
+func (e Expected) Known() bool { return len(e.Files) > 0 || len(e.Symbols) > 0 }
 
 // Acceptance is the hidden ground truth for a task.
 type Acceptance struct {
@@ -158,6 +186,9 @@ func (t Task) Validate() error {
 	}
 	if t.Category == "" {
 		problems = append(problems, "no category; results are reported per category")
+	}
+	if t.Set != "" && t.Set != SetDev && t.Set != SetHeldout {
+		problems = append(problems, fmt.Sprintf("set %q is not dev or heldout", t.Set))
 	}
 	if t.LeakRisk == "" {
 		problems = append(problems, "no leak_risk; provenance is disclosed, never assumed")
@@ -212,6 +243,23 @@ func (b Budget) WallClock() time.Duration {
 }
 
 // LoadTask reads one task file.
+// Membership reports the task's set, defaulting an unlabelled task to dev.
+//
+// Defaulting to dev is the conservative direction: an unlabelled task cannot
+// accidentally end up in a held-out headline number, which is the error that
+// would matter.
+func (t Task) Membership() Set {
+	if t.Set == "" {
+		return SetDev
+	}
+	return t.Set
+}
+
+// Synthetic reports whether the fixture is generated rather than drawn from
+// real history. Synthetic tasks are reported separately and never folded into
+// a headline rate over real tasks.
+func (t Task) Synthetic() bool { return t.LeakRisk == LeakSynthetic }
+
 func LoadTask(path string) (Task, error) {
 	body, err := os.ReadFile(path) //nolint:gosec // an operator-supplied task file
 	if err != nil {

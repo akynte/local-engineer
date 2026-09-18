@@ -277,9 +277,12 @@ than out of recall, and the cap it yields is a floor rather than a ceiling.
 | `tasks` | List and validate the task set |
 | `report` | Render a saved result file |
 | `arms` | Describe the configurations being compared and what each isolates |
+| `qualify` | Report whether the evidence yet supports dropping the "unproven" limitation |
+| `results` | Generate `summary.json` and `RESULTS.md` from saved runs |
 
 `run` flags: `--arms`, `--tasks` (the task set directory), `--task` (run only
-these ids), `--repeat`, `--out`, `--json`.
+these ids), `--repeat`, `--raw` (write every run, including failures, as its own
+file), `--out`, `--json`.
 
 Two properties are what make the numbers mean anything. A task's acceptance
 tests are never in the worktree while the task runs, so a model cannot satisfy a
@@ -292,6 +295,21 @@ beside it and you are reading half the result.
 existed holds each run's acceptance output but no counts; given the set it was
 run against, `le eval report results.json --tasks evals/tasks` recovers them
 without re-running anything.
+
+`qualify` reads saved runs and checks them against the bar this project set for
+itself before any of it was measured: held-out tasks, repeats, hidden
+verification, a baseline, consecutive ladder rungs, ablations, false acceptance,
+paired statistics, retained raw runs, complete environment metadata, and an
+independent reproduction that agrees. It does not decide whether the system is
+good; it decides whether anyone is entitled to an opinion yet. A failing gate is
+not a bug, it is the next piece of work — flags are `--tasks`, `--json`,
+`--evaluation-run`, `--reproduction-run` and `--reproduction-agrees`.
+
+`results` generates the published document. Every figure in it is computed from
+the runs, so no number in this repository's benchmark documentation was typed by
+a person; the output carries a header saying not to edit it. Flags are
+`--tasks`, `--out` (a directory), `--provenance` (a label rendered above every
+number, for example that these are pilot runs) and `--seed`.
 
 Every run is graded as well as judged. `SOLVED` is the only measure of whether a
 task was done; `TESTS` is the mean share of a task's hidden tests a run

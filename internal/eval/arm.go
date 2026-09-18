@@ -65,6 +65,13 @@ func Arms() []Arm {
 			Supervised: true, Graph: true, Verification: false, Role: "coding",
 		},
 		{
+			Name: "supervised-no-graph-no-verify",
+			Description: "The supervised worktree and lexical retrieval only: no graph, no " +
+				"verification loop. The ladder's second rung, so the supervisor's scaffolding " +
+				"can be separated from the two components built on top of it.",
+			Supervised: true, Graph: false, Verification: false, Role: "coding",
+		},
+		{
 			Name: "frontier",
 			Description: "A hosted model through the supervised pipeline, on a non-sensitive " +
 				"task set only. Calibrates the task set's difficulty; it is not the comparison " +

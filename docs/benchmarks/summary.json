@@ -1,0 +1,465 @@
+{
+  "report_schema_version": 1,
+  "generated_at": "2026-09-18T21:52:07.329940194Z",
+  "provenance": "PILOT DATA. These runs predate the current evidence system and were produced on an earlier model and configuration. They are published to show the pipeline end to end, not as a result. The qualification below fails, and the \"not proven to help\" limitation stands.",
+  "environment": {
+    "captured_at": "2026-09-18T21:52:07.303414134Z",
+    "le_commit": "48ad27d3905e5132c9e12271ccadc8d8e5636d36",
+    "le_dirty": true,
+    "go_version": "go1.26.8",
+    "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+    "vram_mib": 8188,
+    "cpu": "13th Gen Intel(R) Core(TM) i7-13620H",
+    "cpus": 16,
+    "ram_mib": 62741,
+    "os": "linux",
+    "kernel": "7.0.0-31-generic",
+    "seed": 1
+  },
+  "task_set": {
+    "total": 10,
+    "real": 10,
+    "synthetic": 0,
+    "by_set": {
+      "dev": 10
+    },
+    "by_category": {
+      "api_change": 2,
+      "bug_fix": 5,
+      "feature": 1,
+      "refactor": 1,
+      "schema_change": 1
+    },
+    "by_leak_risk": {
+      "none": 10
+    }
+  },
+  "arms": [
+    {
+      "arm": "supervised",
+      "description": "The full system: retrieval, graph expansion, impact analysis, the verification loop and the completion contract.",
+      "evidence_runs": 50,
+      "statuses": {
+        "completed": 33,
+        "task_failed": 17
+      },
+      "task_success": {
+        "successes": 33,
+        "total": 50,
+        "value": 0.66,
+        "ci_low": 0.5215356854148285,
+        "ci_high": 0.7756323036493895
+      },
+      "confusion": {
+        "true_accept": 33,
+        "false_accept": 9,
+        "true_reject": 8,
+        "false_reject": 0
+      },
+      "false_acceptance_rate": {
+        "successes": 9,
+        "total": 42,
+        "value": 0.21428571428571427,
+        "ci_low": 0.11705668531051237,
+        "ci_high": 0.3594013789804373
+      },
+      "false_rejection_rate": {
+        "successes": 0,
+        "total": 8,
+        "value": 0,
+        "ci_low": 2.7755575615628914e-17,
+        "ci_high": 0.32441561951087694
+      }
+    },
+    {
+      "arm": "supervised-no-graph",
+      "description": "The full system with graph expansion and impact analysis off, and lexical retrieval left on. Isolates what the graph contributes.",
+      "evidence_runs": 50,
+      "statuses": {
+        "completed": 32,
+        "task_failed": 18
+      },
+      "task_success": {
+        "successes": 32,
+        "total": 50,
+        "value": 0.64,
+        "ci_low": 0.5014076201030195,
+        "ci_high": 0.7586143703281711
+      },
+      "confusion": {
+        "true_accept": 32,
+        "false_accept": 8,
+        "true_reject": 10,
+        "false_reject": 0
+      },
+      "false_acceptance_rate": {
+        "successes": 8,
+        "total": 40,
+        "value": 0.2,
+        "ci_low": 0.10499864973166874,
+        "ci_high": 0.34757607381856676
+      },
+      "false_rejection_rate": {
+        "successes": 0,
+        "total": 10,
+        "value": 0,
+        "ci_low": 0,
+        "ci_high": 0.2775401687666166
+      }
+    },
+    {
+      "arm": "supervised-no-verification",
+      "description": "The full system with the compiler-and-test correction loop off. Isolates what the feedback loop contributes, which §10.1 calls the core.",
+      "evidence_runs": 15,
+      "statuses": {
+        "completed": 14,
+        "task_failed": 1
+      },
+      "task_success": {
+        "successes": 14,
+        "total": 15,
+        "value": 0.9333333333333333,
+        "ci_low": 0.7018292244757601,
+        "ci_high": 0.9881334113938051
+      },
+      "confusion": {
+        "true_accept": 14,
+        "false_accept": 1,
+        "true_reject": 0,
+        "false_reject": 0
+      },
+      "false_acceptance_rate": {
+        "successes": 1,
+        "total": 15,
+        "value": 0.06666666666666667,
+        "ci_low": 0.011866588606194856,
+        "ci_high": 0.2981707755242399
+      },
+      "false_rejection_rate": {
+        "successes": 0,
+        "total": 0,
+        "value": 0,
+        "ci_low": 0,
+        "ci_high": 0
+      }
+    },
+    {
+      "arm": "unsupervised",
+      "description": "The same local model given the objective and the worktree, with no retrieval, no graph and no verification loop. The baseline that says whether the harness earns its complexity.",
+      "evidence_runs": 15,
+      "statuses": {
+        "completed": 11,
+        "task_failed": 4
+      },
+      "task_success": {
+        "successes": 11,
+        "total": 15,
+        "value": 0.7333333333333333,
+        "ci_low": 0.4804911034231324,
+        "ci_high": 0.8910272389681718
+      },
+      "confusion": {
+        "true_accept": 11,
+        "false_accept": 4,
+        "true_reject": 0,
+        "false_reject": 0
+      },
+      "false_acceptance_rate": {
+        "successes": 4,
+        "total": 15,
+        "value": 0.26666666666666666,
+        "ci_low": 0.1089727610318281,
+        "ci_high": 0.5195088965768675
+      },
+      "false_rejection_rate": {
+        "successes": 0,
+        "total": 0,
+        "value": 0,
+        "ci_low": 0,
+        "ci_high": 0
+      }
+    }
+  ],
+  "paired": [
+    {
+      "question": "Does the harness beat the same model driven directly?",
+      "what_it_isolates": "the whole pipeline: retrieval, the graph, and the verification loop together",
+      "baseline": "unsupervised",
+      "variant": "supervised",
+      "task_success": {
+        "metric": "task_success",
+        "baseline": "unsupervised",
+        "variant": "supervised",
+        "tasks": 3,
+        "runs": 30,
+        "delta": 0.20000000000000004,
+        "ci_low": 0,
+        "ci_high": 0.6,
+        "resamples": 10000,
+        "seed": 1,
+        "verdict": "insufficient_evidence"
+      },
+      "false_acceptance": {
+        "metric": "false_acceptance",
+        "baseline": "unsupervised",
+        "variant": "supervised",
+        "tasks": 3,
+        "runs": 30,
+        "delta": -0.20000000000000004,
+        "ci_low": -0.6,
+        "ci_high": 0,
+        "resamples": 10000,
+        "seed": 1,
+        "verdict": "insufficient_evidence"
+      }
+    },
+    {
+      "question": "Does the code graph contribute anything beyond lexical search?",
+      "what_it_isolates": "graph expansion and impact analysis, with everything else held constant",
+      "baseline": "supervised-no-graph",
+      "variant": "supervised",
+      "task_success": {
+        "metric": "task_success",
+        "baseline": "supervised-no-graph",
+        "variant": "supervised",
+        "tasks": 10,
+        "runs": 100,
+        "delta": 0.01999999999999999,
+        "ci_low": -0.16,
+        "ci_high": 0.2,
+        "resamples": 10000,
+        "seed": 1,
+        "verdict": "insufficient_evidence"
+      },
+      "false_acceptance": {
+        "metric": "false_acceptance",
+        "baseline": "supervised-no-graph",
+        "variant": "supervised",
+        "tasks": 10,
+        "runs": 100,
+        "delta": 0.019999999999999997,
+        "ci_low": -0.10000000000000002,
+        "ci_high": 0.16,
+        "resamples": 10000,
+        "seed": 1,
+        "verdict": "insufficient_evidence"
+      }
+    },
+    {
+      "question": "Does the verification loop contribute?",
+      "what_it_isolates": "the compiler-and-test correction signal, with everything else held constant",
+      "baseline": "supervised-no-verification",
+      "variant": "supervised",
+      "task_success": {
+        "metric": "task_success",
+        "baseline": "supervised-no-verification",
+        "variant": "supervised",
+        "tasks": 3,
+        "runs": 30,
+        "delta": 0,
+        "ci_low": -0.19999999999999998,
+        "ci_high": 0.19999999999999998,
+        "resamples": 10000,
+        "seed": 1,
+        "verdict": "insufficient_evidence"
+      },
+      "false_acceptance": {
+        "metric": "false_acceptance",
+        "baseline": "supervised-no-verification",
+        "variant": "supervised",
+        "tasks": 3,
+        "runs": 30,
+        "delta": 0,
+        "ci_low": -0.19999999999999998,
+        "ci_high": 0.19999999999999998,
+        "resamples": 10000,
+        "seed": 1,
+        "verdict": "insufficient_evidence"
+      }
+    }
+  ],
+  "ladder": [
+    {
+      "letter": "A",
+      "arm": "unsupervised",
+      "adds": "local model and a plain tool loop",
+      "wired": true,
+      "measured": false
+    },
+    {
+      "letter": "B",
+      "arm": "supervised-no-graph-no-verify",
+      "adds": "deterministic supervisor: scoped worktree, lexical retrieval, journal",
+      "wired": true,
+      "measured": false
+    },
+    {
+      "letter": "C",
+      "arm": "supervised-no-graph",
+      "adds": "verification loop: compiler and tests feed back into the attempt",
+      "wired": true,
+      "measured": false
+    },
+    {
+      "letter": "D",
+      "arm": "supervised",
+      "adds": "reference graph: symbol lookup, graph expansion, impact analysis",
+      "wired": true,
+      "measured": true,
+      "over": "supervised-no-graph",
+      "delta": {
+        "metric": "task_success",
+        "baseline": "supervised-no-graph",
+        "variant": "supervised",
+        "tasks": 10,
+        "runs": 100,
+        "delta": 0.01999999999999999,
+        "ci_low": -0.16,
+        "ci_high": 0.2,
+        "resamples": 10000,
+        "seed": 1,
+        "verdict": "insufficient_evidence"
+      }
+    },
+    {
+      "letter": "E",
+      "arm": "supervised-review",
+      "adds": "fresh-context review before acceptance",
+      "wired": false,
+      "blocker": "the harness drives the native engine; review lives in the phased runner above it",
+      "measured": false
+    },
+    {
+      "letter": "F",
+      "arm": "context-frozen",
+      "adds": "frozen-prefix context architecture",
+      "wired": false,
+      "blocker": "the context packer is in the phased runner; the harness would have to attach there",
+      "measured": false
+    },
+    {
+      "letter": "G",
+      "arm": "supervised-memory",
+      "adds": "project memory carried between tasks",
+      "wired": false,
+      "blocker": "memory is per-repository and the harness gives each task a fresh fixture",
+      "measured": false
+    },
+    {
+      "letter": "H",
+      "arm": "supervised-embeddings",
+      "adds": "semantic embedding retrieval",
+      "wired": false,
+      "blocker": "optional component, not implemented; §6.5 requires measuring before adding",
+      "measured": false
+    },
+    {
+      "letter": "I",
+      "arm": "supervised-reranker",
+      "adds": "reranking over embedding candidates",
+      "wired": false,
+      "blocker": "depends on H",
+      "measured": false
+    }
+  ],
+  "retention": [
+    {
+      "component": "reference graph: symbol lookup, graph expansion, impact analysis",
+      "decision": "insufficient_evidence",
+      "basis": "the interval is too wide to distinguish an effect from its absence",
+      "delta": 0.01999999999999999,
+      "verdict": "insufficient_evidence"
+    }
+  ],
+  "qualification": {
+    "report_schema_version": 1,
+    "status": "fail",
+    "gates": [
+      {
+        "name": "heldout_real_tasks",
+        "met": false,
+        "required": "\u003e= 30",
+        "actual": "0",
+        "why": "Below this a single task flipping moves the headline rate more than any effect worth claiming."
+      },
+      {
+        "name": "finalist_repeats",
+        "met": true,
+        "required": "\u003e= 3 runs on \u003e= 2 arms",
+        "actual": "5 runs on 4 arms",
+        "why": "One run of a cell is not a measurement of it; the pilot had cells change verdict between passes."
+      },
+      {
+        "name": "hidden_verification",
+        "met": true,
+        "required": "every task",
+        "actual": "10 of 10",
+        "why": "Without a hidden check the only signal is the model's own claim, which is what this measures against."
+      },
+      {
+        "name": "baseline_comparison",
+        "met": true,
+        "required": "computed",
+        "actual": "yes",
+        "why": "Without an unsupervised baseline there is nothing to attribute an improvement to."
+      },
+      {
+        "name": "component_ladder",
+        "met": false,
+        "required": "\u003e= 3 consecutive rungs",
+        "actual": "longest unbroken chain: 2",
+        "why": "The architecture prescribes measuring each layer's marginal value rather than assuming it, and a gap in the ladder makes the deltas across it unattributable."
+      },
+      {
+        "name": "graph_ablation",
+        "met": true,
+        "required": "computed",
+        "actual": "yes",
+        "why": "The graph's contribution is otherwise a design argument, not a measurement."
+      },
+      {
+        "name": "context_ablation",
+        "met": false,
+        "required": "computed",
+        "actual": "no",
+        "why": "Prefix reuse verified against a server is not the same as time saved across a task."
+      },
+      {
+        "name": "false_acceptance_measured",
+        "met": true,
+        "required": "claims recorded",
+        "actual": "yes",
+        "why": "A system that fails while reporting success is the failure mode this project exists to prevent."
+      },
+      {
+        "name": "paired_statistics",
+        "met": true,
+        "required": "computed",
+        "actual": "yes",
+        "why": "Arms see the same tasks, so unpaired intervals answer a question this design does not ask."
+      },
+      {
+        "name": "raw_results",
+        "met": true,
+        "required": "present",
+        "actual": "130 runs",
+        "why": "Every aggregate must be derivable from the runs behind it."
+      },
+      {
+        "name": "environment_metadata",
+        "met": false,
+        "required": "complete",
+        "actual": "missing: model runtime_version",
+        "why": "A number without the model, runtime and machine behind it cannot be reproduced or compared."
+      },
+      {
+        "name": "clean_reproduction",
+        "met": false,
+        "required": "a second run agreeing",
+        "actual": "not run",
+        "why": "A headline that rests on one execution rests on one roll of the dice."
+      }
+    ],
+    "recommendation": "Evidence gates fail: clean_reproduction, component_ladder, context_ablation, environment_metadata, heldout_real_tasks. The \"not proven to help\" limitation stays as written until these are met."
+  }
+}

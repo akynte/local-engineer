@@ -28,7 +28,7 @@ func newEvalCmd() *cobra.Command {
 			"truth, so \"claimed success and was wrong\" is its own number rather than\n" +
 			"something averaged away.",
 	}
-	cmd.AddCommand(newEvalRunCmd(), newEvalTasksCmd(), newEvalArmsCmd(), newEvalReportCmd())
+	cmd.AddCommand(newEvalRunCmd(), newEvalTasksCmd(), newEvalArmsCmd(), newEvalReportCmd(), newEvalQualifyCmd(), newEvalResultsCmd())
 	return cmd
 }
 
@@ -97,6 +97,7 @@ func newEvalRunCmd() *cobra.Command {
 		armList []string
 		only    []string
 		out     string
+		rawDir  string
 		asJSON  bool
 		repeat  int
 	)
@@ -183,6 +184,7 @@ func newEvalRunCmd() *cobra.Command {
 			}
 
 			runner := &eval.Runner{
+				RawDir:  rawDir,
 				WorkDir: filepath.Join(dirs.Tmp, "eval"),
 				Logf:    func(f string, a ...any) { fmt.Fprintf(cmd.ErrOrStderr(), f+"\n", a...) },
 			}
@@ -252,6 +254,8 @@ func newEvalRunCmd() *cobra.Command {
 	// a quick check that the harness runs at all.
 	cmd.Flags().IntVar(&repeat, "repeat", 3,
 		"run the whole set this many times; one run of a cell is a sample, not a measurement")
+	cmd.Flags().StringVar(&rawDir, "raw", "",
+		"write every run, including failures, as its own file in this directory")
 	cmd.Flags().StringVar(&out, "out", "", "write the report as JSON to this path")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON to stdout")
 	return cmd
