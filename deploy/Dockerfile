@@ -26,7 +26,7 @@
 #     and the runtime stages must stay on the same Debian release. They are both
 #     trixie, and moving either is a change to the other.
 # ---------------------------------------------------------------------------
-FROM --platform=$TARGETPLATFORM golang:1.26-trixie AS build
+FROM --platform=$TARGETPLATFORM golang:1.27-trixie AS build
 
 ARG VERSION=0.0.0-dev
 ARG COMMIT=unknown
