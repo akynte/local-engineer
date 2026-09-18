@@ -11,9 +11,13 @@ import (
 
 	"github.com/akynte/local-engineer/internal/artifacts"
 	"github.com/akynte/local-engineer/internal/broker"
+	"github.com/akynte/local-engineer/internal/config"
 	"github.com/akynte/local-engineer/internal/critic"
 	"github.com/akynte/local-engineer/internal/engine"
+	"github.com/akynte/local-engineer/internal/firewall"
 	"github.com/akynte/local-engineer/internal/ledger"
+	"github.com/akynte/local-engineer/internal/llm"
+	"github.com/akynte/local-engineer/internal/lsp"
 	"github.com/akynte/local-engineer/internal/policy"
 	"github.com/akynte/local-engineer/internal/recipe"
 	"github.com/akynte/local-engineer/internal/retrieval"
@@ -43,6 +47,16 @@ type Runner struct {
 	Retriever *retrieval.Retriever
 	Artifacts *artifacts.Store
 	Engine    engine.Engine
+	// WorkflowModel owns the structured LOCALIZE, PLAN and REVIEW calls.
+	// Native engines supply their provider; verification-only tasks need none.
+	WorkflowModel llm.Provider
+	ReviewModel   llm.Provider
+	PhaseBudgets  map[string]config.PhaseBudget
+	// LSPConfig configures the live cross-reference layer, consulted only for
+	// files an attempt has already changed (§11). Empty means the index
+	// answers alone, which is a supported state rather than a degraded one.
+	LSPConfig lsp.Config
+	lspPool   *lsp.Pool
 	Sandbox   sandbox.Runner
 
 	// SandboxSpec is the base specification; the worktree is added per task.
@@ -107,13 +121,17 @@ func NewRunner(s *store.Store, eng engine.Engine, sb sandbox.Runner, holder stri
 	if err != nil {
 		return nil, err
 	}
-	return &Runner{
+	r := &Runner{
 		Store: NewStore(s), Ledger: ledger.New(s), Worktrees: wm,
 		Retriever: retrieval.New(s), Artifacts: artifacts.New(s),
 		Engine: eng, Sandbox: sb, Holder: holder,
 		Telemetry: telemetry.New(s),
 		store:     s, dirs: dirs,
-	}, nil
+	}
+	if provider, ok := eng.(interface{ WorkflowProvider() llm.Provider }); ok {
+		r.WorkflowModel = provider.WorkflowProvider()
+	}
+	return r, nil
 }
 
 func (r *Runner) logf(format string, args ...any) {
@@ -283,13 +301,24 @@ func (r *Runner) cleanup(ctx context.Context, t *Task, wt *worktree.Worktree, ou
 	if out == nil {
 		return
 	}
+	// Under the architecture-review workflow, FINALIZE is the only phase
+	// allowed to commit. Paused and rejected work stays in its task checkout.
+	if r.WorkflowModel != nil && out.Task.State != StateAccepted {
+		return
+	}
 	// Commit first, whatever the outcome. Until this runs the work exists only
 	// in the checkout directory, so a gate would be asking about a change that
 	// vanishes when the directory does, and a failed task would leave nothing
 	// to inspect after cleanup.
-	committed, err := wt.Commit(ctx, commitMessage(t, out))
-	if err != nil {
-		r.logf("task %s: committing the change to %s: %v", t.ID, wt.Branch, err)
+	// Phased tasks committed in FINALIZE before being marked accepted.
+	committed := r.WorkflowModel != nil && engine.Edits(r.Engine)
+	if !committed {
+		var err error
+		committed, err = wt.Commit(ctx, commitMessage(t, out))
+		if err != nil {
+			r.logf("task %s: committing the change to %s: %v", t.ID, wt.Branch, err)
+			return // preserve the checkout if the commit failed
+		}
 	}
 	if !committed {
 		out.Branch = ""
@@ -329,9 +358,12 @@ func (r *Runner) cleanup(ctx context.Context, t *Task, wt *worktree.Worktree, ou
 }
 
 func (r *Runner) run(ctx context.Context, t *Task, wt *worktree.Worktree) (*Outcome, error) {
+	if r.WorkflowModel != nil && engine.Edits(r.Engine) {
+		return r.runPhases(ctx, t, wt)
+	}
 	budget := t.Budget
 	if budget.MaxAttempts <= 0 {
-		budget = DefaultBudget()
+		budget.MaxAttempts = DefaultBudget().MaxAttempts
 	}
 	if budget.MaxWallTime > 0 {
 		var cancel context.CancelFunc
@@ -364,17 +396,29 @@ func (r *Runner) run(ctx context.Context, t *Task, wt *worktree.Worktree) (*Outc
 			feedback = append(feedback, diagnosisAsFeedback(*diag))
 		}
 
-		used, err := r.step(ctx, t, wt, attempt, before, feedback)
+		remaining := 0
+		if budget.MaxTokens > 0 {
+			remaining = budget.MaxTokens - out.TokensUsed
+			if remaining <= 0 {
+				out.Reasons = append(out.Reasons, "task token budget exhausted")
+				return r.finish(ctx, t, wt, out, StateBlocked)
+			}
+		}
+		response, err := r.step(ctx, t, wt, attempt, before, feedback, remaining)
 		if err != nil {
 			return nil, err
 		}
-		out.TokensUsed += used
+		out.TokensUsed += response.TokensUsed
 
 		after, err := wt.Candidate()
 		if err != nil {
 			return nil, err
 		}
 		out.Candidate = after
+		if response.BudgetExhausted {
+			out.Reasons = append(out.Reasons, response.Summary)
+			return r.finish(ctx, t, wt, out, StateBlocked)
+		}
 
 		results, err := r.verify(ctx, t, wt, after)
 		if err != nil {
@@ -452,7 +496,7 @@ func (r *Runner) run(ctx context.Context, t *Task, wt *worktree.Worktree) (*Outc
 					Summary:    fmt.Sprintf("%d file(s) outside scope %v", len(scope), budget.Scope),
 					OutOfScope: scope,
 					Diff:       out.Diff,
-				})
+				}, out.Candidate)
 			if err != nil {
 				return nil, err
 			}
@@ -476,7 +520,7 @@ func (r *Runner) run(ctx context.Context, t *Task, wt *worktree.Worktree) (*Outc
 
 // step runs one engine attempt, journalled intent-first.
 func (r *Runner) step(ctx context.Context, t *Task, wt *worktree.Worktree,
-	attempt int, before string, feedback []recipe.Result) (int, error) {
+	attempt int, before string, feedback []recipe.Result, remainingTokens int) (*engine.Response, error) {
 
 	// §3.4: dirty scopes are re-analysed before a step that needs the graph.
 	// The check is one COUNT when nothing changed, so a clean repository pays
@@ -488,7 +532,7 @@ func (r *Runner) step(ctx context.Context, t *Task, wt *worktree.Worktree,
 		ExpandDepth: 1,
 	})
 	if err != nil {
-		return 0, fmt.Errorf("task %s: retrieval: %w", t.ID, err)
+		return nil, fmt.Errorf("task %s: retrieval: %w", t.ID, err)
 	}
 	// Kept so the next verification's failures can be compared against what the
 	// model was actually given. §8.3 makes that comparison a primary metric.
@@ -506,7 +550,7 @@ func (r *Runner) step(ctx context.Context, t *Task, wt *worktree.Worktree,
 	// A packet carrying a foreign slice is an isolation incident, not a
 	// degraded result: refuse rather than proceed (§2.3).
 	if len(pkt.Rejected) > 0 {
-		return 0, fmt.Errorf("task %s: retrieval returned slices from another workspace: %s",
+		return nil, fmt.Errorf("task %s: retrieval returned slices from another workspace: %s",
 			t.ID, strings.Join(pkt.Rejected, "; "))
 	}
 
@@ -515,7 +559,7 @@ func (r *Runner) step(ctx context.Context, t *Task, wt *worktree.Worktree,
 		"objective": t.Title, "worktree": wt.ID, "packet_tokens": pkt.Tokens,
 	}, before)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
 	// The engine's own verification tool runs in the same sandbox as the
@@ -530,7 +574,9 @@ func (r *Runner) step(ctx context.Context, t *Task, wt *worktree.Worktree,
 	resp, stepErr := r.Engine.Step(ctx, engine.Request{
 		TaskID: t.ID, Objective: t.Title, Worktree: wt.Path,
 		Packet: pkt, Feedback: feedback, Attempt: attempt,
-		Budget: engine.Budget{MaxTokens: t.Budget.MaxTokens},
+		Budget:  engine.Budget{MaxTokens: remainingTokens},
+		Access:  firewall.Access{WriteScope: t.Budget.Scope, Protected: r.Policies},
+		Journal: r.Ledger,
 	})
 	if stepErr != nil {
 		// The step is not definite. By the time it returns an error the engine
@@ -540,17 +586,17 @@ func (r *Runner) step(ctx context.Context, t *Task, wt *worktree.Worktree,
 		// inspection for certain operations — so half-applied edits would never
 		// be examined. The cause is kept and the operation stays uncertain.
 		if err := h.Interrupted(ctx, stepErr); err != nil {
-			return 0, err
+			return nil, err
 		}
-		return 0, fmt.Errorf("task %s: engine step: %w", t.ID, stepErr)
+		return nil, fmt.Errorf("task %s: engine step: %w", t.ID, stepErr)
 	}
 
 	after, err := wt.Candidate()
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	changed, _ := wt.ChangedFiles(ctx)
-	return resp.TokensUsed, h.Complete(ctx, map[string]any{
+	return resp, h.Complete(ctx, map[string]any{
 		"summary": resp.Summary, "claims_done": resp.ClaimsDone,
 		"changed_files": changed, "tokens": resp.TokensUsed,
 		// An attempt that produced nothing because the output budget ran out
@@ -558,7 +604,8 @@ func (r *Runner) step(ctx context.Context, t *Task, wt *worktree.Worktree,
 		// nothing to say. The journal is where that difference has to survive:
 		// without it the history shows an unproductive attempt and no reason,
 		// and the operator tunes the wrong knob.
-		"truncated": resp.Truncated,
+		"truncated":        resp.Truncated,
+		"budget_exhausted": resp.BudgetExhausted,
 	}, after, "")
 }
 
@@ -568,6 +615,32 @@ func (r *Runner) verify(ctx context.Context, t *Task, wt *worktree.Worktree, can
 	spec := r.specFor(wt)
 
 	recipes := recipe.GoRecipes(t.Verification)
+	if r.WorkflowModel != nil && engine.Edits(r.Engine) {
+		state, err := r.Store.LoadWorkflow(ctx, t.ID)
+		if err != nil {
+			return nil, err
+		}
+		if state == nil || len(state.Presets) == 0 {
+			return nil, fmt.Errorf("workflow verification has no frozen presets")
+		}
+		// Generation runs before the checks that read its output, for the
+		// reason the declared-recipe path gives below: stale generated code
+		// fails the build with a message about the generated file rather than
+		// about the schema that moved.
+		recipes = nil
+		var generators []recipe.Recipe
+		for _, preset := range state.Presets {
+			if err := preset.Validate(wt.Path); err != nil {
+				return nil, err
+			}
+			if preset.Kind == recipe.KindGenerate {
+				generators = append(generators, preset.Recipe())
+				continue
+			}
+			recipes = append(recipes, preset.Recipe())
+		}
+		recipes = append(generators, recipes...)
+	}
 
 	// §10.1's runtime feedback and generation checks are facts about a
 	// repository, not about Go, so the repository declares them in
@@ -775,7 +848,7 @@ func (r *Runner) gate(ctx context.Context, t *Task, out *Outcome) (broker.Gate, 
 		}
 	}
 	return r.Broker.Ask(ctx, t.ID, broker.KindApply,
-		"This task met the completion contract. Apply its change?", ev)
+		"This task met the completion contract. Apply its change?", ev, out.Candidate)
 }
 
 // commitMessage describes what the task did, so `git log` on the branch reads

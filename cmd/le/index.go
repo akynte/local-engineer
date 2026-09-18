@@ -10,10 +10,12 @@ import (
 
 	"github.com/akynte/local-engineer/internal/index"
 	"github.com/akynte/local-engineer/internal/retrieval"
+	"github.com/akynte/local-engineer/internal/scipindex"
 )
 
 func newIndexCmd() *cobra.Command {
 	var asJSON bool
+	var scipPath string
 	cmd := &cobra.Command{
 		Use:   "index",
 		Short: "Build the source index, symbol index, graph and chunks",
@@ -27,6 +29,9 @@ func newIndexCmd() *cobra.Command {
 				return err
 			}
 			defer closeRoot(cmd, root)
+			if scipPath != "" && len(ws.Manifest.Repositories) != 1 {
+				return fmt.Errorf("SCIP import requires a workspace with one repository")
+			}
 
 			cfg, _ := loadConfig(root)
 			ix := index.New(st, index.Options{
@@ -48,6 +53,11 @@ func newIndexCmd() *cobra.Command {
 					return fmt.Errorf("index %s: %w", repo.Name, err)
 				}
 				results[repo.Name] = stats
+				if scipPath != "" {
+					if _, err := scipindex.Import(ctx, st, repo.ID, abs, scipPath); err != nil {
+						return err
+					}
+				}
 			}
 
 			if asJSON {
@@ -63,6 +73,7 @@ func newIndexCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON")
+	cmd.Flags().StringVar(&scipPath, "scip", "", "import a compiler-produced SCIP file after indexing source")
 	return cmd
 }
 

@@ -100,6 +100,7 @@ func newRootCmd() *cobra.Command {
 		newTUICmd(),
 		newMCPCmd(),
 		newOpenCodeCmd(),
+		newTraceCmd(),
 		newVerifyDeclaredCmd(),
 	)
 	return root

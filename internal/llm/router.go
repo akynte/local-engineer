@@ -29,10 +29,11 @@ type ProvidersFile struct {
 
 // ProviderSpec declares one backend.
 type ProviderSpec struct {
-	Name    string `yaml:"name"`
-	Kind    Kind   `yaml:"kind"`
-	BaseURL string `yaml:"base_url,omitempty"`
-	Model   string `yaml:"model,omitempty"`
+	Process *ServerProcess `yaml:"process,omitempty"`
+	Name    string         `yaml:"name"`
+	Kind    Kind           `yaml:"kind"`
+	BaseURL string         `yaml:"base_url,omitempty"`
+	Model   string         `yaml:"model,omitempty"`
 	// APIKeyEnv names an environment variable rather than holding a secret, so
 	// providers.yaml stays safe to commit and to attach to a bug report.
 	APIKeyEnv string `yaml:"api_key_env,omitempty"`
@@ -127,6 +128,9 @@ func validRole(r Role) bool {
 }
 
 func build(spec ProviderSpec) (Provider, error) {
+	if spec.Process != nil && spec.Kind != KindLlamaCPP {
+		return nil, fmt.Errorf("managed processes are only supported for llama.cpp")
+	}
 	if spec.Name == "" {
 		return nil, errors.New("llm: a provider entry has no name")
 	}
@@ -152,7 +156,11 @@ func build(spec ProviderSpec) (Provider, error) {
 		if spec.BaseURL == "" {
 			return nil, fmt.Errorf("llm: provider %q needs a base_url", spec.Name)
 		}
-		return NewLlamaCPP(opts), nil
+		provider := NewLlamaCPP(opts)
+		if spec.Process != nil {
+			return newManaged(provider, spec)
+		}
+		return serializeLocal(provider, spec.BaseURL), nil
 	case KindOpenAICompatible:
 		if spec.BaseURL == "" {
 			return nil, fmt.Errorf("llm: provider %q needs a base_url", spec.Name)

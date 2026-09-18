@@ -9,6 +9,7 @@ import (
 
 	"github.com/akynte/local-engineer/internal/graph"
 	"github.com/akynte/local-engineer/internal/memory"
+	"github.com/akynte/local-engineer/internal/policy"
 	"github.com/akynte/local-engineer/internal/store"
 	"github.com/akynte/local-engineer/internal/version"
 	"github.com/akynte/local-engineer/internal/workspace"
@@ -66,8 +67,39 @@ const GraphBudgetFraction = 0.33
 // WorkspaceID reports the workspace this retriever serves.
 func (r *Retriever) WorkspaceID() workspace.ID { return r.st.ID() }
 
+// Skeleton returns signatures in selected files, without loading source bodies.
+// The file list is bound as values and secret paths never reach the query.
+func (r *Retriever) Skeleton(ctx context.Context, paths []string) ([]Slice, error) {
+	var out []Slice
+	for _, path := range paths {
+		if policy.Sensitive(path) {
+			continue
+		}
+		rows, err := r.st.Index().SQL().QueryContext(ctx, `SELECT n.name, n.signature,n.start_line,n.end_line FROM nodes n JOIN files f ON f.file_id=n.file_id WHERE f.path=? ORDER BY n.start_line,n.node_id LIMIT 500`, path)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var s Slice
+			s.Path = path
+			if err := rows.Scan(&s.Symbol, &s.Signature, &s.StartLine, &s.EndLine); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			out = append(out, s)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
 // Request describes what the current step needs.
 type Request struct {
+	Root string
 	// Query is the lexical anchor text.
 	Query string
 	// Symbols are symbol names to look up directly.
@@ -95,10 +127,11 @@ const DefaultTokenBudget = 6000
 // Packet is the assembled context for one step, plus the accounting that makes
 // §8.3's metrics possible.
 type Packet struct {
-	WorkspaceID workspace.ID `json:"workspace_id"`
-	Slices      []Slice      `json:"slices"`
-	Tokens      int          `json:"tokens"`
-	Budget      int          `json:"budget"`
+	ProjectNotes []memory.ProjectNote `json:"project_notes,omitempty"`
+	WorkspaceID  workspace.ID         `json:"workspace_id"`
+	Slices       []Slice              `json:"slices"`
+	Tokens       int                  `json:"tokens"`
+	Budget       int                  `json:"budget"`
 	// Rejected counts slices dropped by Guard. Any non-zero value here is an
 	// isolation incident and is surfaced, never swallowed (§2.3).
 	Rejected []string `json:"rejected,omitempty"`
@@ -172,6 +205,30 @@ func (r *Retriever) Build(ctx context.Context, req Request) (*Packet, error) {
 	}
 
 	pkt := &Packet{WorkspaceID: r.st.ID(), Budget: budget}
+	if req.Root != "" {
+		var repoID string
+		if err := r.st.Index().SQL().QueryRowContext(ctx, `SELECT repository_id FROM repositories ORDER BY repository_id LIMIT 1`).Scan(&repoID); err != nil && err != sql.ErrNoRows {
+			return nil, err
+		}
+		notes, err := memory.LoadProject(req.Root, repoID, func(name string) (bool, error) {
+			nodes, err := r.g.NodesByName(ctx, name, nil, 1)
+			return len(nodes) > 0, err
+		})
+		if err != nil {
+			return nil, err
+		}
+		spent := 0
+		for _, note := range notes {
+			cost := len(note.Text)/3 + 100
+			if note.Stale || spent+cost > int(float64(budget)*MemoryBudgetFraction) {
+				pkt.NotesDropped++
+				continue
+			}
+			pkt.ProjectNotes = append(pkt.ProjectNotes, note)
+			spent += cost
+		}
+		pkt.Tokens += spent
+	}
 
 	// Stage 3: mandatory impact slots. These are added last but reserved
 	// first: §8.2 requires that consumers and contracts are never dropped, so
@@ -214,6 +271,12 @@ func (r *Retriever) Build(ctx context.Context, req Request) (*Packet, error) {
 
 	seen := map[int64]bool{}
 	for _, s := range kept {
+		// Old indexes may predate the secret-read policy. Filter again at the
+		// model boundary rather than requiring a rebuild to become safe.
+		if policy.Sensitive(s.Path) {
+			pkt.Dropped++
+			continue
+		}
 		if s.NodeID != 0 {
 			if seen[s.NodeID] {
 				continue
@@ -318,6 +381,7 @@ func (r *Retriever) impact(ctx context.Context, symbols []string, kind graph.Cha
 	if err != nil {
 		return nil, err
 	}
+	imp = graph.PublicImpact(imp)
 	return &imp, nil
 }
 

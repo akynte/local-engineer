@@ -13,13 +13,17 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/akynte/local-engineer/internal/firewall"
+	"github.com/akynte/local-engineer/internal/ledger"
 	"github.com/akynte/local-engineer/internal/recipe"
 	"github.com/akynte/local-engineer/internal/retrieval"
+	"github.com/akynte/local-engineer/internal/workflow"
 )
 
 // Request is one step of work.
 type Request struct {
-	TaskID string
+	Presets []recipe.Preset
+	TaskID  string
 	// Objective is the bounded goal for this step, not the whole requirement.
 	Objective string
 	// Worktree is the writable checkout. It is the only place the engine may
@@ -36,13 +40,26 @@ type Request struct {
 	Attempt int
 	// Budget bounds this step.
 	Budget Budget
+	// Access is supplied by the supervisor, never by the model. An empty
+	// write scope permits reads but no native file edits.
+	Access firewall.Access
+	// Journal records each native tool decision before execution and its
+	// outcome afterwards. Nil is reserved for standalone engine evaluations.
+	Journal        *ledger.Ledger
+	Phase          workflow.Phase
+	Transcript     *workflow.Transcript
+	SaveTranscript func(context.Context, *workflow.Transcript) error
+	Plan           *workflow.Plan
 }
 
 // Budget bounds one step so a stuck engine cannot consume a task's whole
 // allowance.
 type Budget struct {
-	MaxSteps  int
-	MaxTokens int
+	ContextTokens   int
+	OutputTokens    int
+	ReasoningTokens int
+	MaxSteps        int
+	MaxTokens       int
 }
 
 // Response is what an engine reports. None of it is trusted: the supervisor
@@ -73,11 +90,9 @@ type Response struct {
 	// harness limit as a model verdict, and an evaluation built on that
 	// measures the budget rather than the system.
 	Truncated bool
-	// DroppedMessages counts how many messages were trimmed from the
-	// conversation to fit the model's context window. A non-zero value means
-	// the engine pruned older tool exchanges so Provider.Chat would not
-	// exceed the window.
-	DroppedMessages int
+	// BudgetExhausted requires a supervisor boundary. The transcript is never
+	// trimmed inside an EDIT attempt (architecture review §7).
+	BudgetExhausted bool
 }
 
 // Engine produces edits in a worktree.

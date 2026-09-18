@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/akynte/local-engineer/internal/engine"
 	"os"
 	"sort"
 	"strings"
 
 	"github.com/akynte/local-engineer/internal/graph"
+	"github.com/akynte/local-engineer/internal/policy"
 	"github.com/akynte/local-engineer/internal/recipe"
 	"github.com/akynte/local-engineer/internal/retrieval"
 	"github.com/akynte/local-engineer/internal/worktree"
@@ -22,6 +24,7 @@ import (
 // the model can act on. Telling a model "that file does not exist, here are
 // the ones that do" corrects it; throwing away the turn does not.
 type Result struct {
+	Invalid bool
 	Content string
 	// Failed marks a call the model got wrong, for telemetry. The content
 	// still goes back either way.
@@ -46,8 +49,9 @@ const MaxReadLines = 400
 // MaxToolOutput bounds any tool's reply, so one call cannot consume the window.
 const MaxToolOutput = 8000
 
-// Exec runs one tool call against the worktree.
-func (e *Engine) Exec(ctx context.Context, wt string, call llmToolCall) Result {
+// execute runs an already-authorized tool call against the worktree.
+func (e *Engine) execute(ctx context.Context, req engine.Request, call llmToolCall) Result {
+	wt := req.Worktree
 	args := map[string]any{}
 	if len(call.Arguments) > 0 {
 		if err := json.Unmarshal(call.Arguments, &args); err != nil {
@@ -71,7 +75,7 @@ func (e *Engine) Exec(ctx context.Context, wt string, call llmToolCall) Result {
 	case ToolImpact:
 		return e.impact(ctx, args)
 	case ToolRunRecipe:
-		return e.runRecipe(ctx, wt, args)
+		return e.runRecipe(ctx, wt, args, req.Presets)
 	case ToolGitTouch:
 		return e.gitTouch(ctx, args)
 	case ToolDone:
@@ -242,6 +246,9 @@ func (e *Engine) findSymbol(ctx context.Context, args map[string]any) Result {
 	}
 	var b strings.Builder
 	for _, n := range nodes {
+		if policy.Sensitive(n.Path) {
+			continue
+		}
 		fmt.Fprintf(&b, "%s %s\n  %s:%d\n", n.Kind, n.FQN, n.Path, n.StartLine)
 		if n.Signature != "" {
 			fmt.Fprintf(&b, "  %s\n", n.Signature)
@@ -274,6 +281,7 @@ func (e *Engine) impact(ctx context.Context, args map[string]any) Result {
 	if err != nil {
 		return failed("impact analysis failed: %v", err)
 	}
+	imp = graph.PublicImpact(imp)
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s\n\n", imp.Summary())
@@ -291,11 +299,28 @@ func (e *Engine) impact(ctx context.Context, args map[string]any) Result {
 	return Result{Content: cap(b.String())}
 }
 
-func (e *Engine) runRecipe(ctx context.Context, wt string, args map[string]any) Result {
+func (e *Engine) runRecipe(ctx context.Context, wt string, args map[string]any, presets []recipe.Preset) Result {
 	if e.Recipes == nil {
 		return failed("Verification is unavailable in this step.")
 	}
 	want := recipe.Kind(str(args, "kind"))
+	if len(presets) > 0 {
+		var text strings.Builder
+		result := Result{}
+		for _, p := range presets {
+			if p.Kind != want {
+				continue
+			}
+			res := e.Recipes.Run(ctx, p.Recipe(), wt, "")
+			text.WriteString(describe(res))
+			result.Failed = result.Failed || res.Status != recipe.Pass
+		}
+		if text.Len() == 0 {
+			return failed("No frozen preset of kind %q", want)
+		}
+		result.Content = cap(text.String())
+		return result
+	}
 	for _, r := range recipe.GoRecipes(recipe.High) {
 		if r.Kind != want {
 			continue
@@ -418,6 +443,9 @@ func (e *Engine) gitTouch(ctx context.Context, args map[string]any) Result {
 	var b strings.Builder
 	var total int
 	for _, n := range nodes {
+		if policy.Sensitive(n.Path) {
+			continue
+		}
 		// Commits point at what they touched, so the commits for a file are its
 		// *incoming* edges — the same reverse traversal impact analysis uses.
 		edges, err := e.Graph.Neighbors(ctx, n.ID, graph.Reverse, []graph.EdgeKind{graph.EdgeTouches})

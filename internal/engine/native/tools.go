@@ -119,7 +119,7 @@ func Definitions(most int, wired Wired) []llm.ToolDef {
 			Schema: schema(`{
 				"type":"object",
 				"properties":{
-					"kind":{"type":"string","enum":["build","vet","test"],
+					"kind":{"type":"string","enum":["build","vet","test","format","lint"],
 						"description":"Which check to run. build is fastest; run it first."}
 				},
 				"required":["kind"],

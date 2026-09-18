@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/akynte/local-engineer/internal/ledger"
+	"github.com/akynte/local-engineer/internal/policy"
 )
 
 // gitTimeout bounds every git invocation here.
@@ -154,6 +155,26 @@ func (wt *Worktree) Candidate() (string, error) {
 	return ledger.ContentManifest(wt.Path)
 }
 
+// ReadBase reads the immutable task-start version of a file. A newly created
+// path returns nil; the model never receives a general git command.
+func (wt *Worktree) ReadBase(ctx context.Context, rel string) ([]byte, error) {
+	if _, err := Resolve(wt.Path, rel); err != nil {
+		return nil, err
+	}
+	if policy.Sensitive(rel) {
+		return nil, fmt.Errorf("protected source path")
+	}
+	listed, err := git(ctx, wt.Path, "ls-tree", "--name-only", wt.Base, "--", rel)
+	if err != nil {
+		return nil, err
+	}
+	if listed == "" {
+		return nil, nil
+	}
+	body, err := git(ctx, wt.Path, "show", wt.Base+":"+rel)
+	return []byte(body), err
+}
+
 // Diff returns the unified diff of the worktree against its base commit,
 // including untracked files. Untracked files matter: a task that adds a file
 // and does not stage it has still changed the candidate.
@@ -202,13 +223,7 @@ func (wt *Worktree) OutOfScope(ctx context.Context, allowed []string) ([]string,
 	}
 	var out []string
 	for _, f := range changed {
-		ok := false
-		for _, prefix := range allowed {
-			if f == prefix || strings.HasPrefix(f, strings.TrimSuffix(prefix, "/")+"/") {
-				ok = true
-				break
-			}
-		}
+		ok := policy.Covers(allowed, f)
 		if !ok {
 			out = append(out, f)
 		}
@@ -436,13 +451,36 @@ func Resolve(worktreePath, rel string) (string, error) {
 	if !inside(root, full) {
 		return "", fmt.Errorf("%w: %s", ErrOutside, rel)
 	}
-	if resolved, err := filepath.EvalSymlinks(full); err == nil && !inside(root, resolved) {
-		return "", fmt.Errorf("%w: %s resolves outside via a symlink", ErrOutside, rel)
-	}
-	if _, err := os.Lstat(full); err != nil {
-		if parent, perr := filepath.EvalSymlinks(filepath.Dir(full)); perr == nil && !inside(root, parent) {
-			return "", fmt.Errorf("%w: the parent of %s resolves outside", ErrOutside, rel)
+	// Resolve the nearest existing ancestor, including for a new file several
+	// directories below a symlink. Check the canonical path, not only its
+	// immediate parent (which may not exist yet).
+	ancestor := full
+	var suffix []string
+	for {
+		resolved, err := filepath.EvalSymlinks(ancestor)
+		if err == nil {
+			if !inside(root, resolved) {
+				return "", fmt.Errorf("%w: %s resolves outside via a symlink", ErrOutside, rel)
+			}
+			for i := len(suffix) - 1; i >= 0; i-- {
+				resolved = filepath.Join(resolved, suffix[i])
+			}
+			full = resolved
+			break
 		}
+		if !os.IsNotExist(err) {
+			return "", err
+		}
+		// A dangling symlink must not be mistaken for a missing directory.
+		if info, statErr := os.Lstat(ancestor); statErr == nil && info.Mode()&os.ModeSymlink != 0 {
+			return "", fmt.Errorf("%w: dangling symlink in %s", ErrOutside, rel)
+		}
+		parent := filepath.Dir(ancestor)
+		if parent == ancestor {
+			return "", err
+		}
+		suffix = append(suffix, filepath.Base(ancestor))
+		ancestor = parent
 	}
 	return full, nil
 }

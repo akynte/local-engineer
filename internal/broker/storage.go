@@ -25,13 +25,15 @@ func (b *Broker) save(ctx context.Context, g Gate) error {
 		}
 		_, err := tx.ExecContext(ctx, `
 			INSERT INTO gates (id, workspace_id, task_id, kind, question, evidence,
-			                   decision, decided_by, note, created_at, decided_at, expires_at)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+			                   decision, decided_by, note, created_at, decided_at, expires_at,
+			                   candidate)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT (id) DO UPDATE SET
 			  decision = excluded.decision, decided_by = excluded.decided_by,
 			  note = excluded.note, decided_at = excluded.decided_at`,
 			g.ID, b.ws.String(), g.TaskID, string(g.Kind), g.Question, evidence,
-			string(g.Decision), g.DecidedBy, g.Note, g.CreatedAt.UnixMilli(), decidedAt, expiresAt)
+			string(g.Decision), g.DecidedBy, g.Note, g.CreatedAt.UnixMilli(), decidedAt, expiresAt,
+			g.Candidate)
 		return err
 	})
 }
@@ -40,7 +42,7 @@ func (b *Broker) save(ctx context.Context, g Gate) error {
 func (b *Broker) list(ctx context.Context, where string, args ...any) ([]Gate, error) {
 	//nolint:gosec // where is a constant from this package, never from a caller
 	q := `SELECT id, workspace_id, task_id, kind, question, evidence, decision,
-	             decided_by, note, created_at, decided_at, expires_at
+	             decided_by, note, created_at, decided_at, expires_at, candidate
 	      FROM gates ` + where + ` ORDER BY created_at`
 
 	rows, err := b.db.SQL().QueryContext(ctx, q, args...)
@@ -57,7 +59,7 @@ func (b *Broker) list(ctx context.Context, where string, args ...any) ([]Gate, e
 		var decided, expires sql.NullInt64
 
 		if err := rows.Scan(&g.ID, &ws, &g.TaskID, &g.Kind, &g.Question, &evidence,
-			&g.Decision, &g.DecidedBy, &g.Note, &created, &decided, &expires); err != nil {
+			&g.Decision, &g.DecidedBy, &g.Note, &created, &decided, &expires, &g.Candidate); err != nil {
 			return nil, err
 		}
 		g.WorkspaceID = workspace.ID(ws)

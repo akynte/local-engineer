@@ -27,9 +27,36 @@ const (
 	LayerBwrap     Layer = "bwrap"
 )
 
+// Network states whether a child may reach the network at all.
+//
+// §9 makes no network the default and says so for a reason: with no egress, an
+// instruction injected into repository text has nowhere to send anything, which
+// is capability containment rather than a model-side defence that an adaptive
+// attacker gets past. A verification command that genuinely needs the network —
+// fetching a module — runs as a separate, supervisor-initiated warm-up outside
+// the model loop.
+//
+// The zero value is NetworkNone, so a caller that says nothing gets the
+// default the review asks for rather than the network.
+type Network string
+
+const (
+	// NetworkNone unshares the network namespace where the runner can. Loopback
+	// still works, so a test that binds 127.0.0.1:0 and dials itself is
+	// unaffected — which is most of what AllowEphemeralTCP exists for.
+	NetworkNone Network = ""
+	// NetworkHost leaves the namespace alone. It is for the one child that has
+	// to reach the model gateway: an interactive editing session.
+	NetworkHost Network = "host"
+)
+
 // Spec describes one task's sandbox. Paths are absolute and already resolved
 // by the caller; the runner never composes paths itself.
 type Spec struct {
+	// Network is the egress policy. Only the bubblewrap layer can enforce
+	// NetworkNone outright; the Landlock layer approximates it with port rules
+	// and says so in Guarantees.
+	Network Network
 	// ReadOnly are toolchain and library paths the task may read.
 	ReadOnly []string
 	// ReadWrite are the task worktree, its tmp and its caches.
@@ -125,6 +152,10 @@ func Guarantees() []Guarantee {
 				"proxy port either way"},
 		{Statement: "Cannot see other tasks' processes", Container: false, Landlock: false, Bwrap: true,
 			Note: "requires the PID namespace, which only the bubblewrap layer provides"},
+		{Statement: "Cannot reach the network when the spec denies it", Container: false, Landlock: false, Bwrap: true,
+			Note: "only the bubblewrap layer unshares the network namespace. With Landlock alone this is " +
+				"port rules on TCP bind and connect, which do not cover UDP, raw sockets or Multipath TCP; " +
+				"with the container boundary alone it is the container's own network configuration"},
 		{Statement: "Out-of-scope writes in the worktree", Container: true, Landlock: true, Bwrap: true,
 			Note: "detected by diff at every layer, not prevented"},
 		{Statement: "Cannot modify policy, ledger, hidden tests", Container: true, Landlock: true, Bwrap: true,

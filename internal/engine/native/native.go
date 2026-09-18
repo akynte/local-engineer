@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/akynte/local-engineer/internal/config"
 	"github.com/akynte/local-engineer/internal/engine"
 	"github.com/akynte/local-engineer/internal/graph"
 	"github.com/akynte/local-engineer/internal/llm"
@@ -13,6 +14,7 @@ import (
 	"github.com/akynte/local-engineer/internal/recipe"
 	"github.com/akynte/local-engineer/internal/retrieval"
 	"github.com/akynte/local-engineer/internal/trust"
+	"github.com/akynte/local-engineer/internal/workflow"
 	"github.com/akynte/local-engineer/prompts"
 )
 
@@ -44,9 +46,8 @@ type Engine struct {
 	Thinking    string
 
 	// ContextTokens is the model's context window in tokens. The engine
-	// trims the conversation when the estimate exceeds this budget so that
-	// Provider.Chat never receives a request larger than the window. Zero
-	// disables trimming entirely.
+	// stops at a boundary when the estimate exceeds this budget. It never
+	// removes earlier exchanges inside an attempt. Zero disables this check.
 	ContextTokens int
 
 	// Logf reports each tool call. Nil discards them.
@@ -121,6 +122,8 @@ func (e *Engine) refreshTools() {
 	})
 }
 
+func (e *Engine) WorkflowProvider() llm.Provider { return e.Provider }
+
 func (e *Engine) Name() string { return "native/" + e.Provider.Name() }
 
 func (e *Engine) Health(ctx context.Context) error { return e.Provider.Health(ctx) }
@@ -156,130 +159,106 @@ func estimateTokens(messages []llm.Message, tools []llm.ToolDef) int {
 	return int(float64(chars) / models.DefaultCharsPerToken)
 }
 
-// trimMessages removes the oldest exchange (one assistant message plus its
-// tool-result children) while the estimate exceeds the budget. It never drops
-// the first two messages (system prompt and user packet) and never drops the
-// most recent exchange. It builds a new slice rather than mutating the caller's.
-// Returns the trimmed slice and the number of messages dropped.
-//
-// The tools travel with the messages because they are part of the same request:
-// the definitions are roughly 900 tokens on every call, and a budget that
-// ignores them permits exactly the oversized request this function prevents.
-func trimMessages(messages []llm.Message, tools []llm.ToolDef, budget int) ([]llm.Message, int) {
-	if budget <= 0 {
-		// Zero or negative budget: skip trimming entirely.
-		return messages, 0
-	}
-
-	dropped := 0
-	for {
-		est := estimateTokens(messages, tools)
-		if est <= budget {
-			break
-		}
-		// Find the oldest exchange to drop: the first assistant message
-		// (at index >= 2) and all tool messages that follow it until the
-		// next assistant message or the end.
-		// We must never drop the first two messages (system + user).
-		// We must never drop the most recent exchange.
-		// Strategy: scan from the back to find the most recent assistant
-		// message, then scan from the front (after index 1) to find the
-		// oldest assistant message. Drop that oldest exchange.
-
-		// Find the last assistant message index.
-		lastAssistant := -1
-		for i := len(messages) - 1; i >= 2; i-- {
-			if messages[i].Role == "assistant" {
-				lastAssistant = i
-				break
-			}
-		}
-		if lastAssistant < 0 {
-			// No assistant message to drop; nothing to trim.
-			break
-		}
-
-		// Find the first assistant message at or after index 2.
-		firstAssistant := -1
-		for i := 2; i < len(messages); i++ {
-			if messages[i].Role == "assistant" {
-				firstAssistant = i
-				break
-			}
-		}
-		if firstAssistant < 0 {
-			break
-		}
-
-		// If the first and last assistant are the same, there's only one
-		// exchange and we must not drop it.
-		if firstAssistant == lastAssistant {
-			break
-		}
-
-		// Find the end of the first exchange: the message right before the
-		// next assistant message, or the last message.
-		endOfFirst := len(messages)
-		for i := firstAssistant + 1; i < len(messages); i++ {
-			if messages[i].Role == "assistant" {
-				endOfFirst = i
-				break
-			}
-		}
-
-		// Count how many messages we're dropping.
-		dropCount := endOfFirst - firstAssistant
-		dropped += dropCount
-
-		// Build a new slice without the dropped messages.
-		newMsgs := make([]llm.Message, 0, len(messages)-dropCount)
-		newMsgs = append(newMsgs, messages[:firstAssistant]...)
-		newMsgs = append(newMsgs, messages[endOfFirst:]...)
-		messages = newMsgs
-	}
-
-	return messages, dropped
-}
-
 // Step runs one attempt: a bounded tool loop that ends when the model calls
 // done, runs out of steps, or stops asking for tools.
 func (e *Engine) Step(ctx context.Context, req engine.Request) (*engine.Response, error) {
-	messages := e.seed(req)
+	if req.Phase != "" && req.Phase != workflow.Edit {
+		return nil, fmt.Errorf("native: tools are only available in EDIT")
+	}
+	transcript := req.Transcript
+	if transcript == nil {
+		transcript = &workflow.Transcript{}
+	}
+	req.Transcript = transcript
+	if transcript.Pending {
+		if err := e.reconcile(ctx, req); err != nil {
+			return nil, err
+		}
+	}
+	if transcript.Closed {
+		return &engine.Response{Summary: transcript.Summary, ClaimsDone: transcript.ClaimsDone, BudgetExhausted: transcript.BudgetExhausted, Truncated: transcript.Truncated}, nil
+	}
+	messages := transcript.Messages
+	if len(messages) == 0 {
+		transcript.FenceToken = e.ensureFence().Token()
+		messages = e.seed(req)
+	} else {
+		fence, err := trust.RestoreFence(transcript.FenceToken)
+		if err != nil {
+			return nil, err
+		}
+		e.fence = fence
+	}
+	persist := func() error {
+		transcript.Messages = messages
+		if req.SaveTranscript != nil {
+			return req.SaveTranscript(ctx, transcript)
+		}
+		return nil
+	}
+	if err := persist(); err != nil {
+		return nil, err
+	}
 	resp := &engine.Response{}
+	finish := func() (*engine.Response, error) {
+		transcript.Closed = true
+		transcript.Summary, transcript.ClaimsDone = resp.Summary, resp.ClaimsDone
+		transcript.BudgetExhausted, transcript.Truncated = resp.BudgetExhausted, resp.Truncated
+		return resp, persist()
+	}
 	prog := newProgress()
 
 	temp := e.Temperature
-	for step := 1; step <= e.MaxSteps; step++ {
+	maxSteps := e.MaxSteps
+	if req.Budget.MaxSteps > 0 && req.Budget.MaxSteps < maxSteps {
+		maxSteps = req.Budget.MaxSteps
+	}
+	for step := transcript.Steps + 1; step <= maxSteps; step++ {
 		if err := ctx.Err(); err != nil {
 			resp.Summary = fmt.Sprintf("stopped after %d step(s): %v", step-1, err)
 			return resp, nil
 		}
 
-		// §8.1: bound the tool transcript against the context window.
-		// Trim the oldest exchanges when the estimate exceeds the budget,
-		// so Provider.Chat never receives a request larger than the window.
-		if e.ContextTokens > 0 {
-			// The reply has to fit too, so the transcript's budget is what is
-			// left after reserving the output allowance.
-			budget := e.ContextTokens - e.MaxTokens
-			if budget < 0 {
-				budget = 0
+		// Architecture review §7: never rewrite the phase transcript to fit.
+		// Returning a boundary prevents both a cache-breaking trim and sending
+		// an oversized initial packet when there is nothing left to trim.
+		estimate := estimateTokens(messages, e.tools)
+		outputLimit := e.MaxTokens
+		if req.Budget.OutputTokens > 0 && (outputLimit <= 0 || req.Budget.OutputTokens < outputLimit) {
+			outputLimit = req.Budget.OutputTokens
+		}
+		if outputLimit <= 0 {
+			outputLimit = config.FallbackProfile().ReservedOutput
+		}
+		contextLimit := e.ContextTokens
+		if req.Budget.ContextTokens > 0 && (contextLimit <= 0 || req.Budget.ContextTokens < contextLimit) {
+			contextLimit = req.Budget.ContextTokens
+		}
+		if contextLimit > 0 && estimate+outputLimit > contextLimit {
+			resp.BudgetExhausted = true
+			resp.Summary = "EDIT context budget exhausted; a supervisor phase boundary is required"
+			return finish()
+		}
+		if req.Budget.MaxTokens > 0 {
+			remaining := req.Budget.MaxTokens - resp.TokensUsed - estimate
+			if remaining <= 0 {
+				resp.BudgetExhausted = true
+				resp.Summary = "task token budget exhausted"
+				return finish()
 			}
-			var dropped int
-			messages, dropped = trimMessages(messages, e.tools, budget)
-			if dropped > 0 {
-				resp.DroppedMessages += dropped
-				e.logf("trimmed %d message(s) to fit the %d-token context window", dropped, e.ContextTokens)
+			if outputLimit > remaining {
+				outputLimit = remaining
 			}
 		}
 
 		out, err := e.Provider.Chat(ctx, llm.ChatRequest{
-			Messages:    messages,
-			Tools:       e.tools,
-			ToolChoice:  "auto",
-			Temperature: &temp,
-			MaxTokens:   e.MaxTokens,
-			Thinking:    e.Thinking,
+			Messages:              messages,
+			Tools:                 e.tools,
+			ToolChoice:            "auto",
+			Temperature:           &temp,
+			MaxTokens:             outputLimit,
+			Thinking:              e.Thinking,
+			ReasoningBudgetTokens: min(req.Budget.ReasoningTokens, max(1, outputLimit-1)),
 			// The system prompt and the packet are the stable prefix; the
 			// tool exchange follows. §8.2: stable prefix first, so the
 			// provider's prompt cache survives the loop.
@@ -288,9 +267,19 @@ func (e *Engine) Step(ctx context.Context, req engine.Request) (*engine.Response
 		if err != nil {
 			return nil, fmt.Errorf("native: step %d: %w", step, err)
 		}
-		resp.TokensUsed += out.PromptTokens + out.OutputTokens
+		promptTokens, outputTokens := out.PromptTokens, out.OutputTokens
+		if promptTokens <= 0 {
+			promptTokens = estimate
+		}
+		if outputTokens <= 0 {
+			outputTokens = estimateTokens([]llm.Message{{Role: "assistant", Content: out.Content + out.Reasoning, ToolCalls: out.ToolCalls}}, nil)
+		}
+		resp.TokensUsed += promptTokens + outputTokens
+		transcript.Tokens += promptTokens + outputTokens
+		transcript.Steps = step
 
 		if !out.WantsTools() {
+			messages = append(messages, llm.Message{Role: "assistant", Content: out.Content})
 			// A response cut off at the output budget is not a decision to
 			// stop. A reasoning model reaches this by spending the whole
 			// budget thinking: FinishReason is "length", Content is empty and
@@ -300,12 +289,12 @@ func (e *Engine) Step(ctx context.Context, req engine.Request) (*engine.Response
 				resp.Truncated = true
 				resp.Summary = fmt.Sprintf(
 					"the output budget of %d tokens ran out on step %d before the model "+
-						"produced an answer or a tool call", e.MaxTokens, step)
+						"produced an answer or a tool call", outputLimit, step)
 				if n := len(strings.TrimSpace(out.Reasoning)); n > 0 {
 					resp.Summary += fmt.Sprintf("; it was spent on %d characters of reasoning, "+
 						"so the budget is too small for this model's thinking", n)
 				}
-				return resp, nil
+				return finish()
 			}
 			// No tool call means the model has nothing further to do. §10.1
 			// rejects reflection without new evidence, so prodding it to
@@ -314,17 +303,40 @@ func (e *Engine) Step(ctx context.Context, req engine.Request) (*engine.Response
 			if resp.Summary == "" {
 				resp.Summary = fmt.Sprintf("the model stopped after %d step(s) without calling a tool", step)
 			}
-			return resp, nil
+			return finish()
 		}
 
+		if len(out.ToolCalls) > 1 {
+			for _, call := range out.ToolCalls {
+				if call.Name == ToolDone {
+					return resp, fmt.Errorf("native: done must be the only call in its batch")
+				}
+			}
+		}
 		messages = append(messages, llm.Message{
 			Role: "assistant", Content: out.Content, ToolCalls: out.ToolCalls,
 		})
 
 		learnedThisStep := false
-		for _, call := range out.ToolCalls {
+		for callIndex, call := range out.ToolCalls {
+			if transcript.Tools >= 40 || (call.Name == ToolRunRecipe && transcript.VerifyRuns >= 3) || transcript.InvalidCalls >= 3 {
+				resp.BudgetExhausted = true
+				resp.Summary = "EDIT tool, verification or invalid-call budget exhausted"
+				for _, unused := range out.ToolCalls[callIndex:] {
+					messages = append(messages, llm.Message{Role: "tool", ToolCallID: unused.ID, Name: unused.Name, Content: "Not executed: EDIT phase budget exhausted."})
+				}
+				transcript.Pending = false
+				return finish()
+			}
+			transcript.Pending = true
+			if err := persist(); err != nil {
+				return resp, err
+			}
 			start := time.Now()
-			res := e.Exec(ctx, req.Worktree, call)
+			res, err := e.exec(ctx, req, call)
+			if err != nil {
+				return resp, fmt.Errorf("native: journal tool %s: %w", call.Name, err)
+			}
 			e.logf("  %s%s (%s)", call.Name, failMark(res), time.Since(start).Round(time.Millisecond))
 
 			// An edit changes the worktree, so the step produced something
@@ -351,13 +363,26 @@ func (e *Engine) Step(ctx context.Context, req engine.Request) (*engine.Response
 				Role: "tool", ToolCallID: call.ID, Name: call.Name,
 				Content: prefix + e.ensureFence().Wrap("result of "+call.Name, res.Content),
 			})
+			// Keep the whole batch pending until every advertised call has a
+			// result. A crash between calls must not send an orphaned batch.
+			transcript.Pending = callIndex < len(out.ToolCalls)-1
+			transcript.Tools++
+			if call.Name == ToolRunRecipe {
+				transcript.VerifyRuns++
+			}
+			if res.Invalid {
+				transcript.InvalidCalls++
+			}
 			if res.Edited {
 				resp.Edited = true
 			}
 			if res.Done {
 				resp.Summary = res.Summary
 				resp.ClaimsDone = true
-				return resp, nil
+				return finish()
+			}
+			if err := persist(); err != nil {
+				return resp, err
 			}
 		}
 
@@ -370,12 +395,12 @@ func (e *Engine) Step(ctx context.Context, req engine.Request) (*engine.Response
 		if stuck, why := prog.stuck(); stuck {
 			resp.Summary = why
 			e.logf("  loop guard: %s", why)
-			return resp, nil
+			return finish()
 		}
 	}
 
-	resp.Summary = fmt.Sprintf("reached the step limit of %d without declaring completion", e.MaxSteps)
-	return resp, nil
+	resp.Summary = fmt.Sprintf("reached the step limit of %d without declaring completion", maxSteps)
+	return finish()
 }
 
 func failMark(r Result) string {
@@ -418,9 +443,13 @@ func (e *Engine) ensureFence() trust.Fence {
 func (e *Engine) briefWith(req engine.Request, fence trust.Fence) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Objective: %s\n", req.Objective)
+	fmt.Fprintf(&b, "Write scope: %v (an empty scope permits no writes).\n", req.Access.WriteScope)
 	// Stated once, above everything it governs. The objective is the only
 	// instruction in this message; what follows it came out of the repository.
 	b.WriteString("\n" + fence.Preamble() + "\n")
+	if req.Plan != nil {
+		fmt.Fprintf(&b, "\nValidated plan: %+v\n", *req.Plan)
+	}
 	if req.Attempt > 1 {
 		fmt.Fprintf(&b, "\nThis is attempt %d. The previous attempt did not pass verification.\n", req.Attempt)
 	}
@@ -428,6 +457,11 @@ func (e *Engine) briefWith(req engine.Request, fence trust.Fence) string {
 	// Before the code, because these say why the work is being done and what
 	// this repository has already learned — and because §8.2 wants the stable
 	// part of the packet first, where the prompt cache can keep it.
+	if req.Packet != nil {
+		for _, note := range req.Packet.ProjectNotes {
+			b.WriteString(fence.Wrap(fmt.Sprintf("memory file=%s repo=%s commit=%s source=%s", note.File, note.RepoID, note.Commit, note.Source), note.Text) + "\n")
+		}
+	}
 	if req.Packet != nil && len(req.Packet.Notes) > 0 {
 		b.WriteString("\nWhat this repository has recorded. These are notes, not code, " +
 			"and each says where it came from:\n")

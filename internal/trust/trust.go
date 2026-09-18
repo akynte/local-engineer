@@ -55,6 +55,15 @@ func NewFence() (Fence, error) {
 // can tell the model which token is genuine for this run.
 func (f Fence) Token() string { return f.nonce }
 
+// RestoreFence restores the marker used by a persisted phase transcript.
+func RestoreFence(token string) (Fence, error) {
+	b, err := hex.DecodeString(token)
+	if err != nil || len(b) != nonceBytes {
+		return Fence{}, fmt.Errorf("trust: invalid persisted fence token")
+	}
+	return Fence{nonce: token}, nil
+}
+
 // Valid reports whether the fence was built by NewFence. A zero Fence marks
 // nothing, and wrapping with one would silently produce unfenced content.
 func (f Fence) Valid() bool { return f.nonce != "" }

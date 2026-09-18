@@ -1,12 +1,18 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"os/exec"
+	"strings"
+
 	"github.com/spf13/cobra"
 
 	"github.com/akynte/local-engineer/internal/graph"
 	"github.com/akynte/local-engineer/internal/memory"
 	"github.com/akynte/local-engineer/internal/opencode"
+	"github.com/akynte/local-engineer/internal/sandbox"
+	"github.com/akynte/local-engineer/internal/supervisor"
 )
 
 func newOpenCodeCmd() *cobra.Command {
@@ -15,6 +21,7 @@ func newOpenCodeCmd() *cobra.Command {
 		Short: "Wire this repository into OpenCode",
 	}
 	cmd.AddCommand(newOpenCodeSetupCmd())
+	cmd.AddCommand(newOpenCodeRunCmd())
 	return cmd
 }
 
@@ -90,4 +97,133 @@ func verb(changed bool) string {
 		return "wrote"
 	}
 	return "already current:"
+}
+
+// newOpenCodeRunCmd starts OpenCode inside the sandbox.
+//
+// `le opencode setup` made the supervisor's tools reachable from a session the
+// developer starts themselves. That session is an ordinary process with the
+// developer's whole environment: their home directory, their SSH agent, their
+// cloud credentials, and a shell tool. The architecture review is direct about
+// this — the coding shell's permission system is not part of the firewall,
+// because its enforcement has documented bypasses — so the boundary has to be
+// the OS sandbox around the process, which nothing was applying because nothing
+// here started the process.
+//
+// This starts it: the strongest confinement the host permits, a scrubbed
+// environment, this workspace's own XDG directories, and the restricted agent.
+func newOpenCodeRunCmd() *cobra.Command {
+	var unconfined bool
+	cmd := &cobra.Command{
+		Use:   "run [-- opencode args...]",
+		Short: "Start OpenCode confined to this workspace",
+		Long: "run starts an OpenCode session inside Local Engineer's sandbox.\n\n" +
+			"The session can write its worktree and read the toolchain paths the\n" +
+			"operator granted. It has no home directory, no inherited environment and\n" +
+			"no network beyond the inference endpoint. Its shell, web and subagent\n" +
+			"tools are refused, so verification goes through le_verify, where the\n" +
+			"command is one the operator froze and the result is tied to a content\n" +
+			"hash.\n\n" +
+			"Arguments after -- are passed to OpenCode unchanged.",
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			ws, root, st, err := openWorkspace(ctx)
+			if err != nil {
+				return err
+			}
+			defer closeRoot(cmd, root)
+			out := cmd.OutOrStdout()
+
+			binary, err := exec.LookPath("opencode")
+			if err != nil {
+				return fmt.Errorf("opencode is not on PATH: %w", err)
+			}
+			cfg, err := loadConfig(root)
+			if err != nil {
+				return err
+			}
+			dirs, err := st.TaskDirs()
+			if err != nil {
+				return err
+			}
+
+			// The agent is registered on every run rather than only by setup:
+			// a developer who edits opencode.json between sessions should not
+			// end up with a session whose restrictions silently went missing.
+			if _, _, err := opencode.RegisterAgent(ws.Root); err != nil {
+				return err
+			}
+			session := opencode.Session{
+				Binary: binary, Repo: ws.Root,
+				StateDir: st.OpenCodeDir(), TmpDir: dirs.Tmp,
+			}
+			spec, err := session.Confine(supervisor.BaseSandboxSpec(cfg, dirs))
+			if err != nil {
+				return err
+			}
+			if err := st.EnsureSandboxDirs(spec.ReadWrite); err != nil {
+				return err
+			}
+
+			runner, report := supervisor.SelectSandbox(ctx, cfg)
+			if runner == nil || (len(report.Active) == 1 && report.Active[0] == sandbox.LayerContainer && !inContainer()) {
+				// Saying "confined" when nothing is confining is the failure
+				// this refuses to make. The escape hatch is explicit and named.
+				if !unconfined {
+					return fmt.Errorf(
+						"no sandbox layer is available on this host, so the session would run "+
+							"unconfined with your whole environment:\n%s\n"+
+							"Run `le doctor` to see why, or pass --unconfined to accept it",
+						inactiveReasons(report))
+				}
+				fmt.Fprintf(out, "WARNING: starting unconfined. The shell's own permissions are not a boundary.\n\n")
+			}
+
+			argv := append([]string{binary, "--pure", "--agent", opencode.AgentName}, args...)
+			child, err := runner.Command(ctx, spec, argv...)
+			if err != nil {
+				return err
+			}
+			child.Stdin, child.Stdout, child.Stderr = cmd.InOrStdin(), out, cmd.ErrOrStderr()
+
+			fmt.Fprintf(out, "Starting OpenCode in %s under %s (%s).\n", ws.Name(), runner.Name(), layerList(report.Active))
+			fmt.Fprintf(out, "Refused in this session:\n%s\n", opencode.DeniedSummary())
+
+			if err := child.Run(); err != nil {
+				var exitErr *exec.ExitError
+				if errors.As(err, &exitErr) {
+					// The session's own exit code is the developer's business,
+					// not an error from this command.
+					return nil
+				}
+				return fmt.Errorf("starting opencode: %w", err)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&unconfined, "unconfined", false,
+		"start even when no sandbox layer is available, accepting that the session is not confined")
+	return cmd
+}
+
+func inContainer() bool { in, _ := sandbox.InContainer(); return in }
+
+func layerList(layers []sandbox.Layer) string {
+	names := make([]string, len(layers))
+	for i, l := range layers {
+		names[i] = string(l)
+	}
+	return strings.Join(names, " + ")
+}
+
+func inactiveReasons(report sandbox.Report) string {
+	var b strings.Builder
+	for _, note := range report.Inactive {
+		fmt.Fprintf(&b, "  %s: %s\n", note.Layer, note.Reason)
+	}
+	if b.Len() == 0 {
+		b.WriteString("  no layer reported a reason\n")
+	}
+	return b.String()
 }

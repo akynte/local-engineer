@@ -139,9 +139,17 @@ implementation, and there is a test that asserts exactly that.
 ## Why the schema parser is not `pg_query_go`
 
 The design names `pg_query_go`, which embeds PostgreSQL's own parser through
-cgo. That would give complete fidelity — and it would end the CGO-free build,
-which is load-bearing: DR-1 ships one static binary, and the images are built
-for amd64 and arm64 from a single runner.
+cgo. That would give complete fidelity, and the reason it was refused was that
+it would end the CGO-free build.
+
+That reason has since expired. [DR-8](../adr/0008-tree-sitter-and-cgo.md) took
+tree-sitter for language-agnostic structure and ended the CGO-free build for
+`le`, so cgo is no longer the objection it was. What remains is narrower and
+still decides it: `pg_query_go` embeds a full PostgreSQL parser to answer
+questions about DDL, and this needs the shape of a schema rather than the
+semantics of every statement. If that changes — if the schema layer starts
+needing query analysis rather than table definitions — the cost is now one
+dependency rather than a build policy.
 
 What is here instead is a focused DDL parser covering the statements that
 define a schema: `CREATE TABLE`, `ALTER TABLE`, `CREATE INDEX`, `CREATE VIEW`

@@ -14,15 +14,23 @@
 # can state exactly what it contains.
 
 # ---------------------------------------------------------------------------
-# Stage 1: build the supervisor. CGO is off, so the binary is static and the
-# same build works for every target architecture.
+# Stage 1: build the supervisor.
+#
+# CGO is on because of the tree-sitter grammars (DR-8). Two things follow, and
+# both were free when the build was static:
+#
+#   - the stage runs on the target platform rather than cross-compiling with
+#     GOARCH, because a cross build would need a C toolchain per architecture.
+#     BuildKit emulates the non-native one, which is slower and correct;
+#   - the binary is dynamically linked against this stage's glibc, so the
+#     runtime stages must stay on bookworm. They do, and a change of base image
+#     there is a change to this line too.
 # ---------------------------------------------------------------------------
-FROM golang:1.26-bookworm AS build
+FROM --platform=$TARGETPLATFORM golang:1.26-bookworm AS build
 
 ARG VERSION=0.0.0-dev
 ARG COMMIT=unknown
 ARG DATE=unknown
-ARG TARGETARCH
 
 WORKDIR /src
 
@@ -37,7 +45,7 @@ COPY . .
 # stamp the version the supervisor reports on /healthz.
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} \
+    CGO_ENABLED=1 GOOS=linux \
     go build -trimpath \
       -ldflags="-s -w \
         -X github.com/akynte/local-engineer/internal/version.Version=${VERSION} \
@@ -48,6 +56,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go build -trimpath -o /out/storescope ./tools/analyzers/storescope/cmd/storescope
+# storescope stays static: it does not use the grammars, and a static analyzer
+# tool is one less thing that has to match the runtime's libc.
 
 # ---------------------------------------------------------------------------
 # Stage 2: slim runtime. Supervisor plus the engine, nothing else.

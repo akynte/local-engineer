@@ -1,0 +1,78 @@
+name: bonsai-2-27b-8gb-cuda
+description: >-
+  8 GB CUDA GPU with 64 GB host RAM, running Ternary Bonsai 2 27B (PTQ1_0) with
+  every layer resident on the GPU. Unlike the MoE reference profile beside it,
+  this model is dense and small enough to fit in VRAM, so there is no expert
+  offload and the host RAM is free for builds and language servers.
+  Unmeasured starting points; run `le models bench --write` to replace them.
+hardware:
+  gpu: 8 GB CUDA (e.g. RTX 4060 Laptop)
+  vram_mb: 8188
+  ram_mb: 65536
+  threads: 16
+# The base model carries 262K natively. This is the working ceiling, not the
+# model's: §7.2 budgets the phases well below it, and the KV for a longer
+# window is what competes with the weights for the 8 GB card.
+context_tokens: 32768
+max_packet_tokens: 12000
+reserved_output_tokens: 8192
+max_tools_exposed: 12
+measured_peak_vram_mb: 0
+measured_peak_ram_mb: 0
+max_concurrent_tasks: 1
+runtime:
+  threads: 8
+  threads_batch: 16
+  # 5.95 GB of ternary weights fit on the card, so every layer is resident and
+  # nothing streams over PCIe. This is the whole reason the profile exists.
+  gpu_layers: 999
+  batch_size: 2048
+  ubatch_size: 512
+  flash_attn: true
+  cache_type_k: q8_0
+  cache_type_v: q8_0
+  slots: 1
+  # No --n-cpu-moe: Bonsai is a dense model, and the flag that makes a sparse
+  # 35B viable on this card does nothing for it.
+  extra_args: []
+# The model card's thinking-mode values, which are also what the GGUF metadata
+# carries. They are deliberately not the sharper settings the MoE profile uses:
+# these were the settings the published benchmarks were measured under, and
+# changing them means the reported quality no longer describes what runs here.
+sampling:
+  temperature: 1.0
+  top_p: 0.95
+  top_k: 20
+  min_p: 0.0
+thinking_policy: auto
+
+# This model thinks, and it thinks a lot: the card says it runs `xhigh`
+# reasoning effort by default and that `low` "is not supported" — selecting it
+# makes the model behave close to xhigh anyway. So a small reasoning cap does
+# not bound it, and the default per-phase budgets are the wrong shape here.
+#
+# The failure that follows is not a timeout or a refusal. The model spends the
+# whole output allowance thinking, emits no answer, and the runtime rejects the
+# empty completion against its grammar — which surfaces as an HTTP 500 about a
+# format mismatch and reads like a broken schema rather than a budget that ran
+# out. These allowances are set from what the phases actually needed.
+#
+# Every context figure stays under the server's 32768 ceiling, because the
+# admission check counts the reserved output inside it.
+phase_budgets:
+  LOCALIZE:
+    context_tokens: 26000
+    output_tokens: 8192
+    reasoning_tokens: 4096
+  PLAN:
+    context_tokens: 28000
+    output_tokens: 10240
+    reasoning_tokens: 5120
+  EDIT:
+    context_tokens: 28000
+    output_tokens: 8192
+    reasoning_tokens: 4096
+  REVIEW:
+    context_tokens: 30000
+    output_tokens: 10240
+    reasoning_tokens: 5120

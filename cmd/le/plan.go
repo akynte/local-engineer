@@ -109,7 +109,9 @@ func newPlanCmd() *cobra.Command {
 			b := broker.New(st, policyFrom(cfg.Gates))
 			gate, err := b.Ask(ctx, req.ID, broker.KindPlan,
 				fmt.Sprintf("Execute this %d-step plan?", len(plan.Steps)),
-				broker.Evidence{Summary: plan.Objective, Plan: plan, Impact: plan.Impact})
+				// No candidate: a decomposition is not a diff, so there is no
+				// content hash to reuse a decision against and each run asks.
+				broker.Evidence{Summary: plan.Objective, Plan: plan, Impact: plan.Impact}, "")
 			if err != nil {
 				return err
 			}

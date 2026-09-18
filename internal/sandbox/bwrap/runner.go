@@ -128,6 +128,19 @@ func (r *Runner) Available(ctx context.Context) (bool, string) {
 	return true, ""
 }
 
+// underDev reports a path this runner must not bind.
+//
+// A spec grants /dev/null and its siblings because the Landlock layer works by
+// path and has to be told about them. bubblewrap does not: --dev builds a fresh
+// devtmpfs holding exactly those nodes. Binding the host's node on top of the
+// one bwrap just made produces a device that cannot be opened for writing
+// inside an unprivileged user namespace — and the symptom is every Go tool
+// invocation failing with "open /dev/null: permission denied", which reads as a
+// broken toolchain rather than as a mount that undid itself.
+func underDev(p string) bool {
+	return p == "/dev" || strings.HasPrefix(p, "/dev/")
+}
+
 // Command builds the bubblewrap invocation. Mount namespaces expose only the
 // spec's paths; the PID namespace is what makes §6.2's "cannot see other
 // tasks' processes" true.
@@ -141,30 +154,50 @@ func (r *Runner) Command(ctx context.Context, spec sandbox.Spec, argv ...string)
 
 	args := []string{
 		"--unshare-user", "--unshare-pid", "--unshare-ipc", "--unshare-uts", "--unshare-cgroup-try",
+	}
+	if spec.Network != sandbox.NetworkHost {
+		args = append(args, "--unshare-net")
+	}
+	args = append(args, []string{
 		"--die-with-parent", // the sandbox must not outlive the supervisor
 		"--new-session",     // no shared terminal: prevents TIOCSTI injection into the parent's tty
 		"--proc", "/proc",
 		"--dev", "/dev",
-	}
-	for _, p := range spec.ReadOnly {
-		args = append(args, "--ro-bind-try", p, p)
-	}
-	for _, p := range spec.ReadWrite {
-		args = append(args, "--bind", p, p)
-	}
+	}...)
+	// /tmp is mounted before anything else, because a bind replaces whatever
+	// the namespace already had at that path — including earlier binds beneath
+	// it. With the task's tmp mounted last, a data directory that happens to
+	// live under /tmp had its worktree bind silently discarded, and bwrap
+	// failed to chdir into a path the spec had explicitly granted. Mounting it
+	// first means the paths below are laid on top and survive.
+	//
+	// The isolation is unchanged: /tmp still shows only the task's own tmp plus
+	// whatever else the spec granted by name (§2.2).
 	if spec.TmpDir != "" {
-		// The task's tmp is the only tmp it can see (§2.2).
 		args = append(args, "--bind", spec.TmpDir, "/tmp")
 	} else {
 		args = append(args, "--tmpfs", "/tmp")
 	}
+	for _, p := range spec.ReadOnly {
+		if underDev(p) {
+			continue
+		}
+		args = append(args, "--ro-bind-try", p, p)
+	}
+	for _, p := range spec.ReadWrite {
+		if underDev(p) {
+			continue
+		}
+		args = append(args, "--bind", p, p)
+	}
 	args = append(args, "--chdir", spec.Dir, "--")
 
-	// The network namespace is deliberately NOT unshared here: the design
-	// routes egress through the container's network configuration, and a task
-	// still needs to reach the inference endpoint. Port-level restriction is
-	// the Landlock layer's job (§6.1). Provisioning reaches the §6.1
-	// allowlisting proxy on its own port, which a task's ruleset never grants.
+	// §9's default. Loopback survives the unshare — a test that binds
+	// 127.0.0.1:0 and dials itself still works, which is what most of the
+	// ephemeral-port grant is for — but nothing off this machine is reachable,
+	// so an instruction injected into repository text has nowhere to send what
+	// it read. A child that must reach the model gateway asks for
+	// NetworkHost explicitly.
 
 	inner := argv
 	if r.Inner != nil {

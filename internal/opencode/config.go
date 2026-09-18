@@ -23,17 +23,52 @@ const verifyTimeoutMillis = 20 * 60 * 1000
 // already carry a model choice, other MCP servers, or permissions. Replacing it
 // to add one key would be the kind of helpfulness that loses someone's
 // configuration.
-//
-// The file is written as .json rather than .jsonc because this marshals it, and
-// marshalling a document that permitted comments would silently delete them.
-// OpenCode reads both; if a .jsonc already exists this reports that rather than
-// creating a second file that shadows it.
 func RegisterMCP(repoRoot string, command []string) (path string, changed bool, err error) {
+	// A .jsonc is refused by mergeConfig, but this one route can say what to
+	// paste instead of only what went wrong.
 	if jsonc := filepath.Join(repoRoot, "opencode.jsonc"); exists(jsonc) {
 		return jsonc, false, fmt.Errorf(
 			"%s already exists and may contain comments this cannot preserve. Add by hand:\n"+
 				"  \"mcp\": { %q: { \"type\": \"local\", \"command\": %s, \"enabled\": true } }",
 			jsonc, ServerName, mustJSON(command))
+	}
+	return mergeConfig(repoRoot, func(doc map[string]any) bool {
+		servers, _ := doc["mcp"].(map[string]any)
+		if servers == nil {
+			servers = map[string]any{}
+		}
+		want := map[string]any{
+			"type":    "local",
+			"command": toAny(command),
+			"enabled": true,
+			// OpenCode's default MCP timeout is five seconds. le_verify runs
+			// this repository's build, vet, test and format checks in a
+			// sandbox, which is minutes on anything real — at the default the
+			// call is abandoned while the work is still running, and the agent
+			// is told nothing rather than told it failed.
+			"timeout": verifyTimeoutMillis,
+		}
+		if equalJSON(servers[ServerName], want) {
+			return false
+		}
+		servers[ServerName] = want
+		doc["mcp"] = servers
+		return true
+	})
+}
+
+// mergeConfig applies one edit to the repository's opencode.json, writing only
+// when the edit changed something. apply reports whether it did.
+//
+// The file is written as .json rather than .jsonc because this marshals it, and
+// marshalling a document that permitted comments would silently delete them.
+// OpenCode reads both; if a .jsonc already exists this reports that rather than
+// creating a second file that shadows it.
+func mergeConfig(repoRoot string, apply func(doc map[string]any) bool) (path string, changed bool, err error) {
+	if jsonc := filepath.Join(repoRoot, "opencode.jsonc"); exists(jsonc) {
+		return jsonc, false, fmt.Errorf(
+			"%s already exists and may contain comments this cannot preserve. "+
+				"Edit it by hand, or rename it to opencode.json", jsonc)
 	}
 	path = filepath.Join(repoRoot, "opencode.json")
 
@@ -50,26 +85,9 @@ func RegisterMCP(repoRoot string, command []string) (path string, changed bool, 
 		doc["$schema"] = "https://opencode.ai/config.json"
 	}
 
-	servers, _ := doc["mcp"].(map[string]any)
-	if servers == nil {
-		servers = map[string]any{}
-	}
-	want := map[string]any{
-		"type":    "local",
-		"command": toAny(command),
-		"enabled": true,
-		// OpenCode's default MCP timeout is five seconds. le_verify runs this
-		// repository's build, vet, test and format checks in a sandbox, which
-		// is minutes on anything real — at the default the call is abandoned
-		// while the work is still running, and the agent is told nothing
-		// rather than told it failed.
-		"timeout": verifyTimeoutMillis,
-	}
-	if equalJSON(servers[ServerName], want) {
+	if !apply(doc) {
 		return path, false, nil
 	}
-	servers[ServerName] = want
-	doc["mcp"] = servers
 
 	out, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {

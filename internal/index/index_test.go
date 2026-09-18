@@ -32,6 +32,10 @@ func TestExcludedDirectoriesArePruned(t *testing.T) {
 	write("README.md", "# demo\n")
 	// Noise that must not be indexed.
 	write(".git/config", "[core]\n")
+	write(".env", "PRIVATE=value")
+	write("config/service.key", "private key")
+	write("config/credentials.json", "private value")
+	write(".agent/secrets/service.txt", "private value")
 	write(".git/objects/ab/cdef", "binary-ish")
 	write("node_modules/left-pad/index.js", "module.exports = 1\n")
 	write("vendor/example.com/dep/dep.go", "package dep\n")

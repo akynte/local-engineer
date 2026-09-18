@@ -14,6 +14,7 @@ import (
 
 	"github.com/akynte/local-engineer/internal/engine"
 	"github.com/akynte/local-engineer/internal/engine/native"
+	"github.com/akynte/local-engineer/internal/firewall"
 	"github.com/akynte/local-engineer/internal/graph"
 	"github.com/akynte/local-engineer/internal/llm"
 	"github.com/akynte/local-engineer/internal/recipe"
@@ -119,7 +120,7 @@ func TestEngineReadsEditsAndDeclaresDone(t *testing.T) {
 	)
 	e := newEngine(t, p)
 
-	resp, err := e.Step(context.Background(), engine.Request{
+	resp, err := e.Step(context.Background(), engine.Request{Access: firewall.Access{WriteScope: []string{"."}},
 		TaskID: "t1", Objective: "fix Add", Worktree: wt, Attempt: 1,
 	})
 	if err != nil {
@@ -147,7 +148,7 @@ func TestToolsAndObjectiveReachTheModel(t *testing.T) {
 	p := newScripted(&llm.ChatResponse{Content: "done thinking"})
 	e := newEngine(t, p)
 
-	if _, err := e.Step(context.Background(), engine.Request{
+	if _, err := e.Step(context.Background(), engine.Request{Access: firewall.Access{WriteScope: []string{"."}},
 		Objective: "make the widget work", Worktree: wt, Attempt: 1,
 	}); err != nil {
 		t.Fatal(err)
@@ -182,7 +183,7 @@ func TestAFailedToolCallIsReportedBackAndTheLoopContinues(t *testing.T) {
 	)
 	e := newEngine(t, p)
 
-	resp, err := e.Step(context.Background(), engine.Request{Worktree: wt, Attempt: 1})
+	resp, err := e.Step(context.Background(), engine.Request{Access: firewall.Access{WriteScope: []string{"."}}, Worktree: wt, Attempt: 1})
 	if err != nil {
 		t.Fatalf("a bad tool argument must not abort the step: %v", err)
 	}
@@ -228,7 +229,7 @@ func TestPathEscapesAreRefused(t *testing.T) {
 				call("2", "done", map[string]any{"summary": "x"}),
 			)
 			e := newEngine(t, p)
-			if _, err := e.Step(context.Background(), engine.Request{Worktree: wt, Attempt: 1}); err != nil {
+			if _, err := e.Step(context.Background(), engine.Request{Access: firewall.Access{WriteScope: []string{"."}}, Worktree: wt, Attempt: 1}); err != nil {
 				t.Fatal(err)
 			}
 			var reply string
@@ -264,7 +265,7 @@ func TestSymlinkEscapeIsRefused(t *testing.T) {
 		call("2", "done", map[string]any{"summary": "x"}),
 	)
 	e := newEngine(t, p)
-	if _, err := e.Step(context.Background(), engine.Request{Worktree: wt, Attempt: 1}); err != nil {
+	if _, err := e.Step(context.Background(), engine.Request{Access: firewall.Access{WriteScope: []string{"."}}, Worktree: wt, Attempt: 1}); err != nil {
 		t.Fatal(err)
 	}
 	var reply string
@@ -292,7 +293,7 @@ func TestAmbiguousEditIsRefused(t *testing.T) {
 		call("2", "done", map[string]any{"summary": "x"}),
 	)
 	e := newEngine(t, p)
-	if _, err := e.Step(context.Background(), engine.Request{Worktree: wt, Attempt: 1}); err != nil {
+	if _, err := e.Step(context.Background(), engine.Request{Access: firewall.Access{WriteScope: []string{"."}}, Worktree: wt, Attempt: 1}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -321,7 +322,7 @@ func TestWriteFileRefusesToClobberAnExistingFile(t *testing.T) {
 		call("2", "done", map[string]any{"summary": "x"}),
 	)
 	e := newEngine(t, p)
-	if _, err := e.Step(context.Background(), engine.Request{Worktree: wt, Attempt: 1}); err != nil {
+	if _, err := e.Step(context.Background(), engine.Request{Access: firewall.Access{WriteScope: []string{"."}}, Worktree: wt, Attempt: 1}); err != nil {
 		t.Fatal(err)
 	}
 	body, _ := os.ReadFile(filepath.Join(wt, "a.go"))
@@ -340,8 +341,11 @@ func TestTheLoopIsBounded(t *testing.T) {
 	wt := worktree(t, map[string]string{"a.go": "package a\n"})
 	var responses []*llm.ChatResponse
 	for i := 0; i < 50; i++ {
+		if err := os.Mkdir(filepath.Join(wt, fmt.Sprintf("dir%d", i)), 0755); err != nil {
+			t.Fatal(err)
+		}
 		responses = append(responses, call(fmt.Sprint(i), "list_files",
-			map[string]any{"path": fmt.Sprintf("dir%d", i)}))
+			map[string]any{"dir": fmt.Sprintf("dir%d", i)}))
 	}
 	p := newScripted(responses...)
 	e, err := native.New(native.Options{Provider: p, MaxSteps: 4, Logf: t.Logf})
@@ -349,7 +353,7 @@ func TestTheLoopIsBounded(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resp, err := e.Step(context.Background(), engine.Request{Worktree: wt, Attempt: 1})
+	resp, err := e.Step(context.Background(), engine.Request{Access: firewall.Access{WriteScope: []string{"."}}, Worktree: wt, Attempt: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -374,7 +378,7 @@ func TestPreviousFindingsAreGivenToTheNextAttempt(t *testing.T) {
 	p := newScripted(&llm.ChatResponse{Content: "ok"})
 	e := newEngine(t, p)
 
-	if _, err := e.Step(context.Background(), engine.Request{
+	if _, err := e.Step(context.Background(), engine.Request{Access: firewall.Access{WriteScope: []string{"."}},
 		Objective: "fix it", Worktree: wt, Attempt: 2,
 		Feedback: []recipe.Result{{
 			Recipe: "go test", Kind: recipe.KindTest, Status: recipe.Fail,
@@ -426,7 +430,7 @@ func TestTruncatedThinkingIsNotAStop(t *testing.T) {
 	})
 	e := newEngine(t, p)
 
-	resp, err := e.Step(context.Background(), engine.Request{
+	resp, err := e.Step(context.Background(), engine.Request{Access: firewall.Access{WriteScope: []string{"."}},
 		TaskID: "t1", Objective: "fix Add", Worktree: wt, Attempt: 1,
 	})
 	if err != nil {
@@ -454,7 +458,7 @@ func TestFinishedWithoutToolsIsStillAStop(t *testing.T) {
 	p := newScripted(&llm.ChatResponse{FinishReason: "stop", Content: "Add is already correct."})
 	e := newEngine(t, p)
 
-	resp, err := e.Step(context.Background(), engine.Request{
+	resp, err := e.Step(context.Background(), engine.Request{Access: firewall.Access{WriteScope: []string{"."}},
 		TaskID: "t1", Objective: "fix Add", Worktree: wt, Attempt: 1,
 	})
 	if err != nil {
@@ -476,7 +480,7 @@ func TestTruncatedWithPartialContentIsNotTruncation(t *testing.T) {
 	p := newScripted(&llm.ChatResponse{FinishReason: "length", Content: "I changed the sign in"})
 	e := newEngine(t, p)
 
-	resp, err := e.Step(context.Background(), engine.Request{
+	resp, err := e.Step(context.Background(), engine.Request{Access: firewall.Access{WriteScope: []string{"."}},
 		TaskID: "t1", Objective: "fix Add", Worktree: wt, Attempt: 1,
 	})
 	if err != nil {
@@ -499,7 +503,7 @@ func TestUnwiredToolsAreNotAdvertised(t *testing.T) {
 	p := newScripted(&llm.ChatResponse{FinishReason: "stop", Content: "done"})
 	e := newEngine(t, p) // no Retriever, no Graph, no Recipes
 
-	if _, err := e.Step(context.Background(), engine.Request{
+	if _, err := e.Step(context.Background(), engine.Request{Access: firewall.Access{WriteScope: []string{"."}},
 		TaskID: "t1", Objective: "fix Add", Worktree: wt, Attempt: 1,
 	}); err != nil {
 		t.Fatal(err)
@@ -545,7 +549,7 @@ func toolNames(t *testing.T, e *native.Engine, p *scripted, wt string) map[strin
 	p.mu.Lock()
 	p.responses = append(p.responses, &llm.ChatResponse{FinishReason: "stop", Content: "done"})
 	p.mu.Unlock()
-	if _, err := e.Step(context.Background(), engine.Request{
+	if _, err := e.Step(context.Background(), engine.Request{Access: firewall.Access{WriteScope: []string{"."}},
 		TaskID: "t1", Objective: "o", Worktree: wt, Attempt: 1,
 	}); err != nil {
 		t.Fatal(err)
@@ -585,7 +589,7 @@ func TestGitTouchReadsIndexedHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.Step(context.Background(), engine.Request{
+	if _, err := e.Step(context.Background(), engine.Request{Access: firewall.Access{WriteScope: []string{"."}},
 		TaskID: "t1", Objective: "why is this here", Worktree: wt, Attempt: 1,
 	}); err != nil {
 		t.Fatal(err)
@@ -618,7 +622,7 @@ func TestGitTouchWithoutAGraphSaysSo(t *testing.T) {
 		&llm.ChatResponse{FinishReason: "stop", Content: "done"},
 	)
 	e := newEngine(t, p) // no graph
-	if _, err := e.Step(context.Background(), engine.Request{
+	if _, err := e.Step(context.Background(), engine.Request{Access: firewall.Access{WriteScope: []string{"."}},
 		TaskID: "t1", Objective: "o", Worktree: wt, Attempt: 1,
 	}); err != nil {
 		t.Fatal(err)
@@ -698,7 +702,7 @@ func TestARepeatingModelIsStoppedBeforeTheStepLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resp, err := e.Step(context.Background(), engine.Request{Worktree: wt, Attempt: 1})
+	resp, err := e.Step(context.Background(), engine.Request{Access: firewall.Access{WriteScope: []string{"."}}, Worktree: wt, Attempt: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -732,7 +736,7 @@ func TestTheRepeatWarningReachesTheModelOutsideTheFence(t *testing.T) {
 		call("3", "done", map[string]any{"summary": "x"}),
 	)
 	e := newEngine(t, p)
-	if _, err := e.Step(context.Background(), engine.Request{Worktree: wt, Attempt: 1}); err != nil {
+	if _, err := e.Step(context.Background(), engine.Request{Access: firewall.Access{WriteScope: []string{"."}}, Worktree: wt, Attempt: 1}); err != nil {
 		t.Fatal(err)
 	}
 

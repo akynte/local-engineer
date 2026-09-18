@@ -108,6 +108,12 @@ func Render(f Facts) string {
 		"review — what was asked, what the user decided, which files changed, what was checked " +
 		"— and you should show that to the user. No approval is needed: the change is already " +
 		"in the working tree and `git diff` is the authoritative view of it.\n")
+	b.WriteString("- **`le_read`** and **`le_edit`** to read and change files when the session " +
+		"was started by `le opencode run`. That session runs with the editor's own read and " +
+		"edit tools denied, because these apply the repository's path policy: secrets are " +
+		"refused rather than returned, generated files are refused with the generator to run " +
+		"instead, and a write outside the scope the task declared is refused rather than found " +
+		"in the diff afterwards. Pass the task id from `le_task_start`.\n")
 	b.WriteString("- **`le_note_add`** when you establish something durable about this project " +
 		"that the next session should not have to rediscover — a constraint, a decision and its " +
 		"reason, a trap someone already fell into. Not a summary of what you just did.\n\n")

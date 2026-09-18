@@ -30,6 +30,7 @@ import (
 	"github.com/akynte/local-engineer/internal/cache"
 	"github.com/akynte/local-engineer/internal/config"
 	"github.com/akynte/local-engineer/internal/graph"
+	"github.com/akynte/local-engineer/internal/policy"
 	"github.com/akynte/local-engineer/internal/store"
 	"github.com/akynte/local-engineer/internal/version"
 	"github.com/akynte/local-engineer/internal/workspace"
@@ -299,6 +300,10 @@ func (ix *Indexer) walk(ctx context.Context, repositoryID, absRoot string) ([]Fi
 		rel, err := filepath.Rel(absRoot, path)
 		if err != nil {
 			return err
+		}
+		if policy.Sensitive(filepath.ToSlash(rel)) {
+			skipped++
+			return nil
 		}
 		hash, binary, err := hashFile(path)
 		if err != nil {

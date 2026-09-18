@@ -164,6 +164,9 @@ func (p *OpenAICompatible) chat(ctx context.Context, req ChatRequest, schema jso
 		// declare ThinkingControl never see the field.
 		body["chat_template_kwargs"] = map[string]any{"enable_thinking": req.Thinking != "off"}
 	}
+	if req.ReasoningBudgetTokens > 0 && p.caps.Kind == KindLlamaCPP {
+		body["reasoning_budget_tokens"] = req.ReasoningBudgetTokens
+	}
 
 	start := time.Now()
 	var out struct {

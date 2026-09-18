@@ -165,7 +165,7 @@ func newTaskCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&verify, "verify", "standard", "verification level: low, standard, high")
 	cmd.Flags().StringVar(&requirement, "requirement", "", "requirement id this task serves")
 	cmd.Flags().StringSliceVar(&scope, "scope", nil,
-		"path prefixes the task may change; a change outside them blocks acceptance")
+		"allowed write paths, directory prefixes or globs; required for native edits")
 	cmd.Flags().IntVar(&attempts, "attempts", 3, "how many engine attempts are allowed")
 	return cmd
 }

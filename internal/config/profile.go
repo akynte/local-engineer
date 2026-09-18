@@ -17,8 +17,9 @@ import (
 // data, generated from measurements by `le models bench`, and are the only
 // place the values §9.3 forbids hardcoding may live.
 type Profile struct {
-	Name        string `yaml:"name"`
-	Description string `yaml:"description"`
+	PhaseBudgets map[string]PhaseBudget `yaml:"phase_budgets,omitempty"`
+	Name         string                 `yaml:"name"`
+	Description  string                 `yaml:"description"`
 
 	// Hardware records what the profile was measured on, so a mismatch can be
 	// warned about rather than silently tolerated (§9.2).
@@ -50,6 +51,20 @@ type Profile struct {
 
 	// Measured is the throughput record that justified the numbers above.
 	Measured *Measurement `yaml:"measured,omitempty"`
+}
+
+type PhaseBudget struct {
+	ContextTokens   int `yaml:"context_tokens"`
+	OutputTokens    int `yaml:"output_tokens"`
+	ReasoningTokens int `yaml:"reasoning_tokens"`
+}
+
+// DefaultPhaseBudgets are the starting bounds in architecture review §7.2.
+// Hardware profiles can replace them after measuring the inference matrix.
+func DefaultPhaseBudgets() map[string]PhaseBudget {
+	return map[string]PhaseBudget{
+		"LOCALIZE": {26000, 4096, 1024}, "PLAN": {32000, 8192, 3072}, "EDIT": {30000, 4096, 2048}, "REVIEW": {38000, 8192, 4096},
+	}
 }
 
 // Hardware describes the machine a profile targets.
@@ -124,6 +139,14 @@ func FallbackProfile() Profile {
 
 // Validate checks internal consistency.
 func (p Profile) Validate() error {
+	for phase, budget := range p.PhaseBudgets {
+		if _, ok := DefaultPhaseBudgets()[phase]; !ok {
+			return fmt.Errorf("unknown phase budget %q", phase)
+		}
+		if budget.ContextTokens <= 0 || budget.ContextTokens > 49152 || budget.OutputTokens <= 0 || budget.OutputTokens >= budget.ContextTokens || budget.ReasoningTokens < 0 || budget.ReasoningTokens >= budget.OutputTokens {
+			return fmt.Errorf("invalid budget for %s", phase)
+		}
+	}
 	if p.Name == "" {
 		return errors.New("profile: name is required")
 	}

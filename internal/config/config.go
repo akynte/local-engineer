@@ -19,6 +19,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/akynte/local-engineer/internal/lsp"
 	"github.com/akynte/local-engineer/internal/proxy"
 )
 
@@ -42,9 +43,14 @@ type Config struct {
 	API       APIConfig       `yaml:"api"`
 	Inference InferenceConfig `yaml:"inference"`
 	Sandbox   SandboxConfig   `yaml:"sandbox"`
-	Index     IndexConfig     `yaml:"index"`
-	Egress    EgressConfig    `yaml:"egress"`
-	Offline   bool            `yaml:"offline"`
+	// LSP configures the live cross-reference layer. Empty is a supported
+	// state: SCIP answers the same questions for files that have not changed,
+	// and a configured server buys freshness for the file being edited at the
+	// cost of a process holding an index in memory.
+	LSP     lsp.Config   `yaml:"lsp"`
+	Index   IndexConfig  `yaml:"index"`
+	Egress  EgressConfig `yaml:"egress"`
+	Offline bool         `yaml:"offline"`
 
 	// Profile names the active hardware profile in profiles/ (§9.2).
 	Profile string `yaml:"profile"`

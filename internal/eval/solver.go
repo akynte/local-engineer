@@ -11,6 +11,7 @@ import (
 
 	"github.com/akynte/local-engineer/internal/engine"
 	"github.com/akynte/local-engineer/internal/engine/native"
+	"github.com/akynte/local-engineer/internal/firewall"
 	"github.com/akynte/local-engineer/internal/graph"
 	"github.com/akynte/local-engineer/internal/index"
 	"github.com/akynte/local-engineer/internal/llm"
@@ -200,6 +201,7 @@ func (s *SystemSolver) solveUnsupervised(ctx context.Context, req SolveRequest, 
 		resp, err := eng.Step(ctx, engine.Request{
 			TaskID: req.Task.ID, Objective: req.Task.Objective,
 			Worktree: req.Worktree, Attempt: attempt,
+			Access: firewall.Access{WriteScope: req.Task.Scope},
 			// No packet: retrieval is what the supervised arm adds.
 		})
 		if err != nil {
@@ -212,7 +214,7 @@ func (s *SystemSolver) solveUnsupervised(ctx context.Context, req SolveRequest, 
 			return SolveResult{Claimed: true, Attempts: attempt, Tokens: total,
 				Reasons: []string{"the model reported completion; no verification was run"}}, nil
 		}
-		if resp.Truncated {
+		if resp.Truncated || resp.BudgetExhausted {
 			// The model never got to an answer because the output budget ran
 			// out. Retrying under the same budget would truncate again, so the
 			// run stops and says which limit it hit — a result that reads as

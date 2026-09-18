@@ -85,6 +85,7 @@ nav:
       - Verify list: reference/verify-list.md
   - Explanation:
       - Architecture: explanation/architecture.md
+      - Architecture implementation: explanation/architecture-implementation.md
       - Why small models can work here: explanation/why-small-models.md
       - Isolation model: explanation/isolation-model.md
       - Trust boundaries: explanation/trust-boundaries.md
@@ -102,6 +103,7 @@ nav:
           - DR-5 OpenCode engine (superseded): adr/0005-opencode-engine.md
           - DR-6 Workspace identity: adr/0006-workspace-identity.md
           - DR-7 Native engine: adr/0007-native-engine.md
+          - DR-8 tree-sitter and cgo: adr/0008-tree-sitter-and-cgo.md
   - Benchmarks:
       - Methodology: benchmarks/METHODOLOGY.md
       - Pre-registration — graph contribution: benchmarks/PREREGISTRATION-graph-contribution.md

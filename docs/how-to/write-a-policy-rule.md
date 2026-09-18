@@ -2,10 +2,10 @@
 
 A policy says what **no task** may change, whatever it was asked to do.
 
-This is not scope. A task declares the scope its work belongs in, and writes
-outside it are gated. But a task that declares no scope is unrestricted by
-scope — so a rule that only applied through scope would not apply at all in the
-case that most needs it.
+Scope declares where a task may write. Repository policy independently protects
+paths even inside that scope. The native editor checks both before writing;
+other editing engines are checked against their final diff. An empty task scope
+grants no native editor writes.
 
 ## The file
 

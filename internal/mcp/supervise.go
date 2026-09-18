@@ -9,6 +9,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/akynte/local-engineer/internal/engine"
+	"github.com/akynte/local-engineer/internal/firewall"
 	"github.com/akynte/local-engineer/internal/policy"
 	"github.com/akynte/local-engineer/internal/recipe"
 	"github.com/akynte/local-engineer/internal/supervisor"
@@ -61,6 +62,22 @@ func (s *Server) registerSupervision(srv *mcp.Server) {
 			"what the user decided, which files changed, what was verified, and the verdict. " +
 			"Call after le_verify reports ACCEPTED. Show the review to the user.",
 	}, s.taskFinish)
+
+	// The proxied file tools. A confined session runs with OpenCode's own read
+	// and edit denied and these in their place, so one path policy applies to
+	// every write rather than two that have to be kept in step.
+	mcp.AddTool(srv, &mcp.Tool{
+		Name: "le_read",
+		Description: "Read a file through the supervisor's path policy. Secret paths are refused " +
+			"rather than returned, and the content comes back marked as repository data.",
+	}, s.readFile)
+	mcp.AddTool(srv, &mcp.Tool{
+		Name: "le_edit",
+		Description: "Change a file through the supervisor's path policy: exact string replacement, " +
+			"bounded by the write scope the task declared. Pass an empty old to create a new file. " +
+			"A write outside the declared scope is refused and needs a new task, which is what keeps " +
+			"an injected instruction from reaching a file the work never mentioned.",
+	}, s.editFile)
 }
 
 // ----------------------------------------------------------- le_task_answer
@@ -85,6 +102,11 @@ func (s *Server) taskAnswer(ctx context.Context, _ *mcp.CallToolRequest, in answ
 	}
 	defer sess.Close() //nolint:contextcheck // cleanup must not take the request context: a cancelled call would then skip closing the databases.
 
+	// The answer is durable and is read back in the final review, so it goes
+	// through the same credential check as committed content.
+	if err := firewall.CheckContentSecrets("this answer", in.Question+"\n"+in.Answer); err != nil {
+		return fail("%v", err), nil, nil
+	}
 	if err := supervisor.RecordAnswer(ctx, sess.Store, in.TaskID, in.Question, in.Answer); err != nil {
 		return fail("recording the decision: %v", err), nil, nil
 	}
@@ -126,7 +148,12 @@ func (s *Server) taskFinish(ctx context.Context, _ *mcp.CallToolRequest, in fini
 
 type startIn struct {
 	Objective string `json:"objective" jsonschema:"what the user asked for, in one sentence"`
-	Path      string `json:"path,omitempty" jsonschema:"a subdirectory of the open repository; defaults to its root"`
+	// WriteScope is §9.3's plan-scoped allowlist, declared before the work
+	// rather than discovered from the diff afterwards. An injected instruction
+	// cannot widen it: adding a path means opening another task, which is a
+	// decision a person can see.
+	WriteScope []string `json:"write_scope,omitempty" jsonschema:"the repository-relative files you intend to change, including new ones. le_edit refuses anything outside this. Omit only if you will not use le_edit"`
+	Path       string   `json:"path,omitempty" jsonschema:"a subdirectory of the open repository; defaults to its root"`
 }
 
 type startOut struct {
@@ -156,7 +183,7 @@ func (s *Server) taskStart(ctx context.Context, _ *mcp.CallToolRequest, in start
 		Title:        strings.TrimSpace(in.Objective),
 		Kind:         "supervised",
 		Verification: recipe.Standard,
-		Budget:       task.Budget{MaxAttempts: 1, MaxWallTime: 30 * time.Minute},
+		Budget:       task.Budget{MaxAttempts: 1, MaxWallTime: 30 * time.Minute, Scope: in.WriteScope},
 	}
 	if err := task.NewStore(sess.Store).Create(ctx, t); err != nil {
 		return fail("opening the task: %v", err), startOut{}, nil
@@ -175,6 +202,13 @@ func (s *Server) taskStart(ctx context.Context, _ *mcp.CallToolRequest, in start
 		out.ProtectedPath = set.Paths()
 		b.WriteString("This repository protects these paths — do not change them:\n")
 		for _, p := range out.ProtectedPath {
+			fmt.Fprintf(&b, "  %s\n", p)
+		}
+		b.WriteString("\n")
+	}
+	if len(t.Budget.Scope) > 0 {
+		b.WriteString("Declared write scope — le_edit refuses anything outside it:\n")
+		for _, p := range t.Budget.Scope {
 			fmt.Fprintf(&b, "  %s\n", p)
 		}
 		b.WriteString("\n")

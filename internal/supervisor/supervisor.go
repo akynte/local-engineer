@@ -100,6 +100,9 @@ func Runner(ctx context.Context, root *store.Root, st *store.Store, eng engine.E
 			len(policies.Policies), len(policies.Paths()))
 	}
 	r.Policies = policies
+	if profile := Profile(root, cfg); profile != nil {
+		r.PhaseBudgets = profile.PhaseBudgets
+	}
 
 	// §3.4: a repository the watcher has marked dirty is re-analysed before a
 	// step consults the graph, with the analyzers a full index would use.
@@ -115,6 +118,7 @@ func Runner(ctx context.Context, root *store.Root, st *store.Store, eng engine.E
 	// than degrading, and a review parsed out of prose loses concerns silently.
 	if provider, err := ReviewProvider(root); err == nil && provider != nil &&
 		provider.Capabilities().StructuredOutput {
+		r.ReviewModel = provider
 		r.Critic = &critic.Critic{Provider: provider, MaxTokens: 2048, Temperature: 0.1}
 		if profile := Profile(root, cfg); profile != nil {
 			r.Critic.Thinking = profile.Thinking
@@ -128,7 +132,23 @@ func Runner(ctx context.Context, root *store.Root, st *store.Store, eng engine.E
 	if err != nil {
 		return nil, err
 	}
-	r.SandboxSpec = sandbox.Spec{
+	r.SandboxSpec = BaseSandboxSpec(cfg, dirs)
+	// The pool is built by the runner, which is where the repository root is
+	// known. Rooted there rather than at a task worktree: a server indexes a
+	// project once, and a per-task checkout would pay that cost every task.
+	r.LSPConfig = cfg.LSP
+	return r, nil
+}
+
+// BaseSandboxSpec is the confinement every child process of a workspace starts
+// from: the operator's read-only toolchain paths, the workspace's own tmp and
+// caches, and the TCP grants a task legitimately needs.
+//
+// It is one function rather than a literal at each call site because a second
+// copy is how a confined path ends up granted in one place and denied in the
+// other, and the difference only shows when someone is already looking.
+func BaseSandboxSpec(cfg config.Config, dirs store.TaskDirs) sandbox.Spec {
+	spec := sandbox.Spec{
 		ReadOnly: cfg.Sandbox.ReadOnlyPaths,
 		TmpDir:   dirs.Tmp,
 		Env:      recipe.GoEnv(dirs.GoBuildCache, dirs.GoModCache, dirs.Tmp),
@@ -139,12 +159,12 @@ func Runner(ctx context.Context, root *store.Root, st *store.Store, eng engine.E
 		TCPDeny:           ServicePorts(cfg),
 	}
 	for _, port := range cfg.Sandbox.AllowedTCPConnect {
-		r.SandboxSpec.TCPConnect = append(r.SandboxSpec.TCPConnect, uint16(port)) //nolint:gosec // operator-configured port
+		spec.TCPConnect = append(spec.TCPConnect, uint16(port)) //nolint:gosec // operator-configured port
 	}
 	if cfg.Inference.Mode == config.ModeEmbedded {
-		r.SandboxSpec.TCPConnect = append(r.SandboxSpec.TCPConnect, uint16(cfg.Inference.Port)) //nolint:gosec // operator-configured port
+		spec.TCPConnect = append(spec.TCPConnect, uint16(cfg.Inference.Port)) //nolint:gosec // operator-configured port
 	}
-	return r, nil
+	return spec
 }
 
 // Config loads the operator configuration.

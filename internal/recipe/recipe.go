@@ -106,8 +106,9 @@ type Finding struct {
 // Summary is the compressed form of a run: what a next step needs, without
 // the full output.
 type Summary struct {
-	Headline string    `json:"headline"`
-	Findings []Finding `json:"findings,omitempty"`
+	Tests    map[string]Status `json:"tests,omitempty"`
+	Headline string            `json:"headline"`
+	Findings []Finding         `json:"findings,omitempty"`
 	// Counts are tool-specific tallies (tests run, packages failed).
 	Counts map[string]int `json:"counts,omitempty"`
 	// Truncated is set when findings were dropped, so the summary is never

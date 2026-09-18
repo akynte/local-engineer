@@ -171,7 +171,7 @@ nobody is running.
 ### `le task create` / `le task run`
 
 `create` flags: `--title` (required), `--verify`, `--requirement`, `--scope`
-(repeatable path prefixes the task may change), `--attempts`.
+(allowed paths, directory prefixes or globs), `--attempts`.
 
 `run` flags: `--json`, `--diff`.
 
@@ -179,9 +179,13 @@ A task runs in its own worktree; your working copy is never touched. Every
 action is journalled intent-first, so an interruption at any point leaves a
 state `le task recover` can reconcile.
 
-**A change outside `--scope` blocks acceptance** even when every recipe passes.
-This is the out-of-scope check of the isolation model: such writes are detected
-by diff rather than prevented, because a task must be able to edit its worktree.
+**The native editor requires an explicit `--scope` before it may write.** Paths
+outside that scope, secrets, generated files and protected paths are rejected
+before execution. Scope accepts exact paths, directory prefixes and globs.
+
+**A change outside `--scope` also blocks acceptance** even when every recipe passes.
+For other editing engines, the out-of-scope check detects such writes
+by inspecting the final diff.
 
 ### The completion contract
 
@@ -309,6 +313,7 @@ plainly that a single pass measures nothing. See
 | Command | |
 |---|---|
 | `setup` | Register the MCP server and write AGENTS.md for this repository |
+| `run` | Start OpenCode confined to this workspace |
 
 Run once per repository. It registers `le mcp` in `opencode.json`, merging
 rather than replacing so an existing model choice or another MCP server
@@ -323,6 +328,46 @@ block to paste is printed instead.
 
 Re-run after recording notes or re-indexing, so the generated block matches what
 the tools can actually answer.
+
+`run` starts the session instead of leaving you to start it. That is the
+difference between the tools being reachable and the process being confined:
+a session you start yourself inherits your home directory, your agent sockets
+and every variable your shell exported, and OpenCode's own permission system is
+not a boundary — its enforcement has documented bypasses, which is why the
+architecture review puts the firewall outside the shell.
+
+A session started here runs under the strongest layer `le doctor` reports, can
+write only its worktree, its tmp and this workspace's OpenCode state, reads only
+the toolchain paths the operator granted, and gets an environment built from
+nothing rather than filtered. Its shell, web-fetch, web-search, subagent and
+external-directory tools are refused, so verification goes through `le_verify`,
+where the command is one the operator froze and the result is tied to a content
+hash. Arguments after `--` reach OpenCode unchanged.
+
+When no sandbox layer is available the command refuses and says why, because
+reporting a confinement that is not there is worse than not confining. Pass
+`--unconfined` to start anyway.
+
+## `le trace`
+
+```
+le trace <task-id> [--jsonl] [--out FILE]
+```
+
+Prints why a task did what it did: every operation in order, what it intended
+before the side effect, and what it recorded afterwards.
+
+An operation with an intent and no outcome reads as `UNCERTAIN`, not as a
+failure. That is the state the journal exists to make visible — the supervisor
+was interrupted between deciding and recording, so whether the side effect took
+hold has to be established by inspection, which `le task recover` does.
+
+`--jsonl` writes one JSON object per line. That is the export form: it appends,
+it streams, and a trace cut off by a full disk or a killed pipe is still
+parseable up to the cut, which a single JSON array is not.
+
+`le task journal` prints the same rows as a terse table when all you want is
+which operations ran.
 
 ## `le mcp`
 

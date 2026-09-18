@@ -25,3 +25,4 @@ changes, a new record supersedes the old one and says what changed.
 | [DR-5](0005-opencode-engine.md) | OpenCode as the execution engine | Superseded by DR-7 |
 | [DR-6](0006-workspace-identity.md) | Workspace identity as the isolation key | Accepted |
 | [DR-7](0007-native-engine.md) | A native engine on the provider boundary | Accepted |
+| [DR-8](0008-tree-sitter-and-cgo.md) | tree-sitter for language-agnostic structure, ending the CGO-free build | Accepted |

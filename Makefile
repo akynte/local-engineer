@@ -26,15 +26,20 @@ help: ## Show this help
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) \
 	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
+# CGO is on because of the tree-sitter grammars (DR-8), so `le` is dynamically
+# linked against the C library of the machine that built it and a C compiler is
+# required to build it at all. It is set explicitly rather than left to the
+# environment: a contributor with CGO_ENABLED=0 exported would otherwise get a
+# link error naming a grammar rather than a build policy.
 .PHONY: build
-build: ## Build the le binary into ./bin
+build: ## Build the le binary into ./bin (needs a C compiler; see DR-8)
 	@mkdir -p $(BIN)
-	CGO_ENABLED=0 $(GO) build -trimpath -ldflags="$(LDFLAGS)" -o $(BIN)/le ./cmd/le
+	CGO_ENABLED=1 $(GO) build -trimpath -ldflags="$(LDFLAGS)" -o $(BIN)/le ./cmd/le
 	@echo "built $(BIN)/le ($(VERSION))"
 
 .PHONY: install
 install: ## Install le into $$GOBIN
-	CGO_ENABLED=0 $(GO) install -trimpath -ldflags="$(LDFLAGS)" ./cmd/le
+	CGO_ENABLED=1 $(GO) install -trimpath -ldflags="$(LDFLAGS)" ./cmd/le
 
 .PHONY: fmt
 fmt: ## Format all Go source

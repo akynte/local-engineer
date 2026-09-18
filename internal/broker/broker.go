@@ -13,7 +13,9 @@ package broker
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -68,7 +70,11 @@ type Gate struct {
 	// verification findings. It is assembled by the supervisor, so the person
 	// deciding reads the deterministic answer rather than a model's account.
 	Evidence json.RawMessage `json:"evidence,omitempty"`
-	Decision Decision        `json:"decision"`
+	// Candidate is the content manifest hash the evidence describes. A
+	// decision is reused only for that exact content, so approving one diff
+	// can never approve a later, different one.
+	Candidate string   `json:"candidate,omitempty"`
+	Decision  Decision `json:"decision"`
 	// DecidedBy and Note record who answered and why, because a gate's value
 	// six months later is the reasoning, not the verdict.
 	DecidedBy string     `json:"decided_by,omitempty"`
@@ -205,11 +211,22 @@ var ErrPending = errors.New("broker: waiting at a human gate")
 // When the policy does not require a gate, the decision is Approved and
 // nothing is recorded: a ledger full of automatic approvals is noise that
 // makes the real gates harder to find.
-func (b *Broker) Ask(ctx context.Context, taskID string, kind Kind, question string, ev Evidence) (Gate, error) {
+func (b *Broker) Ask(ctx context.Context, taskID string, kind Kind, question string, ev Evidence, candidate string) (Gate, error) {
 	needed, why := b.policy.Needs(kind, ev)
 	if !needed {
 		return Gate{TaskID: taskID, Kind: kind, Decision: Approved,
 			Note: "no gate required by policy"}, nil
+	}
+	// An answer already given for this exact content is the answer.
+	//
+	// Without this the gate id carried a timestamp and nothing else, so a task
+	// re-run after an approval opened a second gate and ended at it. Approving
+	// that one produced a third. The task could never reach the commit the
+	// approval was for, which made the whole CLI flow impossible to finish.
+	if decided, ok, err := b.decidedFor(ctx, taskID, kind, candidate); err != nil {
+		return Gate{}, err
+	} else if ok {
+		return decided, nil
 	}
 	if len(ev.Diff) > MaxDiffInGate {
 		ev.Diff = ev.Diff[:MaxDiffInGate] +
@@ -221,8 +238,8 @@ func (b *Broker) Ask(ctx context.Context, taskID string, kind Kind, question str
 	}
 
 	g := Gate{
-		ID:          fmt.Sprintf("gate-%s-%s-%d", taskID, kind, time.Now().UnixMilli()),
-		WorkspaceID: b.ws, TaskID: taskID, Kind: kind,
+		ID:          gateID(taskID, kind, candidate),
+		WorkspaceID: b.ws, TaskID: taskID, Kind: kind, Candidate: candidate,
 		Question: strings.TrimSpace(question + " (" + why + ")"),
 		Evidence: body, Decision: Pending, CreatedAt: time.Now().UTC(),
 	}
@@ -336,4 +353,55 @@ func (b *Broker) Get(ctx context.Context, id string) (Gate, error) {
 		return Gate{}, fmt.Errorf("broker: no gate %q", id)
 	}
 	return gates[0], nil
+}
+
+// decidedFor finds an answer already given for this task, kind and content.
+//
+// Only a decided, unexpired gate counts. A pending one is still waiting and
+// must be returned as such; an expired one is not an answer, because the
+// decision was made about a state of the world that has since timed out.
+func (b *Broker) decidedFor(ctx context.Context, taskID string, kind Kind, candidate string) (Gate, bool, error) {
+	if candidate == "" {
+		// Nothing identifies the content, so nothing can be safely reused.
+		return Gate{}, false, nil
+	}
+	gates, err := b.list(ctx, "WHERE task_id = ? AND kind = ? AND candidate = ?", taskID, string(kind), candidate)
+	if err != nil {
+		return Gate{}, false, err
+	}
+	now := time.Now()
+	for i := len(gates) - 1; i >= 0; i-- {
+		g := gates[i]
+		if g.Decision != Approved && g.Decision != Rejected {
+			continue
+		}
+		if g.ExpiresAt != nil && now.After(*g.ExpiresAt) {
+			continue
+		}
+		return g, true, nil
+	}
+	return Gate{}, false, nil
+}
+
+// gateID names a gate after what it is about.
+//
+// With a candidate the identity is the content, so asking twice about the same
+// change is the same gate rather than a second one wearing a later timestamp.
+// Without one there is nothing to name it after, so it gets a timestamp and
+// random bytes — the timestamp alone collided when two gates were opened in the
+// same millisecond, and the second silently overwrote the first through the
+// upsert.
+func gateID(taskID string, kind Kind, candidate string) string {
+	if candidate != "" {
+		short := candidate
+		if len(short) > 12 {
+			short = short[:12]
+		}
+		return fmt.Sprintf("gate-%s-%s-%s", taskID, kind, short)
+	}
+	var b [4]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("gate-%s-%s-%d", taskID, kind, time.Now().UnixNano())
+	}
+	return fmt.Sprintf("gate-%s-%s-%d-%s", taskID, kind, time.Now().UnixMilli(), hex.EncodeToString(b[:]))
 }

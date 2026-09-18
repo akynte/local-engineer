@@ -65,9 +65,8 @@ type Budget struct {
 	MaxAttempts int           `json:"max_attempts"`
 	MaxWallTime time.Duration `json:"max_wall_time"`
 	MaxTokens   int           `json:"max_tokens,omitempty"`
-	// Scope restricts which paths the task may change. Empty means the whole
-	// worktree; §6.2 records that out-of-scope writes are detected by diff
-	// rather than prevented, and this is what they are compared against.
+	// Scope authorizes native editor writes before execution. Empty grants
+	// no native writes. The final diff is checked independently for all engines.
 	Scope []string `json:"scope,omitempty"`
 }
 
@@ -167,7 +166,10 @@ func (s *Store) Create(ctx context.Context, t Task) error {
 		t.Verification = recipe.Standard
 	}
 	if t.Budget.MaxAttempts == 0 {
-		t.Budget = DefaultBudget()
+		t.Budget.MaxAttempts = DefaultBudget().MaxAttempts
+		if t.Budget.MaxWallTime == 0 {
+			t.Budget.MaxWallTime = DefaultBudget().MaxWallTime
+		}
 	}
 	budget, err := json.Marshal(t.Budget)
 	if err != nil {

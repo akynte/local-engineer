@@ -8,6 +8,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/akynte/local-engineer/internal/firewall"
 	"github.com/akynte/local-engineer/internal/graph"
 	"github.com/akynte/local-engineer/internal/index"
 	"github.com/akynte/local-engineer/internal/memory"
@@ -189,6 +190,7 @@ func (s *Server) impact(ctx context.Context, _ *mcp.CallToolRequest, in impactIn
 	if err != nil {
 		return fail("computing impact: %v", err), nil, nil
 	}
+	imp = graph.PublicImpact(imp)
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s\n\n", imp.Summary())
@@ -335,6 +337,12 @@ func (s *Server) noteAdd(ctx context.Context, _ *mcp.CallToolRequest, in noteIn)
 	}
 	if !kind.Valid() {
 		return fail("kind %q is not one of: intent, observation, advice", in.Kind), noteOut{}, nil
+	}
+	// A note is replayed into every later prompt through AGENTS.md, so it is
+	// checked here rather than only by the finalization gate, which never sees
+	// this file.
+	if err := firewall.CheckContentSecrets("this note", in.Text); err != nil {
+		return fail("%v", err), noteOut{}, nil
 	}
 	sess, err := s.resolve(ctx, in.Path)
 	if err != nil {

@@ -201,8 +201,8 @@ func TestMigrationTakesABackupFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Make it a genuine schema-2 database: undo exactly what migration 3 did
-	// and record the older version. Rewinding the number alone would re-run
+	// Make it a genuine schema-2 database: undo migrations 3, 4 and 5 and
+	// record the older version. Rewinding the number alone would re-run
 	// migration 2 against objects it already created, which tests nothing
 	// except that CREATE TABLE is not idempotent.
 	ledgerPath := filepath.Join(wsDir, "ledger.db")
@@ -212,6 +212,15 @@ func TestMigrationTakesABackupFirst(t *testing.T) {
 	}
 	if _, err := db.ExecContext(ctx, `ALTER TABLE operations DROP COLUMN error`); err != nil {
 		t.Fatalf("undoing migration 3: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `DROP TABLE task_workflow`); err != nil {
+		t.Fatalf("undoing migration 4: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `DROP INDEX gates_by_task_kind_candidate`); err != nil {
+		t.Fatalf("undoing migration 5 index: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `ALTER TABLE gates DROP COLUMN candidate`); err != nil {
+		t.Fatalf("undoing migration 5: %v", err)
 	}
 	if _, err := db.ExecContext(ctx, `UPDATE meta SET value = '2' WHERE key = 'schema_version'`); err != nil {
 		t.Fatal(err)

@@ -73,7 +73,7 @@ func TestAnUngatedDecisionRecordsNothing(t *testing.T) {
 	ctx := context.Background()
 	b, _ := newBroker(t, broker.Permissive())
 
-	g, err := b.Ask(ctx, "t1", broker.KindApply, "apply?", broker.Evidence{})
+	g, err := b.Ask(ctx, "t1", broker.KindApply, "apply?", broker.Evidence{}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestGateBlocksUntilDecidedAndIsJournalled(t *testing.T) {
 
 	g, err := b.Ask(ctx, "t1", broker.KindApply, "Apply this change?", broker.Evidence{
 		Summary: "one file changed", Diff: "--- a\n+++ b\n",
-	})
+	}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestTheNoteSurvives(t *testing.T) {
 	b, st := newBroker(t, broker.DefaultPolicy())
 	seedTask(t, st, "t1")
 
-	g, _ := b.Ask(ctx, "t1", broker.KindApply, "apply?", broker.Evidence{})
+	g, _ := b.Ask(ctx, "t1", broker.KindApply, "apply?", broker.Evidence{}, "")
 	if _, err := b.Decide(ctx, g.ID, broker.Rejected, "operator",
 		"this changes the retry semantics; needs a design discussion first"); err != nil {
 		t.Fatal(err)
@@ -194,7 +194,7 @@ func TestEvidenceRoundTrips(t *testing.T) {
 	g, err := b.Ask(ctx, "t1", broker.KindImpact, "proceed?", broker.Evidence{
 		Summary: "signature change", Impact: &imp, BreakingCount: 2,
 		OutOfScope: []string{"other.go"},
-	})
+	}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +222,7 @@ func TestAnEnormousDiffIsTruncatedWithAPointer(t *testing.T) {
 
 	g, err := b.Ask(ctx, "t1", broker.KindApply, "apply?", broker.Evidence{
 		Diff: strings.Repeat("+ a line of diff\n", 20000),
-	})
+	}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +246,7 @@ func TestExpiryIsDistinctFromRejection(t *testing.T) {
 	b, st := newBroker(t, policy)
 	seedTask(t, st, "t1")
 
-	g, err := b.Ask(ctx, "t1", broker.KindApply, "apply?", broker.Evidence{})
+	g, err := b.Ask(ctx, "t1", broker.KindApply, "apply?", broker.Evidence{}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,5 +280,97 @@ func seedTask(t *testing.T, st *store.Store, id string) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// The bug this pins made the CLI task flow impossible to finish.
+//
+// A gate's id carried a timestamp and nothing tied it to the change it was
+// asked about, so re-running a task after an approval opened a second gate and
+// stopped at it. Approving that one produced a third. The task never reached
+// the commit the approval was for.
+func TestAnAnswerIsReusedForTheSameContentAndNotForDifferentContent(t *testing.T) {
+	ctx := context.Background()
+	b, st := newBroker(t, broker.DefaultPolicy())
+	seedTask(t, st, "t1")
+
+	first, err := b.Ask(ctx, "t1", broker.KindApply, "apply?", broker.Evidence{Diff: "--- a\n+++ b\n"}, "candidate-aaa")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !first.Open() {
+		t.Fatal("the first ask did not open a gate")
+	}
+	if _, err := b.Decide(ctx, first.ID, broker.Approved, "ali", "looks right"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Same content: the answer already given is the answer.
+	again, err := b.Ask(ctx, "t1", broker.KindApply, "apply?", broker.Evidence{Diff: "--- a\n+++ b\n"}, "candidate-aaa")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Open() {
+		t.Fatal("a second gate was opened for content that was already approved")
+	}
+	if again.Decision != broker.Approved || again.ID != first.ID {
+		t.Fatalf("the existing decision was not reused: %+v", again)
+	}
+
+	// Different content: approving one diff must never approve a later one.
+	changed, err := b.Ask(ctx, "t1", broker.KindApply, "apply?", broker.Evidence{Diff: "--- a\n+++ c\n"}, "candidate-bbb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed.Open() {
+		t.Fatalf("an approval was reused for different content: %+v", changed)
+	}
+	if changed.ID == first.ID {
+		t.Fatal("the new content reused the old gate's identity")
+	}
+}
+
+// A rejection is an answer too, and re-running must not turn it into a fresh
+// question the operator has to answer again.
+func TestARejectionIsAlsoReused(t *testing.T) {
+	ctx := context.Background()
+	b, st := newBroker(t, broker.DefaultPolicy())
+	seedTask(t, st, "t2")
+
+	first, err := b.Ask(ctx, "t2", broker.KindApply, "apply?", broker.Evidence{Diff: "d"}, "cand")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.Decide(ctx, first.ID, broker.Rejected, "ali", "wrong approach"); err != nil {
+		t.Fatal(err)
+	}
+	again, err := b.Ask(ctx, "t2", broker.KindApply, "apply?", broker.Evidence{Diff: "d"}, "cand")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Decision != broker.Rejected || again.Open() {
+		t.Fatalf("a rejection was not reused: %+v", again)
+	}
+}
+
+// Without a candidate nothing identifies the content, so nothing may be reused.
+func TestAGateWithNoCandidateIsNeverReused(t *testing.T) {
+	ctx := context.Background()
+	b, st := newBroker(t, broker.DefaultPolicy())
+	seedTask(t, st, "t3")
+
+	first, err := b.Ask(ctx, "t3", broker.KindApply, "apply?", broker.Evidence{Diff: "d"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.Decide(ctx, first.ID, broker.Approved, "ali", ""); err != nil {
+		t.Fatal(err)
+	}
+	again, err := b.Ask(ctx, "t3", broker.KindApply, "apply?", broker.Evidence{Diff: "d"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !again.Open() || again.ID == first.ID {
+		t.Fatalf("a decision was reused with nothing identifying the content: %+v", again)
 	}
 }

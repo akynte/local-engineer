@@ -155,15 +155,16 @@ type ToolCall struct {
 
 // ChatRequest is a completion request.
 type ChatRequest struct {
-	Model       string    `json:"model,omitempty"`
-	Messages    []Message `json:"messages"`
-	Temperature *float64  `json:"temperature,omitempty"`
-	TopP        *float64  `json:"top_p,omitempty"`
-	TopK        *int      `json:"top_k,omitempty"`
-	MinP        *float64  `json:"min_p,omitempty"`
-	MaxTokens   int       `json:"max_tokens,omitempty"`
-	Stop        []string  `json:"stop,omitempty"`
-	Seed        *int      `json:"seed,omitempty"`
+	ReasoningBudgetTokens int       `json:"reasoning_budget_tokens,omitempty"`
+	Model                 string    `json:"model,omitempty"`
+	Messages              []Message `json:"messages"`
+	Temperature           *float64  `json:"temperature,omitempty"`
+	TopP                  *float64  `json:"top_p,omitempty"`
+	TopK                  *int      `json:"top_k,omitempty"`
+	MinP                  *float64  `json:"min_p,omitempty"`
+	MaxTokens             int       `json:"max_tokens,omitempty"`
+	Stop                  []string  `json:"stop,omitempty"`
+	Seed                  *int      `json:"seed,omitempty"`
 	// Thinking is honoured only when Capabilities().ThinkingControl is true.
 	Thinking string `json:"-"` // off | auto | always
 	// CachePrefixHint marks how many leading messages form the stable prefix,

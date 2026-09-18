@@ -23,6 +23,13 @@ reports against this code. A default Go installation fetches that toolchain on
 its own; if you have set `GOTOOLCHAIN=local`, install at least the version
 `go.mod` names or the build will refuse to start.
 
+A C compiler is required. The tree-sitter grammars are cgo
+([DR-8](docs/adr/0008-tree-sitter-and-cgo.md)), so `le` no longer builds with
+`CGO_ENABLED=0` and no longer produces a static binary. On Debian or Ubuntu
+`build-essential` is enough; on macOS the Command Line Tools are. Without one
+the build fails on a linker error naming a grammar, which is a confusing way to
+learn about a build policy.
+
 The two linters are pinned, and the pins matter: `staticcheck` before v0.8 does
 not build under Go 1.26, and `golangci-lint` v1 cannot read this repository's
 v2 configuration.
@@ -44,6 +51,15 @@ want to hear about it. CI runs more than this — the image builds, the sidecar
 tests, the documentation command blocks, a longer fuzz and the vulnerability
 scanners — and `make image-smoke`, `make sidecar-test`, `make docs-test` and
 `make vuln` run those individually.
+
+## Architecture authority
+
+[`local-coding-system-review.md`](local-coding-system-review.md) is the architecture
+source of truth. The gap assessment records the starting state, not a competing
+design. Track completed work and remaining gaps in
+[`architecture-implementation.md`](docs/explanation/architecture-implementation.md).
+When old design-v3 comments conflict with the review, follow the review and update
+the affected comments and tests with the implementation.
 
 ## The rules that are enforced by the build
 

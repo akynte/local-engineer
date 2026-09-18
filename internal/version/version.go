@@ -18,8 +18,8 @@ var (
 // supervisor refuses to open a store whose on-disk version is newer than these
 // (see DR-1: downgrades across schema versions are not supported).
 var SchemaVersions = map[string]int{
-	"index":     1,
-	"ledger":    3,
+	"index":     2,
+	"ledger":    5,
 	"telemetry": 1,
 }
 

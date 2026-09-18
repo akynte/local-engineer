@@ -7,6 +7,18 @@
   "additionalProperties": false,
   "required": ["name", "description", "context_tokens"],
   "properties": {
+    "phase_budgets": {
+      "type": "object", "propertyNames": { "enum": ["LOCALIZE", "PLAN", "EDIT", "REVIEW"] },
+      "additionalProperties": {
+        "type": "object", "additionalProperties": false,
+        "required": ["context_tokens", "output_tokens", "reasoning_tokens"],
+        "properties": {
+          "context_tokens": { "type": "integer", "minimum": 1, "maximum": 49152 },
+          "output_tokens": { "type": "integer", "minimum": 1 },
+          "reasoning_tokens": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
     "name": { "type": "string", "minLength": 1 },
     "description": {
       "type": "string",
