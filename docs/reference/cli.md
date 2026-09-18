@@ -351,7 +351,7 @@ reporting a confinement that is not there is worse than not confining. Pass
 ## `le trace`
 
 ```
-le trace <task-id> [--jsonl] [--out FILE]
+le trace <task-id> [--jsonl]
 ```
 
 Prints why a task did what it did: every operation in order, what it intended
@@ -364,7 +364,8 @@ hold has to be established by inspection, which `le task recover` does.
 
 `--jsonl` writes one JSON object per line. That is the export form: it appends,
 it streams, and a trace cut off by a full disk or a killed pipe is still
-parseable up to the cut, which a single JSON array is not.
+parseable up to the cut, which a single JSON array is not. Redirect it with `>`
+to keep a trace beyond the workspace.
 
 `le task journal` prints the same rows as a terse table when all you want is
 which operations ran.

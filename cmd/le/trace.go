@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -29,7 +28,6 @@ import (
 // not, and a trace is exactly the thing you read after something went wrong.
 func newTraceCmd() *cobra.Command {
 	var asJSONL bool
-	var outPath string
 	cmd := &cobra.Command{
 		Use:   "trace <task-id>",
 		Short: "Show why a task did what it did",
@@ -40,7 +38,8 @@ func newTraceCmd() *cobra.Command {
 			"supervisor was interrupted between deciding and recording, so whether the\n" +
 			"side effect took hold has to be established by inspection.\n\n" +
 			"--jsonl writes one JSON object per line, which appends and streams. Use it\n" +
-			"to keep a trace beyond the workspace or to feed another tool.",
+			"to keep a trace beyond the workspace or to feed another tool; redirect it\n" +
+			"to a file with `>` if you want one.",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -60,14 +59,6 @@ func newTraceCmd() *cobra.Command {
 			}
 
 			out := cmd.OutOrStdout()
-			if outPath != "" {
-				f, err := os.Create(outPath) //nolint:gosec // an operator-supplied destination
-				if err != nil {
-					return err
-				}
-				defer func() { _ = f.Close() }()
-				out = f
-			}
 			if asJSONL {
 				return writeJSONL(out, ops)
 			}
@@ -75,7 +66,6 @@ func newTraceCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&asJSONL, "jsonl", false, "emit one JSON object per line (§18's export form)")
-	cmd.Flags().StringVar(&outPath, "out", "", "write to a `file` instead of stdout")
 	return cmd
 }
 

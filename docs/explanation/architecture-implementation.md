@@ -1,7 +1,7 @@
 # Architecture implementation status
 
-The [architecture review](../../local-coding-system-review.md) is authoritative.
-The [gap assessment](../../local-coding-system-gap-assessment.md) is the initial
+The [architecture review](https://github.com/akynte/local-engineer/blob/main/local-coding-system-review.md) is authoritative.
+The [gap assessment](https://github.com/akynte/local-engineer/blob/main/local-coding-system-gap-assessment.md) is the initial
 assessment at revision `9e07fe1`; its findings describe the state before this
 migration. This page tracks implementation, without changing the architecture.
 
