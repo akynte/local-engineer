@@ -274,3 +274,39 @@ func TestRegisterModelWithNoEndpointDoesNothing(t *testing.T) {
 		t.Fatal("a config was written for a workspace with no endpoint")
 	}
 }
+
+// Swapping the supervisor's model and re-running setup has to move the editor
+// with it, or the README's "re-run setup" instruction is false and the editor
+// keeps talking to an endpoint that is no longer serving that model.
+func TestRegisterModelRepointsItsOwnSelection(t *testing.T) {
+	repo := t.TempDir()
+	if _, _, err := opencode.RegisterModel(repo, "http://127.0.0.1:8080", "first-model.gguf"); err != nil {
+		t.Fatal(err)
+	}
+	if _, changed, err := opencode.RegisterModel(repo, "http://127.0.0.1:9090", "second-model.gguf"); err != nil || !changed {
+		t.Fatalf("a model this function set was not updated: changed=%v err=%v", changed, err)
+	}
+	body, err := os.ReadFile(filepath.Join(repo, "opencode.json")) //nolint:gosec // written above
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Model    string `json:"model"`
+		Provider map[string]struct {
+			Options map[string]string `json:"options"`
+		} `json:"provider"`
+	}
+	if err := json.Unmarshal(body, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc.Model != opencode.ProviderName+"/second-model" {
+		t.Fatalf("selection is %q, want the new model", doc.Model)
+	}
+	if got := doc.Provider[opencode.ProviderName].Options["baseURL"]; got != "http://127.0.0.1:9090/v1" {
+		t.Fatalf("baseURL is %q, want the new endpoint", got)
+	}
+	// Re-running with nothing changed must not rewrite a committed file.
+	if _, changed, err := opencode.RegisterModel(repo, "http://127.0.0.1:9090", "second-model.gguf"); err != nil || changed {
+		t.Fatalf("an unchanged re-run rewrote the file: changed=%v err=%v", changed, err)
+	}
+}

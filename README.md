@@ -27,6 +27,11 @@ a diff.
 shell, reach the network, write a file the plan did not declare, or decide that
 its own work is finished. See [trust boundaries](docs/explanation/trust-boundaries.md).
 
+It is also replaceable. Any OpenAI-compatible endpoint works — the reference
+setup runs [Ternary Bonsai 2 27B](https://huggingface.co/prism-ml/Ternary-Bonsai-2-27B-gguf)
+at **29 tok/s on an 8 GB laptop GPU**, measured, because 1.72 bits/weight puts a
+27B-class model entirely in VRAM. Swap it for another in two lines of config.
+
 > [!IMPORTANT]
 > **Status: pre-1.0.** The pipeline works end to end: a task localizes, plans,
 > edits a confined worktree, verifies in a sandbox, is reviewed in a fresh
@@ -62,31 +67,77 @@ le config init
 
 ### 2 — Serve a model
 
-Anything that speaks the OpenAI API works. With
-[llama.cpp](https://github.com/ggml-org/llama.cpp):
+The model is a boundary, not a dependency: **any OpenAI-compatible endpoint
+works**, and nothing in the supervisor knows which engine is behind it. Two
+lines of configuration change it.
+
+#### The reference model
+
+[**Ternary Bonsai 2 27B**](https://huggingface.co/prism-ml/Ternary-Bonsai-2-27B-gguf)
+— Qwen3.8-27B packed to 1.72 bits/weight, Apache-2.0, **5.95 GB**, 405k
+downloads in the 30 days to 2026-09-18.
+
+It is why a 27B-class model is usable on this hardware at all: it fits an 8 GB
+card whole, so no layer streams over PCIe and the CPU stays out of the decode
+loop entirely.
+
+Measured here with `llama-bench` on an RTX 4060 Laptop (8 GB), all 64 layers
+resident. These are not vendor figures:
+
+| | |
+|:--|--:|
+| decode | **29.0 tok/s** |
+| prompt processing | **285.8 tok/s** |
+| resident | 5.95 GB of 8188 MiB VRAM |
 
 ```bash
-llama-server -m /path/to/your-model.gguf \
+# needs PrismML's llama.cpp fork — see the note below
+llama-server -m Ternary-Bonsai-2-27B-PTQ1_0.gguf \
   -c 32768 -ngl 99 -fa on --jinja \
+  --temp 1.0 --top-p 0.95 --top-k 20 \
   --host 127.0.0.1 --port 8080
 ```
 
-Tell `le` where it is — edit `~/.le/config/le.yaml`:
+> [!WARNING]
+> **Bonsai needs [PrismML's llama.cpp fork](https://github.com/PrismML-Eng/llama.cpp).**
+> Stock llama.cpp rejects `PTQ1_0` as an unknown type, and — worse — loads a
+> plain `Q2_0` without complaint and produces garbage, because it has no
+> Hadamard activation runtime. Build it with `-DGGML_CUDA=ON`.
+> Its quality claims (98.2% of FP16) are the vendor's, measured on H100s, and
+> are not reproduced here. What *is* reproduced here is the table above.
+
+#### Or any other model
+
+A stock `llama-server`, vLLM, SGLang, Ollama, LM Studio, or a remote API.
+Nothing above is required:
+
+```bash
+llama-server -m /path/to/your-model.gguf \
+  -c 32768 -ngl 99 -fa on --jinja --host 127.0.0.1 --port 8080
+```
+
+Then point `le` at whatever you chose — `~/.le/config/le.yaml`:
 
 ```yaml
 inference:
   mode: external
   base_url: http://127.0.0.1:8080
+profile: bonsai-2-27b-8gb-cuda     # or reference-8gb-cuda-64gb-ram, or your own
 ```
 
-and put the same model in `~/.le/config/providers.yaml` under `model:`.
+and the model name in `~/.le/config/providers.yaml` under `model:`. Swapping
+models later means editing those two files and re-running
+`le opencode setup`, which re-points the editor at the new one.
 
 ```bash
-le models conformance     # does the model really do tool calls and JSON schemas?
+le models conformance     # does this model really do tool calls and JSON schemas?
 ```
 
-Run this before anything else. A model that cannot do both will fail later,
-deep inside a phase, with an error about something else.
+**Run this before anything else, whichever model you chose.** The pipeline needs
+both capabilities, and a model that lacks either fails later, deep inside a
+phase, with an error about something else. `le models bench --write` then
+measures your machine and writes a profile from what it saw, replacing the
+shipped estimates.
 
 ### 3 — Install OpenCode
 
@@ -379,7 +430,12 @@ of 15 runs. [The results](docs/benchmarks/results/).
 - **Shipped hardware profiles are starting points, not measurements.** Run
   `le models bench --write`; `le doctor` warns until you do.
 - **One model slot.** Switching profiles unloads the previous process. Two
-  resident models do not fit the hardware this targets.
+  resident models do not fit the hardware this targets — so "use the small model
+  for edits and the big one for review" costs a model load between them.
+- **The reference model needs a llama.cpp fork.** Bonsai's ternary packings are
+  not in stock llama.cpp, which rejects them outright and produces garbage from
+  a plain `Q2_0` of the same weights. Any other GGUF avoids this entirely; the
+  fork is a cost of that model, not of this project.
 
 ### Unsettled by design
 

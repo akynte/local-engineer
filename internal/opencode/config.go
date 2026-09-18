@@ -145,8 +145,16 @@ func RegisterModel(repoRoot, baseURL, model string) (path string, changed bool, 
 		return filepath.Join(repoRoot, "opencode.json"), false, nil
 	}
 	return mergeConfig(repoRoot, func(doc map[string]any) bool {
-		if existing, ok := doc["model"].(string); ok && strings.TrimSpace(existing) != "" {
-			return false
+		// A model this function set before is ours to keep current: an operator
+		// who points the supervisor at a different endpoint and re-runs setup
+		// means the editor to follow. A model chosen any other way is a
+		// decision, and replacing it would be the kind of helpfulness that
+		// loses somebody's configuration.
+		if existing, ok := doc["model"].(string); ok {
+			existing = strings.TrimSpace(existing)
+			if existing != "" && !strings.HasPrefix(existing, ProviderName+"/") {
+				return false
+			}
 		}
 		providers, _ := doc["provider"].(map[string]any)
 		if providers == nil {
