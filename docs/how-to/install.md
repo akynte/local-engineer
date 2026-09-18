@@ -28,6 +28,7 @@ $ docker volume create le-data
 $ docker run --rm -v le-data:/data alpine chown -R 10001:10001 /data
 $ docker run -d --name local-engineer \
     --gpus all \
+    --add-host=host.docker.internal:host-gateway \
     -v le-data:/data \
     -v "$HOME/code":/work \
     -p 127.0.0.1:7777:7777 \
@@ -36,6 +37,15 @@ $ docker run -d --name local-engineer \
 
 A named volume is created owned by root and the container runs as uid 10001, so
 the one-time `chown` is required. Omit `--gpus all` on a CPU-only host.
+
+**`--add-host` is what makes a model on your host reachable.** Inside a
+container `127.0.0.1` is the container, so an inference server you started on
+the host is invisible without it — and `--network host` is not a substitute on
+Docker Desktop, where it joins the VM's namespace rather than yours. With the
+flag, point `providers.yaml` at `http://host.docker.internal:PORT`. Note that
+`providers.yaml` carries the URL the client dials; `le.yaml`'s
+`inference.base_url` is a different setting and changing only that one leaves
+the client on the old address. `le models conformance` tells you which you got.
 
 **Publish on `127.0.0.1`.** `-p 7777:7777` would expose a supervisor that can
 run sandboxed commands and read every repository you index to your whole

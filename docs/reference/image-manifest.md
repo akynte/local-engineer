@@ -22,8 +22,8 @@ Pin by digest, not by tag. A tag moves; the digest is the thing you tested.
 ## Base
 
 ```
-PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"
-VERSION_ID="12"
+PRETTY_NAME="Debian GNU/Linux 13 (trixie)"
+VERSION_ID="13"
 ```
 
 ## Tools
@@ -31,11 +31,11 @@ VERSION_ID="12"
 | Tool | Version |
 |---|---|
 | `le` | local-engineer 0.0.0-dev (commit unknown, built unknown, go1.26.8, linux/amd64) |
-| `go` | go version go1.26.3 linux/amd64 |
+| `go` | go version go1.26.8 linux/amd64 |
 | `node` | v22.23.2 |
-| `llama-server` | not present |
-| `git` | git version 2.39.5 |
-| `rg` | ripgrep 13.0.0 |
+| `llama-server` | version: 0.4.1-dev (build 11042) — `cuda` variant only |
+| `git` | git version 2.47.3 |
+| `rg` | ripgrep 14.1.1 |
 | `gopls` | golang.org/x/tools/gopls v0.23.0 |
 | `staticcheck` | staticcheck 2026.2.1 (0.8.1) |
 | `golangci-lint` | golangci-lint has version 2.13.2 built with go1.27.0 from 27774aaf on 2026-08-27T23:01:12Z |

@@ -22,11 +22,11 @@
 #   - the stage runs on the target platform rather than cross-compiling with
 #     GOARCH, because a cross build would need a C toolchain per architecture.
 #     BuildKit emulates the non-native one, which is slower and correct;
-#   - the binary is dynamically linked against this stage's glibc, so the
-#     runtime stages must stay on bookworm. They do, and a change of base image
-#     there is a change to this line too.
+#   - the binary is dynamically linked against this stage's glibc, so this stage
+#     and the runtime stages must stay on the same Debian release. They are both
+#     trixie, and moving either is a change to the other.
 # ---------------------------------------------------------------------------
-FROM --platform=$TARGETPLATFORM golang:1.26-bookworm AS build
+FROM --platform=$TARGETPLATFORM golang:1.26-trixie AS build
 
 ARG VERSION=0.0.0-dev
 ARG COMMIT=unknown
@@ -62,7 +62,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # ---------------------------------------------------------------------------
 # Stage 2: slim runtime. Supervisor plus the engine, nothing else.
 # ---------------------------------------------------------------------------
-FROM debian:bookworm-slim AS slim
+FROM debian:trixie-slim AS slim
 
 ARG VERSION=0.0.0-dev
 ARG COMMIT=unknown
@@ -386,7 +386,10 @@ WORKDIR /work
 FROM cpu AS cuda
 
 ARG VERSION=0.0.0-dev
-ARG LLAMA_RELEASE=b4800
+# A build that publishes a Linux CUDA server. The asset naming carries the CUDA
+# minor, so bumping this may mean bumping LLAMA_CUDA with it.
+ARG LLAMA_RELEASE=b11042
+ARG LLAMA_CUDA=13.3
 
 USER root
 
@@ -398,15 +401,26 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 # The llama.cpp CUDA server binary. Kept as a separate layer so a llama.cpp
 # bump does not invalidate the toolchain layers.
+#
+# A failure here fails the build. It used to warn and carry on, and the result
+# was a `cuda` image that had never once contained llama-server: the pinned
+# release predated Linux CUDA assets entirely, so the download 404'd on every
+# build and the warning scrolled past in CI. An image that says cuda in its name
+# and cannot run a model is worse than a build that stops.
 RUN set -eux; \
-    url="https://github.com/ggml-org/llama.cpp/releases/download/${LLAMA_RELEASE}/llama-${LLAMA_RELEASE}-bin-ubuntu-cuda-x64.zip"; \
-    if curl -fsSL "$url" -o /tmp/llama.zip; then \
-      unzip -q /tmp/llama.zip -d /opt/le/llama; \
-      find /opt/le/llama -name 'llama-server' -exec install -m 0755 {} /usr/local/bin/llama-server \; ; \
-      rm -rf /tmp/llama.zip /opt/le/llama; \
-    else \
-      echo "WARNING: llama.cpp ${LLAMA_RELEASE} could not be fetched; this image has no embedded inference." >&2; \
-    fi
+    url="https://github.com/ggml-org/llama.cpp/releases/download/${LLAMA_RELEASE}/llama-${LLAMA_RELEASE}-bin-ubuntu-cuda-${LLAMA_CUDA}-x64.tar.gz"; \
+    curl -fsSL "$url" -o /tmp/llama.tar.gz; \
+    mkdir -p /opt/le/llama; \
+    tar -xzf /tmp/llama.tar.gz -C /opt/le/llama --strip-components=1; \
+    # The binary is linked with RUNPATH $ORIGIN, so it finds its libraries by
+    # sitting beside them. Installing it into /usr/local/bin and the libraries
+    # into /usr/local/lib separates the two and the loader then fails with an
+    # exit status that reads as "command not found". It stays where it was
+    # unpacked and PATH gets a symlink, which ld.so resolves before expanding
+    # $ORIGIN.
+    ln -sf /opt/le/llama/llama-server /usr/local/bin/llama-server; \
+    rm -f /tmp/llama.tar.gz; \
+    llama-server --version
 
 RUN sed -i 's/^variant: cpu/variant: cuda/' /opt/le/image-manifest.txt \
  && echo "llama.cpp: ${LLAMA_RELEASE}" >> /opt/le/image-manifest.txt \

@@ -16,6 +16,14 @@ services:
     stop_grace_period: 40s
     init: true
 
+    # An inference server on your host — llama.cpp, vLLM, anything speaking the
+    # OpenAI API — is reachable at http://host.docker.internal:PORT with this.
+    # Without it the container resolves nothing by that name, and 127.0.0.1
+    # inside a container is the container, so a model on the host is invisible.
+    # Point providers.yaml's base_url at that name, not just le.yaml's.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
     ports:
       # Loopback only. Publishing as "7777:7777" would expose a supervisor
       # that can run sandboxed commands and read every indexed repository to

@@ -57,6 +57,14 @@ services:
     depends_on:
       inference:
         condition: service_healthy
+    # An inference server on your host — llama.cpp, vLLM, anything speaking the
+    # OpenAI API — is reachable at http://host.docker.internal:PORT with this.
+    # Without it the container resolves nothing by that name, and 127.0.0.1
+    # inside a container is the container, so a model on the host is invisible.
+    # Point providers.yaml's base_url at that name, not just le.yaml's.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
     ports:
       - "127.0.0.1:7777:7777"
     volumes:

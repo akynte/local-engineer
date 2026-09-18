@@ -125,8 +125,23 @@ inference:
 profile: bonsai-2-27b-8gb-cuda     # or reference-8gb-cuda-64gb-ram, or your own
 ```
 
-and the model name in `~/.le/config/providers.yaml` under `model:`. Swapping
-models later means editing those two files and re-running
+and `~/.le/config/providers.yaml`, which is what the client actually dials:
+
+```yaml
+default: local
+providers:
+  - name: local
+    kind: llamacpp
+    base_url: http://127.0.0.1:8080     # must match; this is the one that is used
+    model: /path/to/your-model.gguf
+```
+
+Both files carry a URL and they are not the same setting: `le.yaml` says where
+the supervisor manages a server, `providers.yaml` says where the client sends
+requests. They agree by default, so a server on the default port works without
+touching either — but move the port and you must change both.
+
+Swapping models later means editing `providers.yaml` and re-running
 `le opencode setup`, which re-points the editor at the new one.
 
 ```bash
@@ -292,6 +307,7 @@ docker run --rm -v le-data:/data alpine chown -R 10001:10001 /data
 
 docker run -d --name local-engineer \
   --gpus all \
+  --add-host=host.docker.internal:host-gateway \
   -v le-data:/data \
   -v "$HOME/code":/work \
   -p 127.0.0.1:7777:7777 \
@@ -307,7 +323,24 @@ docker exec -it local-engineer le doctor
 docker exec -it local-engineer bash -c 'cd /work/my-project && le workspace init && le index'
 ```
 
-`docker compose -f deploy/docker-compose.yml up -d` wraps the same thing, and
+**Reaching a model from inside the container** is the step that catches people.
+`127.0.0.1` inside a container is the container, so a server on your host is
+invisible. The `--add-host` line above is what makes it reachable, and then
+`providers.yaml` — not just `le.yaml` — has to name it:
+
+```yaml
+# /data/config/providers.yaml
+base_url: http://host.docker.internal:8080
+```
+
+Verify it before anything else:
+
+```bash
+docker exec -it local-engineer le models conformance
+```
+
+`docker compose -f deploy/docker-compose.yml up -d` wraps the same thing and
+already carries the `extra_hosts` entry;
 [install on the host](docs/how-to/install-on-the-host.md) spells out what
 isolation each choice costs you.
 
