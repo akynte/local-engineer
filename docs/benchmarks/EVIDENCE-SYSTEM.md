@@ -2,9 +2,8 @@
 
 This describes the machinery built to find out whether Local Engineer helps.
 It is not a claim that it does. At the time of writing the qualification gates
-fail, the "not proven to help" limitation in the README stands unchanged, and
-this document exists to say precisely what would have to be true for that to
-change.
+fail, the README claims no benefit, and this document exists to say precisely
+what would have to be true for that to change.
 
 ## 1. What was already there
 
@@ -190,6 +189,6 @@ acceptances in about a fifth of the runs where it claimed success. Nothing in
 that supports a claim that the system helps, and nothing in it supports a claim
 that it does not.
 
-The README's limitation stays exactly as written. The path to removing it is
-the five failing gates above, in that order, and the command that will decide
-it is the same one that reports the failure now.
+The README's evidence section says that and no more. The path to being able to
+say something stronger is the five failing gates above, in that order, and the
+command that will decide it is the same one that reports the failure now.

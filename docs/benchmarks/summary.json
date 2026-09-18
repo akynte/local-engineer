@@ -1,10 +1,10 @@
 {
   "report_schema_version": 1,
-  "generated_at": "2026-09-18T21:52:07.329940194Z",
-  "provenance": "PILOT DATA. These runs predate the current evidence system and were produced on an earlier model and configuration. They are published to show the pipeline end to end, not as a result. The qualification below fails, and the \"not proven to help\" limitation stands.",
+  "generated_at": "2026-09-18T21:57:24.865304597Z",
+  "provenance": "PILOT DATA. These runs predate the current evidence system and were produced on an earlier model and configuration. They are published to show the pipeline end to end, not as a result. The qualification below fails.",
   "environment": {
-    "captured_at": "2026-09-18T21:52:07.303414134Z",
-    "le_commit": "48ad27d3905e5132c9e12271ccadc8d8e5636d36",
+    "captured_at": "2026-09-18T21:57:24.839002816Z",
+    "le_commit": "8c8fde65ddd4ef9e2a0ed48d086c5eb5bbbe2567",
     "le_dirty": true,
     "go_version": "go1.26.8",
     "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
@@ -460,6 +460,6 @@
         "why": "A headline that rests on one execution rests on one roll of the dice."
       }
     ],
-    "recommendation": "Evidence gates fail: clean_reproduction, component_ladder, context_ablation, environment_metadata, heldout_real_tasks. The \"not proven to help\" limitation stays as written until these are met."
+    "recommendation": "Evidence gates fail: clean_reproduction, component_ladder, context_ablation, environment_metadata, heldout_real_tasks. Until these are met the README's evidence section may report what has been measured, but no claim that the system helps is supported."
   }
 }

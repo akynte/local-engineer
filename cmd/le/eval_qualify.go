@@ -10,7 +10,7 @@ import (
 )
 
 // newEvalQualifyCmd answers one question: is there enough evidence yet to stop
-// saying the system is unproven?
+// claiming the system helps?
 //
 // It is deliberately hard to pass and it reads only artefacts. Every gate is
 // derived from task files and saved runs on disk, so the command cannot be
@@ -27,7 +27,7 @@ func newEvalQualifyCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "qualify <results.json...>",
-		Short: "Report whether the evidence yet supports dropping the \"unproven\" limitation",
+		Short: "Report whether the evidence yet supports a claim that the system helps",
 		Long: "qualify checks the saved evidence against the bar this project set for itself\n" +
 			"before any of it was measured.\n\n" +
 			"It does not decide whether the system is good. It decides whether anyone is\n" +

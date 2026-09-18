@@ -8,7 +8,7 @@ import (
 )
 
 // Qualification decides whether the evidence is strong enough to stop saying
-// the system is unproven.
+// there is enough evidence yet to say what the system is worth.
 //
 // It exists so that the decision is a computation over what was actually run
 // rather than a judgement call by whoever is writing the README that week. Each
@@ -158,12 +158,13 @@ func Qualify(e Evidence, t Thresholds) Qualification {
 	}
 	sort.Strings(unmet)
 	if q.Status == "pass" {
-		q.Recommendation = "Evidence gates pass. A maintainer may now replace the " +
-			"\"not proven to help\" limitation with the generated results, quoting the " +
-			"measured numbers and their intervals rather than a summary of them."
+		q.Recommendation = "Evidence gates pass. The README's evidence section may now " +
+			"state what the system is worth, quoting the measured numbers and their " +
+			"intervals rather than a summary of them."
 	} else {
 		q.Recommendation = "Evidence gates fail: " + strings.Join(unmet, ", ") +
-			". The \"not proven to help\" limitation stays as written until these are met."
+			". Until these are met the README's evidence section may report what has been " +
+			"measured, but no claim that the system helps is supported."
 	}
 	return q
 }

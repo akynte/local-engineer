@@ -379,102 +379,79 @@ as the chain of operations that led there. `--jsonl` exports it.
 
 ## Limitations, read this
 
-The complete list is [known limitations](docs/explanation/known-limitations.md).
+The full list is [known limitations](docs/explanation/known-limitations.md).
 These are the ones most likely to change your mind.
 
-### It is not proven to help
+### Evidence
 
-- **No success rate is published, because none is trustworthy yet.** A real run
-  exists — 3 tasks × 4 arms × 5 passes — but every arm's confidence interval
-  overlaps every other's, and 4 of 12 task/arm cells changed verdict between
-  passes. The graph's contribution is **measurable, not measured**.
-- **The component ladder has not run.** The architecture prescribes measuring
-  each layer's marginal value and deleting what does not pay. That has not
-  happened, so every claim here about *why* a layer exists is a design argument,
-  not evidence.
-- **The context packer's justification is unmeasured on real tasks.** Exact
-  prefix reuse is verified against a live server; that it saves you time across
-  a whole task is not.
+Run `le eval qualify` to see where the measurement stands; the generated
+[results](docs/benchmarks/RESULTS.md) carry every number, and the
+[evidence system](docs/benchmarks/EVIDENCE-SYSTEM.md) explains how they are
+produced. Today: false acceptance is real and measured — the unsupervised
+baseline claimed success on work that failed the hidden test in 4 of 15 runs —
+while no arm-to-arm difference is yet distinguishable from noise, so what each
+layer is worth remains a design argument. Held-out tasks, the full component
+ladder and the context packer's payoff on real work are the open gaps.
 
-What the evaluation *does* show is that false acceptance is real: the
-unsupervised baseline claimed success on work that failed the hidden test in 4
-of 15 runs. [The results](docs/benchmarks/results/).
+### Speed
 
-### It is slow, and the spread is wide
-
-- **Local inference is the floor.** On a laptop GPU a 27B-class model decodes at
-  roughly 28 tok/s, and a structured phase call is tens of seconds. This suits
-  bounded work where a verification gate is worth the wall time, not
-  interactive pairing.
-- **Run-to-run variance is large, because reasoning length is.** The same
-  one-line fix took **160 seconds** in one run and **784 seconds** in another —
-  same model, same task, same machine, a 4.9× spread. A single PLAN call in the
-  slow run generated 5,300+ tokens of reasoning before answering. At the
-  sampling temperature these models recommend, how long a task takes is not
-  something you can predict from the task.
-- **A reasoning model can spend an entire output budget thinking** and return
-  nothing at all. Truncation is reported as its own outcome rather than as the
-  model deciding to stop — but the budget is yours to set, and setting it too
-  low turns a slow phase into a failed one.
-- **Indexing a large monorepo is not instant**, and the first index of an
-  unfamiliar repository is the slowest thing you will do.
+- **Local inference is the floor.** ~28 tok/s for a 27B-class model on a laptop
+  GPU; a structured phase call takes tens of seconds. Suited to bounded work
+  behind a verification gate, not interactive pairing.
+- **Variance is large, because reasoning length is.** The same one-line fix took
+  160 s and 784 s on identical inputs — a 4.9× spread, one PLAN call alone
+  emitting 5,300+ tokens before answering. A reasoning model can also spend its
+  whole output budget thinking and return nothing; that is reported as its own
+  outcome, but the budget is yours to set.
+- **First index of a large monorepo is slow.**
 
 ### Sandbox and isolation
 
-- **Binding TCP port 0 is denied inside the sandbox**, so `httptest`-style test
-  suites fail with `bind: permission denied` on a port nobody chose. This is a
-  known open bug, not a design choice: a specific ephemeral port binds fine, and
-  the captured ruleset replays correctly in isolation, so the cause is in the
-  execution path and is not yet found. Repos with HTTP tests will fail
-  verification for a reason unrelated to the change.
-- **Process isolation between concurrent tasks needs bubblewrap**, usually
-  unavailable inside a container. Without it, concurrent tasks share a PID view.
-  Isolation from your host and between workspaces does not depend on it.
-- **Only bubblewrap can enforce "no network".** With Landlock alone it is TCP
-  port rules, which do not cover UDP, raw sockets or Multipath TCP.
-- **Out-of-scope writes inside a worktree are caught by diff and policy, not by
-  the sandbox** — the task legitimately has write access to what it edits.
+- **Binding TCP port 0 is denied**, so `httptest`-style suites fail with
+  `bind: permission denied`. Open bug, not a design choice — a named ephemeral
+  port binds fine and the ruleset replays correctly in isolation. Repos with
+  HTTP tests will fail verification for an unrelated reason.
+- **Bubblewrap is required** for "no network" and for PID isolation between
+  concurrent tasks; it is usually unavailable inside a container. Landlock alone
+  gives TCP port rules, which miss UDP, raw sockets and Multipath TCP.
+  Isolation from your host does not depend on it.
+- **Out-of-scope writes inside a worktree are caught by diff and policy**, not
+  by the sandbox — the task legitimately holds write access to what it edits.
 - **Prompt injection is not solved.** The defence is capability containment — no
   shell, no network, no path outside the plan, fresh-context review — not the
-  delimiters around repository text. Those are a mitigation and are documented
-  as one.
+  delimiters around repository text.
 
-### Language coverage is uneven
+### Language coverage
 
-- **Go is deepest.** Signature comparison uses `go/parser`; everything else uses
+- **Go is deepest**: signature comparison uses `go/parser`, everything else
   tree-sitter.
-- **Vue single-file components have no signature checking.** The published
-  grammar has no Go module. A `.vue` file is reported as *unexaminable* rather
-  than as clean — but it means obligations do not cover it.
-- **TypeScript has no call graph without the Node sidecar.** The `cpu` and
-  `cuda` images carry it; `-slim` and host installs without Node do not.
-- **Dynamic SQL, computed routes and Helm templates produce no edge.** A guessed
-  table or endpoint is worse than a missing one, and the report says "not
-  discovered", never "does not exist".
+- **Vue SFCs have no signature checking** (the grammar has no Go module) and are
+  reported *unexaminable* rather than clean, so obligations do not cover them.
+- **TypeScript has no call graph without the Node sidecar** — in the `cpu` and
+  `cuda` images, not in `-slim` or host installs without Node.
+- **Dynamic SQL, computed routes and Helm templates produce no edge.** The
+  report says "not discovered", never "does not exist".
 
 ### Build and operations
 
-- **No static binary.** tree-sitter is cgo, so `le` links against the C library
-  of the machine that built it, cross-compilation needs a toolchain per target,
-  and `govulncheck` cannot see into the grammars' generated C.
+- **No static binary.** tree-sitter is cgo: `le` links against its build
+  machine's C library, cross-compilation needs a per-target toolchain, and
+  `govulncheck` cannot see into the grammars' generated C.
 - **SQLite needs a real filesystem** with working `fsync` — not an overlay, not
-  a network share. `le doctor` fails if you use one.
-- **Migrations are forward-only.** `le backup` before every upgrade.
-- **Shipped hardware profiles are starting points, not measurements.** Run
+  a network share. `le doctor` fails on one.
+- **Migrations are forward-only.** `le backup` before upgrading.
+- **Hardware profiles are starting points, not measurements.** Run
   `le models bench --write`; `le doctor` warns until you do.
-- **One model slot.** Switching profiles unloads the previous process. Two
-  resident models do not fit the hardware this targets — so "use the small model
-  for edits and the big one for review" costs a model load between them.
+- **One model slot.** Switching profiles unloads the previous process, so "small
+  model for edits, big one for review" costs a load between them.
 - **The reference model needs a llama.cpp fork.** Bonsai's ternary packings are
-  not in stock llama.cpp, which rejects them outright and produces garbage from
-  a plain `Q2_0` of the same weights. Any other GGUF avoids this entirely; the
-  fork is a cost of that model, not of this project.
+  not in stock llama.cpp. Any other GGUF avoids this — the fork is that model's
+  cost, not this project's.
 
 ### Unsettled by design
 
-- **Two editors exist.** A native tool loop and a confined OpenCode session. The
-  architecture says to compare them on a task set and keep whichever wins; that
-  comparison has not run, so both ship and neither is claimed better.
+- **Two editors ship** — a native tool loop and a confined OpenCode session —
+  because the comparison that would retire one has not run.
 - **Embeddings and a reranker are deliberately absent** until a benchmark shows
   they earn their cost.
 

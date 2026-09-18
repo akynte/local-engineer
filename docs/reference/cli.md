@@ -277,7 +277,7 @@ than out of recall, and the cap it yields is a floor rather than a ceiling.
 | `tasks` | List and validate the task set |
 | `report` | Render a saved result file |
 | `arms` | Describe the configurations being compared and what each isolates |
-| `qualify` | Report whether the evidence yet supports dropping the "unproven" limitation |
+| `qualify` | Report whether the evidence yet supports a claim that the system helps |
 | `results` | Generate `summary.json` and `RESULTS.md` from saved runs |
 
 `run` flags: `--arms`, `--tasks` (the task set directory), `--task` (run only
