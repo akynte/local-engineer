@@ -4,14 +4,18 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/akynte/local-engineer/internal/config"
 	"github.com/akynte/local-engineer/internal/graph"
+	"github.com/akynte/local-engineer/internal/llm"
 	"github.com/akynte/local-engineer/internal/memory"
 	"github.com/akynte/local-engineer/internal/opencode"
 	"github.com/akynte/local-engineer/internal/sandbox"
+	"github.com/akynte/local-engineer/internal/store"
 	"github.com/akynte/local-engineer/internal/supervisor"
 )
 
@@ -65,6 +69,27 @@ func newOpenCodeSetupCmd() *cobra.Command {
 				return err
 			}
 			fmt.Fprintf(out, "%s %s\n", verb(cfgChanged), cfgPath)
+
+			// The editor needs a model of its own, and the operator already
+			// configured one for the supervisor. Copying it across is the
+			// difference between "the tools are registered" and "you can type
+			// a sentence and something happens".
+			if cfg, err := loadConfig(root); err == nil {
+				base, model := inferenceEndpoint(cfg, root)
+				if _, modelChanged, err := opencode.RegisterModel(ws.Root, base, model); err != nil {
+					return err
+				} else if modelChanged {
+					fmt.Fprintf(out, "wired the editor to %s (%s)\n", base, shortName(model))
+				} else if base == "" {
+					fmt.Fprintf(out, "no local endpoint configured yet — set inference.base_url "+
+						"in le.yaml, or choose a model inside OpenCode\n")
+				}
+			}
+
+			// The restricted agent, so `le opencode run` has one to select.
+			if _, _, err := opencode.RegisterAgent(ws.Root); err != nil {
+				return err
+			}
 
 			facts := opencode.Facts{WorkspaceName: ws.Name()}
 			if stats, err := graph.New(st).Stats(ctx); err == nil {
@@ -226,4 +251,34 @@ func inactiveReasons(report sandbox.Report) string {
 		b.WriteString("  no layer reported a reason\n")
 	}
 	return b.String()
+}
+
+// inferenceEndpoint reports the base URL and model the supervisor is using, so
+// the editor can be pointed at the same one.
+//
+// The provider file is the authority for the model name: it is what the
+// supervisor sends, so it is what the endpoint will answer to.
+func inferenceEndpoint(cfg config.Config, root *store.Root) (baseURL, model string) {
+	switch cfg.Inference.Mode {
+	case config.ModeExternal:
+		baseURL = cfg.Inference.BaseURL
+	case config.ModeEmbedded:
+		baseURL = fmt.Sprintf("http://127.0.0.1:%d", cfg.Inference.Port)
+	default:
+		return "", ""
+	}
+	specs, err := llm.LoadProvidersFile(root.Layout().ConfigDir())
+	if err != nil {
+		return baseURL, ""
+	}
+	for _, spec := range specs.Providers {
+		if spec.Name == specs.Default {
+			return baseURL, spec.Model
+		}
+	}
+	return baseURL, ""
+}
+
+func shortName(model string) string {
+	return strings.TrimSuffix(filepath.Base(model), ".gguf")
 }

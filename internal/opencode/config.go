@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // ServerName is the key Local Engineer registers itself under.
@@ -121,4 +122,64 @@ func mustJSON(v any) string {
 		return "[]"
 	}
 	return string(b)
+}
+
+// ProviderName is the key the local model is registered under.
+const ProviderName = "local-engineer-local"
+
+// RegisterModel points the editor at the same local endpoint the supervisor
+// uses, and selects it.
+//
+// Without this a developer who has followed every instruction lands in an
+// editor with nothing to talk to: the tools are registered, the agent is
+// defined, and the first message asks them to sign in to a cloud provider. The
+// endpoint is already known — it is the one the supervisor was configured with
+// — so asking the developer to transcribe it into a second file is asking them
+// to get it wrong.
+//
+// It is skipped when a model is already chosen. A developer who has set one has
+// made a decision, and quietly replacing it with a local endpoint would be the
+// kind of helpfulness that loses someone's configuration.
+func RegisterModel(repoRoot, baseURL, model string) (path string, changed bool, err error) {
+	if baseURL == "" || model == "" {
+		return filepath.Join(repoRoot, "opencode.json"), false, nil
+	}
+	return mergeConfig(repoRoot, func(doc map[string]any) bool {
+		if existing, ok := doc["model"].(string); ok && strings.TrimSpace(existing) != "" {
+			return false
+		}
+		providers, _ := doc["provider"].(map[string]any)
+		if providers == nil {
+			providers = map[string]any{}
+		}
+		// The OpenAI-compatible adapter, because that is the boundary the
+		// supervisor already speaks: anything serving that API works here
+		// without this file knowing which engine it is.
+		// The id is a short alias, not the model string the supervisor sends.
+		// That string is a filesystem path for a local GGUF, and opencode.json
+		// is a committed file: a path belongs in the operator's own config, not
+		// in a repository other people clone. Servers on this boundary select
+		// by what they loaded rather than by this field — a single-model
+		// llama-server answers to any name — so the alias costs nothing.
+		id := shortModelName(model)
+		want := map[string]any{
+			"npm":     "@ai-sdk/openai-compatible",
+			"name":    "Local (via local-engineer)",
+			"options": map[string]any{"baseURL": strings.TrimSuffix(baseURL, "/") + "/v1"},
+			"models":  map[string]any{id: map[string]any{"name": id}},
+		}
+		if equalJSON(providers[ProviderName], want) && doc["model"] == ProviderName+"/"+id {
+			return false
+		}
+		providers[ProviderName] = want
+		doc["provider"] = providers
+		doc["model"] = ProviderName + "/" + id
+		return true
+	})
+}
+
+// shortModelName renders a file path as something readable in a model picker.
+func shortModelName(model string) string {
+	base := filepath.Base(model)
+	return strings.TrimSuffix(base, ".gguf")
 }

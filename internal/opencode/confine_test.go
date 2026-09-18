@@ -202,3 +202,75 @@ func TestDeniedSummaryNamesEveryRefusalWithItsReason(t *testing.T) {
 		t.Fatalf("summary is %d lines, want one per refusal (%d): %q", got, want, summary)
 	}
 }
+
+// Without a model the editor opens with the tools registered, the agent
+// defined, and nothing to talk to — it asks the developer to sign in to a cloud
+// provider. The endpoint is already known, so asking them to transcribe it into
+// a second file is asking them to get it wrong.
+func TestRegisterModelPointsTheEditorAtTheSupervisorsEndpoint(t *testing.T) {
+	repo := t.TempDir()
+	if _, changed, err := opencode.RegisterModel(repo, "http://127.0.0.1:8080",
+		"/home/someone/models/Ternary-Bonsai-2-27B-PTQ1_0.gguf"); err != nil || !changed {
+		t.Fatalf("changed=%v err=%v", changed, err)
+	}
+	var doc struct {
+		Model    string `json:"model"`
+		Provider map[string]struct {
+			NPM     string            `json:"npm"`
+			Options map[string]string `json:"options"`
+			Models  map[string]struct {
+				Name string `json:"name"`
+			} `json:"models"`
+		} `json:"provider"`
+	}
+	body, err := os.ReadFile(filepath.Join(repo, "opencode.json")) //nolint:gosec // written above
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(body, &doc); err != nil {
+		t.Fatal(err)
+	}
+	p, ok := doc.Provider[opencode.ProviderName]
+	if !ok {
+		t.Fatalf("no provider registered: %s", body)
+	}
+	if p.Options["baseURL"] != "http://127.0.0.1:8080/v1" {
+		t.Fatalf("baseURL is %q", p.Options["baseURL"])
+	}
+	if p.NPM != "@ai-sdk/openai-compatible" {
+		t.Fatalf("adapter is %q", p.NPM)
+	}
+	// opencode.json is committed. A local GGUF path in it would put one
+	// developer's filesystem into a file everyone else clones.
+	if strings.Contains(string(body), "/home/someone") {
+		t.Fatalf("a local filesystem path reached the committed config: %s", body)
+	}
+	if doc.Model != opencode.ProviderName+"/Ternary-Bonsai-2-27B-PTQ1_0" {
+		t.Fatalf("selected model is %q", doc.Model)
+	}
+}
+
+// A developer who has chosen a model has made a decision. Replacing it with a
+// local endpoint would be the kind of helpfulness that loses configuration.
+func TestRegisterModelLeavesAnExistingChoiceAlone(t *testing.T) {
+	repo := t.TempDir()
+	path := filepath.Join(repo, "opencode.json")
+	if err := os.WriteFile(path, []byte(`{"model":"anthropic/claude-opus-5"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, changed, err := opencode.RegisterModel(repo, "http://127.0.0.1:8080", "local.gguf"); err != nil || changed {
+		t.Fatalf("an existing model choice was overwritten: changed=%v err=%v", changed, err)
+	}
+}
+
+// No endpoint configured is a supported state, not an error: the developer may
+// intend to pick a model inside the editor.
+func TestRegisterModelWithNoEndpointDoesNothing(t *testing.T) {
+	repo := t.TempDir()
+	if _, changed, err := opencode.RegisterModel(repo, "", ""); err != nil || changed {
+		t.Fatalf("changed=%v err=%v", changed, err)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "opencode.json")); !os.IsNotExist(err) {
+		t.Fatal("a config was written for a workspace with no endpoint")
+	}
+}
